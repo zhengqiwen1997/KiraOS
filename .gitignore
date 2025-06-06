@@ -1,7 +1,40 @@
-# Build directory
+# Build directories
 build/
+cmake-build-*/
+
+# IDE directories
+.idea/
+.vscode/
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# Binary files
+*.bin
+*.img
+*.iso
+
+# Debug files
+*.dSYM/
+
+# Dependency files
+*.d
 
 # OS-specific files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 *.swp
 *~ 

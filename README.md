@@ -1,6 +1,9 @@
 # Introduction
 KiraOS is a self-made Operating System mainly written in C++ for fun and study. It is designed to run on x86 machine with easiest instruction involved. Anyone is welcomed to give suggestion or create PR or issue, I really want to do something interesting and helpful.
 
+# Boot Procedure
+The first thing we need to consider is to boot a simple kernel program using emulator qemu or bochs.
+
 # Reference
 There are quite a lot guidance to show how to design and implenment a simple operating system, I would refer to the following books or websites:
 - [OSDev Wiki](https://wiki.osdev.org/Expanded_Main_Page)
