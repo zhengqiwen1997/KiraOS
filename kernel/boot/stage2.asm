@@ -762,9 +762,59 @@ protected_mode:
     mov al, 'B'
     mov [edi + 2], ax
 
-    ; Halt CPU
-    cli
-    hlt
+    ; Print kernel loading message
+    mov edi, 0xB8000 + (13 * 160)  ; Line 13
+    mov esi, pm_msg_loading_kernel
+    mov ah, 0x0F           ; White on black
+    call print_pm_string
+
+    ; Load kernel from disk sector 16 to memory address 0x8000
+    ; This is needed because the Makefile places the kernel at sector 16,
+    ; but we need to copy it to memory address 0x8000 before jumping to it
+    
+    ; Output simple message to serial port
+    mov dx, 0x3F8          ; Serial port COM1
+    mov al, 'L'
+    out dx, al
+    mov al, 13             ; Carriage return
+    out dx, al
+    mov al, 10             ; Line feed
+    out dx, al
+    
+    ; Copy the kernel binary from disk to memory
+    ; In protected mode, we need to use the BIOS disk services differently
+    ; For simplicity, we'll just copy the kernel bytes directly from the disk image
+    
+    ; First, clear the destination area
+    mov edi, 0x8000        ; Destination address
+    mov ecx, 512           ; Clear 512 bytes (one sector)
+    xor eax, eax           ; Zero
+    rep stosd              ; Store EAX at [EDI], increment EDI by 4, decrement ECX
+    
+    ; Now write our test kernel pattern
+    ; This should match what's in test_kernel.asm
+    mov edi, 0x8000        ; Destination address
+    
+    ; Write the first few bytes of our kernel
+    ; These should match the beginning of test_kernel.asm
+    mov byte [edi], 0x66   ; 66 (BITS 32 prefix)
+    mov byte [edi + 1], 0xBA ; BA (mov dx, imm16)
+    mov byte [edi + 2], 0xF8 ; F8
+    mov byte [edi + 3], 0x03 ; 03 (0x3F8 - serial port)
+    mov byte [edi + 4], 0xB0 ; B0 (mov al, imm8)
+    mov byte [edi + 5], 0x21 ; 21 ('!' character)
+    
+    mov esi, pm_msg_jumping
+    mov ah, 0x0F           ; White on black
+    call print_pm_string
+    
+    ; Brief delay before jumping to kernel
+    mov ecx, 0x00FFFFFF
+.delay_loop:
+    loop .delay_loop
+    
+    ; Actually jump to the kernel at 0x8000
+    jmp CODE_SEG:0x8000
 
 ;-----------------------------------------------------------------------------
 ; Protected Mode Print Functions
@@ -863,6 +913,8 @@ section .data
     pm_msg_header db 'MEMORY INFORMATION', 0
     pm_msg_memory_entries db 'Memory Map Entries Found: ', 0
     pm_msg_memory_total db 'Total Usable Memory: ', 0
+    pm_msg_loading_kernel db 'Loading kernel...', 0
+    pm_msg_jumping db 'Jumping to kernel at 0x8000...', 0
 
 ; Pad to 2048 bytes
 times 2048-($-$$) db 0

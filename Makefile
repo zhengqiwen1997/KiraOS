@@ -9,12 +9,15 @@ QEMU = qemu-system-i386
 # Directories
 BUILD_DIR = build
 BOOT_DIR = kernel/boot
+KERNEL_DIR = kernel/core
 
 # Files
 STAGE1_SRC = $(BOOT_DIR)/stage1.asm
 STAGE2_SRC = $(BOOT_DIR)/stage2.asm
+KERNEL_SRC = $(KERNEL_DIR)/test_kernel.asm
 STAGE1_BIN = $(BUILD_DIR)/stage1.bin
 STAGE2_BIN = $(BUILD_DIR)/stage2.bin
+KERNEL_BIN = $(BUILD_DIR)/kernel.bin
 DISK_IMAGE = $(BUILD_DIR)/kiraos.img
 SERIAL_LOG = $(BUILD_DIR)/serial.log
 
@@ -47,12 +50,22 @@ $(STAGE2_BIN): $(STAGE2_SRC) | $(BUILD_DIR)
 	fi
 	@echo "stage2.bin: $$(stat -f%z $@) bytes"
 
+# Compile kernel
+$(KERNEL_BIN): $(KERNEL_SRC) | $(BUILD_DIR)
+	@echo "Compiling kernel..."
+	@$(ASM) $(ASM_FLAGS) $< -o $@
+	@echo "kernel.bin: $$(stat -f%z $@) bytes"
+
 # Create disk image
-$(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN)
+$(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(KERNEL_BIN)
 	@echo "Creating disk image..."
 	@$(DD) if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
 	@$(DD) if=$(STAGE1_BIN) of=$@ conv=notrunc 2>/dev/null
+	@echo "  - Stage1 loaded at sector 0 (MBR)"
 	@$(DD) if=$(STAGE2_BIN) of=$@ seek=1 conv=notrunc 2>/dev/null
+	@echo "  - Stage2 loaded at sector 1"
+	@$(DD) if=$(KERNEL_BIN) of=$@ seek=16 conv=notrunc 2>/dev/null
+	@echo "  - Kernel loaded at sector 16 (0x8000)"
 	@echo "Disk image created: $@"
 
 # Run QEMU
@@ -61,7 +74,7 @@ run: $(DISK_IMAGE)
 	@$(QEMU) \
 		-drive file=$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk \
 		-cpu max \
-		-smp 2 \
+		-smp 1 \
 		-m 128M \
 		-monitor stdio \
 		-d int,cpu_reset \
