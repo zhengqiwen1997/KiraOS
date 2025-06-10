@@ -7,18 +7,23 @@ KiraOS is a self-made operating system mainly written in C++ for fun and study. 
 - Two-stage bootloader with memory detection
 - Protected mode setup with GDT
 - Serial port debugging
-- Build system with Makefile and shell script options
+- Build system with Makefile and CMake integration
+- Modern C++20 kernel (in development)
 
 ## Project Structure
 
 ```
 KiraOS/
 ├── build/              # Build output directory
+├── include/            # Kernel header files
 ├── kernel/
-│   └── boot/
-│       ├── stage1.asm  # First stage bootloader (MBR)
-│       └── stage2.asm  # Second stage bootloader
-├── build.sh            # Build script
+│   ├── boot/
+│   │   ├── stage1.asm  # First stage bootloader (MBR)
+│   │   └── stage2.asm  # Second stage bootloader
+│   ├── core/           # Kernel core implementation
+│   │   ├── kernel_entry.cpp  # Kernel entry point
+│   │   └── kernel.cpp  # Kernel implementation
+│   └── include/        # Internal kernel headers
 ├── Makefile            # Makefile for building the OS
 └── README.md           # This file
 ```
@@ -29,29 +34,11 @@ KiraOS/
 
 - NASM (Netwide Assembler)
 - QEMU
-- GCC (for future C/C++ kernel development)
-- Make (optional, for using the Makefile)
+- i686-elf-gcc cross-compiler toolchain
+- CMake (for C++ kernel compilation)
+- Make
 
-### Using the build script
-
-```bash
-# Build and run
-./build.sh
-
-# Clean build
-./build.sh --clean
-
-# Build only, don't run
-./build.sh --build
-
-# Run only (using existing image)
-./build.sh --run
-
-# Show help
-./build.sh --help
-```
-
-### Using the Makefile
+### Building and Running
 
 ```bash
 # Build everything
@@ -80,12 +67,40 @@ KiraOS uses a two-stage bootloader:
    - Memory detection using INT 15h, AX=E820h
    - GDT (Global Descriptor Table)
    - Protected mode switch
+3. **Kernel**: C++ kernel (loaded at 0x4000) with:
+   - VGA text mode output
+   - Hardware abstraction layer (in development)
+   - Memory management (in development)
+   - Device drivers (in development)
 
 ## Debugging
 
 - Serial output is saved to `build/serial.log`
 - Use `make debug` to start QEMU with GDB server enabled
 - Connect with GDB: `gdb -ex "target remote localhost:1234"`
+
+## Next Steps
+
+The following features are planned for upcoming development:
+
+1. **Memory Management**:
+   - Physical memory manager using the E820h memory map
+   - Virtual memory and paging setup
+   - Kernel heap allocator
+
+2. **Interrupts**:
+   - IDT (Interrupt Descriptor Table) setup
+   - Exception handlers
+   - Hardware interrupt handlers
+
+3. **Device Drivers**:
+   - Keyboard driver
+   - Display driver
+   - PIC (Programmable Interrupt Controller) initialization
+
+4. **File System**:
+   - Basic in-memory file system
+   - Disk I/O routines
 
 ## Contributing
 

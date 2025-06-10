@@ -27,10 +27,16 @@ total_memory dd 0       ; Total usable memory in bytes
 ; Memory map buffer (24 bytes per entry, max 10 entries = 240 bytes)
 memory_map_buffer times 240 db 0
 
+; Boot drive number (passed from stage1)
+boot_drive db 0x80
+
 ;=============================================================================
 ; Entry Point
 ;=============================================================================
 start:
+    ; Save boot drive number passed from stage1
+    mov [boot_drive], dl
+    
     ; Initialize serial port for debugging
     call init_serial
     
@@ -48,6 +54,12 @@ start:
     ; Detect memory map using E820h
     call detect_memory_e820
     mov si, msg_memory
+    call print_string
+    call print_serial
+
+    ; Load kernel from disk before entering protected mode
+    call load_kernel
+    mov si, msg_kernel_loaded
     call print_string
     call print_serial
 
@@ -204,6 +216,119 @@ print_serial_char:
     out dx, al
     
     pop dx
+    pop ax
+    ret
+
+;-----------------------------------------------------------------------------
+; Kernel Loading Function
+;-----------------------------------------------------------------------------
+
+; Load kernel from disk using BIOS INT 13h
+load_kernel:
+    push ax
+    push bx
+    push cx
+    push dx
+    push es
+    
+    ; Debug: Starting disk load
+    mov si, msg_disk_start
+    call print_string
+    call print_serial
+    
+    ; Reset disk system first
+    mov ah, 0x00            ; BIOS reset disk function
+    mov dl, 0x80            ; Use hard-coded drive number (first hard disk)
+    int 0x13                ; Call BIOS disk service
+    jc .error               ; Jump if carry flag set (error)
+    
+    ; Set up destination segment (0x0400 = 0x4000 linear address)
+    mov ax, 0x0400
+    mov es, ax
+    xor bx, bx              ; ES:BX = 0x0400:0x0000 = 0x4000 linear
+    
+    ; Read kernel from sector 9 (BIOS sectors start from 1, disk sector 8 = BIOS sector 9)
+    mov ah, 0x02            ; BIOS read sectors function
+    mov al, 16              ; Number of sectors to read (8KB for C++ kernel)
+    mov ch, 0               ; Cylinder 0
+    mov cl, 9               ; Starting sector (BIOS sector 9 = disk sector 8)
+    mov dh, 0               ; Head 0
+    mov dl, 0x80            ; Use hard-coded drive number (first hard disk)
+    
+    ; Debug: About to call BIOS
+    mov si, msg_disk_bios
+    call print_string
+    call print_serial
+    
+    ; Debug: Print drive number (simplified)
+    mov si, msg_drive_debug
+    call print_string
+    call print_serial
+    
+    int 0x13                ; Call BIOS disk service
+    jc .error               ; Jump if carry flag set (error)
+    
+    ; Debug: BIOS call successful
+    mov si, msg_disk_success
+    call print_string
+    call print_serial
+    
+    ; Success
+    pop es
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+    
+.error:
+    ; Print error message and halt
+    mov si, msg_disk_error
+    call print_string
+    call print_serial
+    cli
+    hlt
+
+;-----------------------------------------------------------------------------
+; Create Test Kernel Function
+;-----------------------------------------------------------------------------
+
+create_test_kernel:
+    push ax
+    push bx
+    push cx
+    push dx
+    push es
+    
+    ; Set up destination segment (0x0400 = 0x4000 linear address)
+    mov ax, 0x0400
+    mov es, ax
+    xor bx, bx              ; ES:BX = 0x0400:0x0000 = 0x4000 linear
+    
+    ; Create a simple test kernel that writes 'X' to VGA memory
+    ; mov eax, 0xb8000 + (80*12 + 40)*2  ; Center of screen
+    ; mov word [eax], 0x4f58              ; 'X' with white on red background
+    ; jmp $                               ; Infinite loop
+    
+    ; Write the test kernel code to 0x4000
+    mov byte [es:bx+0], 0x66    ; mov eax, immediate (32-bit prefix)
+    mov byte [es:bx+1], 0xb8    ; mov eax, immediate
+    mov byte [es:bx+2], 0x40    ; 0xb8000 + (80*12 + 40)*2 = 0xb8f40
+    mov byte [es:bx+3], 0x8f    
+    mov byte [es:bx+4], 0x0b    
+    mov byte [es:bx+5], 0x00    
+    mov byte [es:bx+6], 0x66    ; mov word [eax], immediate (32-bit prefix)
+    mov byte [es:bx+7], 0xc7    
+    mov byte [es:bx+8], 0x00    
+    mov byte [es:bx+9], 0x58    ; 'X' character
+    mov byte [es:bx+10], 0x4f   ; White on red background
+    mov byte [es:bx+11], 0xeb   ; jmp short (infinite loop)
+    mov byte [es:bx+12], 0xfe   ; -2 (jump to itself)
+    
+    pop es
+    pop dx
+    pop cx
+    pop bx
     pop ax
     ret
 
@@ -702,47 +827,20 @@ protected_mode:
     mov ss, ax
     mov esp, 0x90000       ; Set up stack
 
-    ; Clear screen
-    mov edi, 0xB8000       ; Video memory
-    mov ecx, 80 * 25       ; Screen size
-    mov ax, 0x0720         ; Space character with gray on black
+    ; Clear screen and set blue background
+    mov edi, 0xB8000       ; VGA text mode memory
+    mov ax, 0x1F20         ; Blue background, white text, space character
+    mov ecx, 2000          ; 80x25 screen size
     rep stosw              ; Fill screen
 
-    ; Draw a separator line
-    mov edi, 0xB8000 + (5 * 160)  ; Line 5
-    mov ah, 0x1F           ; Blue on white
-    mov al, '='
-    mov ecx, 80           ; Screen width
-.separator:
-    mov [edi], ax
-    add edi, 2
-    loop .separator
-
-    ; Print protected mode message
+    ; Print essential status message
     mov edi, 0xB8000 + (2 * 160)  ; Line 2
     mov esi, pm_msg
     mov ah, 0x1F           ; Blue on white
     call print_pm_string
 
-    ; Print memory information header
-    mov edi, 0xB8000 + (7 * 160)  ; Line 7
-    mov esi, pm_msg_header
-    mov ah, 0x1F           ; Blue on white
-    call print_pm_string
-    
-    ; Print entry count
-    mov edi, 0xB8000 + (9 * 160)  ; Line 9
-    mov esi, pm_msg_memory_entries
-    mov ah, 0x0F           ; White on black
-    call print_pm_string
-    
-    mov eax, [memory_map_entries]
-    mov edi, 0xB8000 + (9 * 160) + 46  ; After "Memory Map Entries Found: "
-    mov ah, 0x0A           ; Green on black
-    call print_pm_dec
-    
-    ; Print total memory
-    mov edi, 0xB8000 + (11 * 160)  ; Line 11
+    ; Print memory information
+    mov edi, 0xB8000 + (4 * 160)  ; Line 4
     mov esi, pm_msg_memory_total
     mov ah, 0x0F           ; White on black
     call print_pm_string
@@ -750,60 +848,20 @@ protected_mode:
     ; Convert bytes to KB for display
     mov eax, [total_memory]
     shr eax, 10                    ; Divide by 1024 to get KB
-    mov edi, 0xB8000 + (11 * 160) + 46  ; After "Total Usable Memory: "
+    mov edi, 0xB8000 + (4 * 160) + 46  ; After "Total Usable Memory: "
     mov ah, 0x0A           ; Green on black
     call print_pm_dec
     
     ; Print "KB"
-    mov edi, 0xB8000 + (11 * 160) + 52  ; After the number
+    mov edi, 0xB8000 + (4 * 160) + 52  ; After the number
     mov ah, 0x0F                   ; White on black
     mov al, 'K'
     mov [edi], ax
     mov al, 'B'
     mov [edi + 2], ax
 
-    ; Print kernel loading message
-    mov edi, 0xB8000 + (13 * 160)  ; Line 13
-    mov esi, pm_msg_loading_kernel
-    mov ah, 0x0F           ; White on black
-    call print_pm_string
-
-    ; Load kernel from disk sector 16 to memory address 0x8000
-    ; This is needed because the Makefile places the kernel at sector 16,
-    ; but we need to copy it to memory address 0x8000 before jumping to it
-    
-    ; Output simple message to serial port
-    mov dx, 0x3F8          ; Serial port COM1
-    mov al, 'L'
-    out dx, al
-    mov al, 13             ; Carriage return
-    out dx, al
-    mov al, 10             ; Line feed
-    out dx, al
-    
-    ; Copy the kernel binary from disk to memory
-    ; In protected mode, we need to use the BIOS disk services differently
-    ; For simplicity, we'll just copy the kernel bytes directly from the disk image
-    
-    ; First, clear the destination area
-    mov edi, 0x8000        ; Destination address
-    mov ecx, 512           ; Clear 512 bytes (one sector)
-    xor eax, eax           ; Zero
-    rep stosd              ; Store EAX at [EDI], increment EDI by 4, decrement ECX
-    
-    ; Now write our test kernel pattern
-    ; This should match what's in test_kernel.asm
-    mov edi, 0x8000        ; Destination address
-    
-    ; Write the first few bytes of our kernel
-    ; These should match the beginning of test_kernel.asm
-    mov byte [edi], 0x66   ; 66 (BITS 32 prefix)
-    mov byte [edi + 1], 0xBA ; BA (mov dx, imm16)
-    mov byte [edi + 2], 0xF8 ; F8
-    mov byte [edi + 3], 0x03 ; 03 (0x3F8 - serial port)
-    mov byte [edi + 4], 0xB0 ; B0 (mov al, imm8)
-    mov byte [edi + 5], 0x21 ; 21 ('!' character)
-    
+    ; Print kernel status
+    mov edi, 0xB8000 + (6 * 160)  ; Line 6
     mov esi, pm_msg_jumping
     mov ah, 0x0F           ; White on black
     call print_pm_string
@@ -813,8 +871,9 @@ protected_mode:
 .delay_loop:
     loop .delay_loop
     
-    ; Actually jump to the kernel at 0x8000
-    jmp CODE_SEG:0x8000
+    ; Jump to the kernel entry point at 0x8000
+    ; Use far jump to set CS segment properly
+    jmp CODE_SEG:0x4000
 
 ;-----------------------------------------------------------------------------
 ; Protected Mode Print Functions
@@ -889,31 +948,112 @@ print_pm_dec:
     pop eax
     ret
 
+; Print byte in AL as hex
+print_hex_byte:
+    push ax
+    push bx
+    
+    mov bh, al              ; Save original value
+    
+    ; Print high nibble
+    shr al, 4               ; Get high 4 bits
+    and al, 0x0F
+    cmp al, 10
+    jb .high_decimal
+    add al, 'A' - 10
+    jmp .print_high
+.high_decimal:
+    add al, '0'
+.print_high:
+    mov ah, 0x0E
+    int 0x10
+    
+    ; Print low nibble
+    mov al, bh              ; Restore original value
+    and al, 0x0F            ; Get low 4 bits
+    cmp al, 10
+    jb .low_decimal
+    add al, 'A' - 10
+    jmp .print_low
+.low_decimal:
+    add al, '0'
+.print_low:
+    mov ah, 0x0E
+    int 0x10
+    
+    pop bx
+    pop ax
+    ret
+
+; Print byte in AL as hex to serial
+print_hex_byte_serial:
+    push ax
+    push bx
+    
+    mov bh, al              ; Save original value
+    
+    ; Print high nibble
+    shr al, 4               ; Get high 4 bits
+    and al, 0x0F
+    cmp al, 10
+    jb .high_decimal
+    add al, 'A' - 10
+    jmp .print_high
+.high_decimal:
+    add al, '0'
+.print_high:
+    call print_serial_char
+    
+    ; Print low nibble
+    mov al, bh              ; Restore original value
+    and al, 0x0F            ; Get low 4 bits
+    cmp al, 10
+    jb .low_decimal
+    add al, 'A' - 10
+    jmp .print_low
+.low_decimal:
+    add al, '0'
+.print_low:
+    call print_serial_char
+    
+    ; Print newline
+    mov al, 13
+    call print_serial_char
+    mov al, 10
+    call print_serial_char
+    
+    pop bx
+    pop ax
+    ret
+
 ;=============================================================================
 ; Data Section
 ;=============================================================================
 section .data
-    ; Real mode messages
+    ; Real mode messages (essential only)
     msg_start db 'Stage2: Starting...', 13, 10, 0
     msg_a20 db 'Stage2: A20 line enabled', 13, 10, 0
     msg_memory db 'Stage2: Memory detection completed', 13, 10, 0
-    msg_gdt db 'Stage2: GDT loaded, entering protected mode...', 13, 10, 0
+    msg_kernel_loaded db 'Stage2: Kernel loaded', 13, 10, 0
+    msg_gdt db 'Stage2: Entering protected mode...', 13, 10, 0
+    msg_disk_error db 'Stage2: Disk error!', 13, 10, 0
+    msg_disk_start db 'Stage2: Loading kernel...', 13, 10, 0
+    msg_disk_bios db 'Stage2: Reading disk...', 13, 10, 0
+    msg_disk_success db 'Stage2: Disk read OK', 13, 10, 0
+    msg_drive_debug db 'Drive: 0x', 0
     
-    ; E820h debug messages
-    msg_e820_start db 'Starting E820h memory detection...', 13, 10, 0
-    msg_e820_regs db 'E820h: EAX=0xE820, EDX=SMAP, ECX=24', 13, 10, 0
-    msg_e820_error db 'E820h: Error during detection, using default values', 13, 10, 0
-    msg_eax_value db 'E820h: EAX return value: ', 0
-    msg_e820_done db 'E820h: Detection complete. Entries: ', 0
-    msg_e820_memory db 13, 10, 'E820h: Total memory: ', 0
+    ; E820h minimal messages
+    msg_e820_start db 'Memory detection...', 13, 10, 0
+    msg_e820_regs db 'E820h call...', 13, 10, 0
+    msg_e820_error db 'Memory detection failed', 13, 10, 0
+    msg_eax_value db 'EAX: ', 0
+    msg_e820_done db 'Memory entries: ', 0
+    msg_e820_memory db 13, 10, 'Total: ', 0
     msg_kb db ' KB', 13, 10, 0
     
-    ; Protected mode messages
-    pm_msg db 'KiraOS Stage2: Successfully entered protected mode', 0
-    pm_msg_header db 'MEMORY INFORMATION', 0
-    pm_msg_memory_entries db 'Memory Map Entries Found: ', 0
-    pm_msg_memory_total db 'Total Usable Memory: ', 0
-    pm_msg_loading_kernel db 'Loading kernel...', 0
+    ; Protected mode messages (essential only)
+    pm_msg db 'KiraOS Stage2: Protected mode active', 0
+    pm_msg_memory_total db 'Total Memory: ', 0
     pm_msg_jumping db 'Jumping to kernel at 0x8000...', 0
 
 ; Pad to 2048 bytes
