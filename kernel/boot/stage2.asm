@@ -27,16 +27,10 @@ total_memory dd 0       ; Total usable memory in bytes
 ; Memory map buffer (24 bytes per entry, max 10 entries = 240 bytes)
 memory_map_buffer times 240 db 0
 
-; Boot drive number (passed from stage1)
-boot_drive db 0x80
-
 ;=============================================================================
 ; Entry Point
 ;=============================================================================
 start:
-    ; Save boot drive number passed from stage1
-    mov [boot_drive], dl
-    
     ; Initialize serial port for debugging
     call init_serial
     
@@ -97,6 +91,26 @@ start:
 ;=============================================================================
 ; Real Mode Functions
 ;=============================================================================
+
+;-----------------------------------------------------------------------------
+; Print Functions
+;-----------------------------------------------------------------------------
+
+; Print string function (SI = string pointer)
+print_string:
+    push ax                  ; Save registers
+    push si
+    mov ah, 0x0E            ; BIOS teletype function
+.loop:
+    lodsb                   ; Load byte from SI into AL
+    test al, al             ; Check if end of string (0)
+    jz .done
+    int 0x10                ; Print character
+    jmp .loop
+.done:
+    pop si                  ; Restore registers
+    pop ax
+    ret
 
 ;-----------------------------------------------------------------------------
 ; Enable A20 Line
@@ -194,31 +208,6 @@ print_serial:
     pop ax
     ret
 
-; Print a single character to serial port
-; AL = character
-print_serial_char:
-    push ax
-    push dx
-    
-    ; Save character
-    mov ah, al
-    
-    ; Wait for transmitter to be empty
-    mov dx, 0x3F8 + 5    ; COM1 + Line Status Register
-.wait:
-    in al, dx
-    test al, 0x20        ; Test if transmitter is empty
-    jz .wait
-    
-    ; Restore character and send it
-    mov al, ah
-    mov dx, 0x3F8        ; COM1 base port
-    out dx, al
-    
-    pop dx
-    pop ax
-    ret
-
 ;-----------------------------------------------------------------------------
 ; Kernel Loading Function
 ;-----------------------------------------------------------------------------
@@ -254,77 +243,80 @@ load_kernel:
     mov cl, 9               ; Starting sector (BIOS sector 9 = disk sector 8)
     mov dh, 0               ; Head 0
     mov dl, 0x80            ; Use hard-coded drive number (first hard disk)
-    
-    ; Debug: About to call BIOS
-    mov si, msg_disk_bios
-    call print_string
-    call print_serial
-    
-    ; Debug: Print drive number (simplified)
-    mov si, msg_drive_debug
-    call print_string
-    call print_serial
-    
     int 0x13                ; Call BIOS disk service
     jc .error               ; Jump if carry flag set (error)
     
-    ; Debug: BIOS call successful
+    ; Debug: Disk load successful
     mov si, msg_disk_success
     call print_string
     call print_serial
     
-    ; Success
     pop es
     pop dx
     pop cx
     pop bx
     pop ax
     ret
-    
+
 .error:
-    ; Print error message and halt
     mov si, msg_disk_error
     call print_string
     call print_serial
-    cli
-    hlt
+    jmp $                   ; Halt on error
 
 ;-----------------------------------------------------------------------------
-; Create Test Kernel Function
+; Memory Detection Function
 ;-----------------------------------------------------------------------------
 
-create_test_kernel:
+; Detect memory using INT 15h, AX=E820h
+detect_memory_e820:
     push ax
     push bx
     push cx
     push dx
     push es
+    push di
     
-    ; Set up destination segment (0x0400 = 0x4000 linear address)
-    mov ax, 0x0400
+    ; Initialize memory map counter
+    mov word [memory_map_entries], 0
+    
+    ; Set up ES:DI to point to our buffer
+    mov ax, 0x0000
     mov es, ax
-    xor bx, bx              ; ES:BX = 0x0400:0x0000 = 0x4000 linear
+    mov di, memory_map_buffer
     
-    ; Create a simple test kernel that writes 'X' to VGA memory
-    ; mov eax, 0xb8000 + (80*12 + 40)*2  ; Center of screen
-    ; mov word [eax], 0x4f58              ; 'X' with white on red background
-    ; jmp $                               ; Infinite loop
+    ; Initialize registers for INT 15h, AX=E820h
+    xor ebx, ebx            ; Start with first entry
+    mov edx, 0x534D4150     ; 'SMAP' signature
+    mov ecx, 24             ; Request 24 bytes per entry
     
-    ; Write the test kernel code to 0x4000
-    mov byte [es:bx+0], 0x66    ; mov eax, immediate (32-bit prefix)
-    mov byte [es:bx+1], 0xb8    ; mov eax, immediate
-    mov byte [es:bx+2], 0x40    ; 0xb8000 + (80*12 + 40)*2 = 0xb8f40
-    mov byte [es:bx+3], 0x8f    
-    mov byte [es:bx+4], 0x0b    
-    mov byte [es:bx+5], 0x00    
-    mov byte [es:bx+6], 0x66    ; mov word [eax], immediate (32-bit prefix)
-    mov byte [es:bx+7], 0xc7    
-    mov byte [es:bx+8], 0x00    
-    mov byte [es:bx+9], 0x58    ; 'X' character
-    mov byte [es:bx+10], 0x4f   ; White on red background
-    mov byte [es:bx+11], 0xeb   ; jmp short (infinite loop)
-    mov byte [es:bx+12], 0xfe   ; -2 (jump to itself)
+.loop:
+    mov eax, 0xE820         ; INT 15h, AX=E820h
+    int 0x15                ; Call BIOS memory detection
+    jc .done                ; If carry set, we're done
     
+    ; Check if we got a valid entry
+    cmp eax, 0x534D4150     ; Check 'SMAP' signature
+    jne .done               ; If not, we're done
+    
+    ; Increment entry counter
+    inc word [memory_map_entries]
+    
+    ; Move to next buffer position
+    add di, 24              ; Each entry is 24 bytes
+    
+    ; Check if we've reached max entries
+    cmp word [memory_map_entries], 10
+    jae .done               ; If we have 10 entries, we're done
+    
+    ; Check if this was the last entry
+    test ebx, ebx
+    jz .done                ; If EBX is 0, we're done
+    
+    jmp .loop               ; Otherwise, get next entry
+    
+.done:
+    pop di
     pop es
     pop dx
     pop cx
@@ -332,729 +324,67 @@ create_test_kernel:
     pop ax
     ret
 
-;-----------------------------------------------------------------------------
-; Print Functions
-;-----------------------------------------------------------------------------
-
-; Print string function (SI = string pointer)
-print_string:
-    push ax                  ; Save registers
-    push si
-    mov ah, 0x0E            ; BIOS teletype function
-.loop:
-    lodsb                   ; Load byte from SI into AL
-    test al, al             ; Check if end of string (0)
-    jz .done
-    int 0x10                ; Print character
-    jmp .loop
-.done:
-    pop si                  ; Restore registers
-    pop ax
-    ret
-
-; Print decimal number in AX
-print_dec:
-    push ax
-    push bx
-    push cx
-    push dx
-    
-    mov bx, 10              ; Divisor
-    xor cx, cx              ; Counter
-    
-    ; Handle zero case
-    test ax, ax
-    jnz .not_zero
-    
-    mov al, '0'
-    mov ah, 0x0E
-    int 0x10
-    jmp .done
-    
-.not_zero:
-    ; Convert number to digits on stack
-.push_digits:
-    xor dx, dx
-    div bx                  ; Divide AX by 10
-    push dx                 ; Push remainder (0-9)
-    inc cx                  ; Increment digit counter
-    test ax, ax             ; Check if quotient is zero
-    jnz .push_digits        ; If not, continue
-    
-    ; Pop digits and print
-.pop_digits:
-    pop dx                  ; Pop digit
-    add dl, '0'             ; Convert to ASCII
-    mov al, dl              ; Move to AL for display
-    mov ah, 0x0E            ; BIOS teletype function
-    int 0x10                ; Print character
-    loop .pop_digits        ; Repeat for all digits
-    
-.done:
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-; Print decimal number in AX to serial port
-print_dec_serial:
-    push ax
-    push bx
-    push cx
-    push dx
-    
-    mov bx, 10              ; Divisor
-    xor cx, cx              ; Counter
-    
-    ; Handle zero case
-    test ax, ax
-    jnz .not_zero
-    
-    mov al, '0'
-    call print_serial_char
-    jmp .done
-    
-.not_zero:
-    ; Convert number to digits on stack
-.push_digits:
-    xor dx, dx
-    div bx                  ; Divide AX by 10
-    push dx                 ; Push remainder (0-9)
-    inc cx                  ; Increment digit counter
-    test ax, ax             ; Check if quotient is zero
-    jnz .push_digits        ; If not, continue
-    
-    ; Pop digits and print
-.pop_digits:
-    pop dx                  ; Pop digit
-    add dl, '0'             ; Convert to ASCII
-    mov al, dl              ; Move to AL for display
-    call print_serial_char
-    loop .pop_digits        ; Repeat for all digits
-    
-.done:
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-; Print 32-bit decimal number in EAX
-print_dec32:
-    push eax
-    push ebx
-    push ecx
-    push edx
-    
-    mov ebx, 10             ; Divisor
-    xor ecx, ecx            ; Counter
-    
-    ; Handle zero case
-    test eax, eax
-    jnz .not_zero
-    
-    mov al, '0'
-    mov ah, 0x0E
-    int 0x10
-    jmp .done
-    
-.not_zero:
-    ; Convert number to digits on stack
-.push_digits:
-    xor edx, edx
-    div ebx                 ; Divide EAX by 10
-    push edx                ; Push remainder (0-9)
-    inc ecx                 ; Increment digit counter
-    test eax, eax           ; Check if quotient is zero
-    jnz .push_digits        ; If not, continue
-    
-    ; Pop digits and print
-.pop_digits:
-    pop edx                 ; Pop digit
-    add dl, '0'             ; Convert to ASCII
-    mov al, dl              ; Move to AL for display
-    mov ah, 0x0E            ; BIOS teletype function
-    int 0x10                ; Print character
-    loop .pop_digits        ; Repeat for all digits
-    
-.done:
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
-; Print 32-bit decimal number in EAX to serial port
-print_dec32_serial:
-    push eax
-    push ebx
-    push ecx
-    push edx
-    
-    mov ebx, 10             ; Divisor
-    xor ecx, ecx            ; Counter
-    
-    ; Handle zero case
-    test eax, eax
-    jnz .not_zero
-    
-    mov al, '0'
-    call print_serial_char
-    jmp .done
-    
-.not_zero:
-    ; Convert number to digits on stack
-.push_digits:
-    xor edx, edx
-    div ebx                 ; Divide EAX by 10
-    push edx                ; Push remainder (0-9)
-    inc ecx                 ; Increment digit counter
-    test eax, eax           ; Check if quotient is zero
-    jnz .push_digits        ; If not, continue
-    
-    ; Pop digits and print
-.pop_digits:
-    pop edx                 ; Pop digit
-    add dl, '0'             ; Convert to ASCII
-    mov al, dl              ; Move to AL for display
-    call print_serial_char
-    loop .pop_digits        ; Repeat for all digits
-    
-.done:
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
-; Print 32-bit hexadecimal number in EAX
-print_hex32:
-    push eax
-    push ebx
-    push ecx
-    push edx
-    
-    mov ecx, 8              ; 8 hex digits for 32-bit number
-    mov ebx, eax            ; Save original value
-    
-    ; Print "0x" prefix
-    mov al, '0'
-    mov ah, 0x0E
-    int 0x10
-    mov al, 'x'
-    int 0x10
-    
-    ; Print each hex digit
-.digit_loop:
-    rol ebx, 4              ; Rotate left to get highest digit
-    mov al, bl              ; Get lowest 4 bits
-    and al, 0x0F            ; Mask off high bits
-    
-    ; Convert to ASCII
-    cmp al, 10
-    jb .decimal
-    add al, 'A' - 10        ; Convert A-F
-    jmp .print
-.decimal:
-    add al, '0'             ; Convert 0-9
-.print:
-    mov ah, 0x0E
-    int 0x10
-    
-    loop .digit_loop
-    
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
-; Print 32-bit hexadecimal number in EAX to serial port
-print_hex32_serial:
-    push eax
-    push ebx
-    push ecx
-    push edx
-    
-    mov ecx, 8              ; 8 hex digits for 32-bit number
-    mov ebx, eax            ; Save original value
-    
-    ; Print "0x" prefix
-    mov al, '0'
-    call print_serial_char
-    mov al, 'x'
-    call print_serial_char
-    
-    ; Print each hex digit
-.digit_loop:
-    rol ebx, 4              ; Rotate left to get highest digit
-    mov al, bl              ; Get lowest 4 bits
-    and al, 0x0F            ; Mask off high bits
-    
-    ; Convert to ASCII
-    cmp al, 10
-    jb .decimal
-    add al, 'A' - 10        ; Convert A-F
-    jmp .print
-.decimal:
-    add al, '0'             ; Convert 0-9
-.print:
-    call print_serial_char
-    
-    loop .digit_loop
-    
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
-;-----------------------------------------------------------------------------
-; Memory Detection
-;-----------------------------------------------------------------------------
-
-; Detect memory using E820h BIOS function
-detect_memory_e820:
-    pusha                       ; Save all registers
-    
-    ; Print debug message
-    mov si, msg_e820_start
-    call print_string
-    call print_serial
-    
-    ; Set up registers for E820h call
-    xor ebx, ebx                ; Clear EBX (continuation value)
-    xor bp, bp                  ; BP = entry count
-    mov edx, 0x534D4150         ; 'SMAP' in little endian
-    mov eax, 0xE820             ; EAX = E820h
-    mov di, memory_map_buffer   ; ES:DI points to buffer
-    mov [es:di + 20], dword 1   ; Force a valid ACPI 3.X entry
-    mov ecx, 24                 ; ECX = 24 byte entry
-    
-    ; Print registers before call
-    push eax
-    mov si, msg_e820_regs
-    call print_string
-    call print_serial
-    pop eax
-    
-    ; Make the call
-    int 0x15                    ; Call BIOS
-    
-    ; Check for error
-    jc .error                   ; CF set on error
-    
-    ; Verify 'SMAP' signature
-    cmp eax, 0x534D4150         ; EAX should equal 'SMAP'
-    jne .error
-    
-    ; Check if we got at least one entry
-    test ebx, ebx               ; EBX = 0 if only one entry
-    jz .single_entry            ; Handle single entry case
-    
-    ; Process first entry
-    jcxz .skip_entry            ; Skip zero-length entries
-    cmp cl, 20                  ; Got at least 20 bytes?
-    jbe .no_acpi
-    test byte [es:di + 20], 1   ; Test ACPI 3.X ignore bit
-    je .skip_entry
-    
-.no_acpi:
-    mov ecx, [es:di + 8]        ; Get lower 32 bits of length
-    or ecx, [es:di + 12]        ; OR with upper 32 bits
-    jz .skip_entry              ; Skip zero-length regions
-    
-    ; Check if this is usable memory (type 1)
-    cmp byte [es:di + 16], 1
-    jne .not_usable
-    
-    ; Add to usable memory count
-    add [total_memory], ecx
-    
-.not_usable:
-    inc bp                      ; Increment entry count
-    add di, 24                  ; Next entry
-
-.next_entry_loop:
-    ; Prepare for next entry
-    mov eax, 0xE820             ; EAX = E820h
-    mov [es:di + 20], dword 1   ; Force a valid ACPI 3.X entry
-    mov ecx, 24                 ; ECX = 24 byte entry
-    int 0x15                    ; Call BIOS
-    
-    ; Check if we're done
-    jc .done                    ; CF set means done
-    
-    ; Process entry
-    jcxz .skip_entry_loop       ; Skip zero-length entries
-    cmp cl, 20                  ; Got at least 20 bytes?
-    jbe .no_acpi_loop
-    test byte [es:di + 20], 1   ; Test ACPI 3.X ignore bit
-    je .skip_entry_loop
-    
-.no_acpi_loop:
-    mov ecx, [es:di + 8]        ; Get lower 32 bits of length
-    or ecx, [es:di + 12]        ; OR with upper 32 bits
-    jz .skip_entry_loop         ; Skip zero-length regions
-    
-    ; Check if this is usable memory (type 1)
-    cmp byte [es:di + 16], 1
-    jne .not_usable_loop
-    
-    ; Add to usable memory count
-    add [total_memory], ecx
-    
-.not_usable_loop:
-    inc bp                      ; Increment entry count
-    add di, 24                  ; Next entry
-
-.skip_entry_loop:
-    test ebx, ebx               ; EBX = 0 if list complete
-    jne .next_entry_loop        ; Get next entry if not done
-    jmp .done
-    
-.skip_entry:
-    inc bp                      ; Still count the entry
-    jmp .next_entry_loop        ; Continue with next entry
-    
-.single_entry:
-    ; Process the single entry
-    mov ecx, [es:di + 8]        ; Get lower 32 bits of length
-    or ecx, [es:di + 12]        ; OR with upper 32 bits
-    jz .done                    ; Skip zero-length regions
-    
-    ; Check if this is usable memory (type 1)
-    cmp byte [es:di + 16], 1
-    jne .done
-    
-    ; Add to usable memory count
-    add [total_memory], ecx
-    inc bp                      ; Increment entry count
-    jmp .done
-
-.error:
-    ; Print error message with EAX value
-    mov si, msg_e820_error
-    call print_string
-    call print_serial
-    
-    ; Print EAX value
-    mov si, msg_eax_value
-    call print_string
-    call print_serial
-    
-    mov eax, eax               ; EAX already has the error code
-    call print_hex32
-    call print_hex32_serial
-    
-    ; Use default memory value
-    mov dword [total_memory], 640 * 1024  ; 640KB
-    mov bp, 0                   ; No entries
-
-.done:
-    ; Store entry count
-    mov [memory_map_entries], bp
-    
-    ; Print success message with counts
-    mov si, msg_e820_done
-    call print_string
-    call print_serial
-    
-    ; Print entry count
-    mov ax, bp
-    call print_dec
-    call print_dec_serial
-    
-    ; Print total memory in KB
-    mov si, msg_e820_memory
-    call print_string
-    call print_serial
-    
-    mov eax, [total_memory]
-    shr eax, 10                 ; Convert to KB
-    call print_dec32
-    call print_dec32_serial
-    
-    ; Print KB suffix
-    mov si, msg_kb
-    call print_string
-    call print_serial
-    
-    popa                        ; Restore all registers
-    ret
-
-;=============================================================================
-; GDT (Global Descriptor Table)
-;=============================================================================
-align 8
-gdt_start:
-    ; Null descriptor
-    dq 0
-
-    ; Code segment descriptor
-    dw 0xFFFF       ; Limit 0-15
-    dw 0x0000       ; Base 0-15
-    db 0x00         ; Base 16-23
-    db 10011010b    ; Access byte
-    db 11001111b    ; Flags + Limit 16-19
-    db 0x00         ; Base 24-31
-
-    ; Data segment descriptor
-    dw 0xFFFF       ; Limit 0-15
-    dw 0x0000       ; Base 0-15
-    db 0x00         ; Base 16-23
-    db 10010010b    ; Access byte
-    db 11001111b    ; Flags + Limit 16-19
-    db 0x00         ; Base 24-31
-gdt_end:
-
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1  ; GDT size
-    dd gdt_start                 ; GDT address
-
 ;=============================================================================
 ; Protected Mode Code
 ;=============================================================================
+
 [BITS 32]
 protected_mode:
     ; Set up segment registers
-    mov ax, DATA_SEG       ; Data segment selector
+    mov ax, DATA_SEG
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    mov esp, 0x90000       ; Set up stack
-
-    ; Clear screen and set blue background
-    mov edi, 0xB8000       ; VGA text mode memory
-    mov ax, 0x1F20         ; Blue background, white text, space character
-    mov ecx, 2000          ; 80x25 screen size
-    rep stosw              ; Fill screen
-
-    ; Print essential status message
-    mov edi, 0xB8000 + (2 * 160)  ; Line 2
-    mov esi, pm_msg
-    mov ah, 0x1F           ; Blue on white
-    call print_pm_string
-
-    ; Print memory information
-    mov edi, 0xB8000 + (4 * 160)  ; Line 4
-    mov esi, pm_msg_memory_total
-    mov ah, 0x0F           ; White on black
-    call print_pm_string
     
-    ; Convert bytes to KB for display
-    mov eax, [total_memory]
-    shr eax, 10                    ; Divide by 1024 to get KB
-    mov edi, 0xB8000 + (4 * 160) + 46  ; After "Total Usable Memory: "
-    mov ah, 0x0A           ; Green on black
-    call print_pm_dec
+    ; Set up stack
+    mov esp, 0x90000       ; Set stack pointer to 0x90000
     
-    ; Print "KB"
-    mov edi, 0xB8000 + (4 * 160) + 52  ; After the number
-    mov ah, 0x0F                   ; White on black
-    mov al, 'K'
-    mov [edi], ax
-    mov al, 'B'
-    mov [edi + 2], ax
-
-    ; Print kernel status
-    mov edi, 0xB8000 + (6 * 160)  ; Line 6
-    mov esi, pm_msg_jumping
-    mov ah, 0x0F           ; White on black
-    call print_pm_string
-    
-    ; Brief delay before jumping to kernel
-    mov ecx, 0x00FFFFFF
-.delay_loop:
-    loop .delay_loop
-    
-    ; Jump to the kernel entry point at 0x8000
-    ; Use far jump to set CS segment properly
-    jmp CODE_SEG:0x4000
-
-;-----------------------------------------------------------------------------
-; Protected Mode Print Functions
-;-----------------------------------------------------------------------------
-
-; Print string in protected mode
-; ESI = string pointer, EDI = video memory position
-print_pm_string:
-    push eax
-    push esi
-    push edi
-    ; AH already has the color attribute
-.loop:
-    lodsb                  ; Load byte from ESI into AL
-    test al, al
-    jz .done
-    mov [edi], ax
-    add edi, 2
-    jmp .loop
-.done:
-    pop edi
-    pop esi
-    pop eax
-    ret
-
-; Print decimal number in EAX in protected mode
-; EDI = video memory position
-print_pm_dec:
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push edi
-    
-    ; AH already has the color attribute
-    mov ebx, 10            ; Divisor
-    xor ecx, ecx           ; Digit counter
-    
-    ; Handle zero case
-    test eax, eax
-    jnz .not_zero
-    
-    mov al, '0'
-    mov [edi], ax
-    add edi, 2
-    jmp .done
-    
-.not_zero:
-    ; Convert number to digits on stack
-.push_digits:
-    xor edx, edx
-    div ebx                ; Divide EAX by 10
-    push edx               ; Push remainder (0-9)
-    inc ecx                ; Increment digit counter
-    test eax, eax          ; Check if quotient is zero
-    jnz .push_digits       ; If not, continue
-    
-    ; Pop digits and print
-.pop_digits:
-    pop edx                ; Pop digit
-    add dl, '0'            ; Convert to ASCII
-    mov al, dl             ; Move to AL for display
-    mov [edi], ax          ; Store in video memory
-    add edi, 2             ; Next position
-    loop .pop_digits       ; Repeat for all digits
-    
-.done:
-    pop edi
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
-; Print byte in AL as hex
-print_hex_byte:
-    push ax
-    push bx
-    
-    mov bh, al              ; Save original value
-    
-    ; Print high nibble
-    shr al, 4               ; Get high 4 bits
-    and al, 0x0F
-    cmp al, 10
-    jb .high_decimal
-    add al, 'A' - 10
-    jmp .print_high
-.high_decimal:
-    add al, '0'
-.print_high:
-    mov ah, 0x0E
-    int 0x10
-    
-    ; Print low nibble
-    mov al, bh              ; Restore original value
-    and al, 0x0F            ; Get low 4 bits
-    cmp al, 10
-    jb .low_decimal
-    add al, 'A' - 10
-    jmp .print_low
-.low_decimal:
-    add al, '0'
-.print_low:
-    mov ah, 0x0E
-    int 0x10
-    
-    pop bx
-    pop ax
-    ret
-
-; Print byte in AL as hex to serial
-print_hex_byte_serial:
-    push ax
-    push bx
-    
-    mov bh, al              ; Save original value
-    
-    ; Print high nibble
-    shr al, 4               ; Get high 4 bits
-    and al, 0x0F
-    cmp al, 10
-    jb .high_decimal
-    add al, 'A' - 10
-    jmp .print_high
-.high_decimal:
-    add al, '0'
-.print_high:
-    call print_serial_char
-    
-    ; Print low nibble
-    mov al, bh              ; Restore original value
-    and al, 0x0F            ; Get low 4 bits
-    cmp al, 10
-    jb .low_decimal
-    add al, 'A' - 10
-    jmp .print_low
-.low_decimal:
-    add al, '0'
-.print_low:
-    call print_serial_char
-    
-    ; Print newline
-    mov al, 13
-    call print_serial_char
-    mov al, 10
-    call print_serial_char
-    
-    pop bx
-    pop ax
-    ret
+    ; Jump to kernel
+    jmp 0x4000             ; Jump to kernel at 0x4000
 
 ;=============================================================================
 ; Data Section
 ;=============================================================================
-section .data
-    ; Real mode messages (essential only)
-    msg_start db 'Stage2: Starting...', 13, 10, 0
-    msg_a20 db 'Stage2: A20 line enabled', 13, 10, 0
-    msg_memory db 'Stage2: Memory detection completed', 13, 10, 0
-    msg_kernel_loaded db 'Stage2: Kernel loaded', 13, 10, 0
-    msg_gdt db 'Stage2: Entering protected mode...', 13, 10, 0
-    msg_disk_error db 'Stage2: Disk error!', 13, 10, 0
-    msg_disk_start db 'Stage2: Loading kernel...', 13, 10, 0
-    msg_disk_bios db 'Stage2: Reading disk...', 13, 10, 0
-    msg_disk_success db 'Stage2: Disk read OK', 13, 10, 0
-    msg_drive_debug db 'Drive: 0x', 0
-    
-    ; E820h minimal messages
-    msg_e820_start db 'Memory detection...', 13, 10, 0
-    msg_e820_regs db 'E820h call...', 13, 10, 0
-    msg_e820_error db 'Memory detection failed', 13, 10, 0
-    msg_eax_value db 'EAX: ', 0
-    msg_e820_done db 'Memory entries: ', 0
-    msg_e820_memory db 13, 10, 'Total: ', 0
-    msg_kb db ' KB', 13, 10, 0
-    
-    ; Protected mode messages (essential only)
-    pm_msg db 'KiraOS Stage2: Protected mode active', 0
-    pm_msg_memory_total db 'Total Memory: ', 0
-    pm_msg_jumping db 'Jumping to kernel at 0x8000...', 0
 
-; Pad to 2048 bytes
-times 2048-($-$$) db 0
+; Messages
+msg_start:          db 'Stage2: Starting...', 0
+msg_a20:            db 'Stage2: A20 line enabled', 0
+msg_memory:         db 'Stage2: Memory map detected', 0
+msg_kernel_loaded:  db 'Stage2: Kernel loaded at 0x4000', 0
+msg_gdt:            db 'Stage2: GDT loaded', 0
+msg_disk_start:     db 'Stage2: Loading kernel from disk...', 0
+msg_disk_success:   db 'Stage2: Kernel loaded successfully', 0
+msg_disk_error:     db 'Stage2: Error loading kernel', 0
+
+; GDT
+gdt_start:
+    ; Null descriptor
+    dd 0x0
+    dd 0x0
+    
+    ; Code segment descriptor
+    dw 0xFFFF       ; Limit (bits 0-15)
+    dw 0x0000       ; Base (bits 0-15)
+    db 0x00         ; Base (bits 16-23)
+    db 10011010b    ; Access byte
+    db 11001111b    ; Flags and Limit (bits 16-19)
+    db 0x00         ; Base (bits 24-31)
+    
+    ; Data segment descriptor
+    dw 0xFFFF       ; Limit (bits 0-15)
+    dw 0x0000       ; Base (bits 0-15)
+    db 0x00         ; Base (bits 16-23)
+    db 10010010b    ; Access byte
+    db 11001111b    ; Flags and Limit (bits 16-19)
+    db 0x00         ; Base (bits 24-31)
+
+gdt_end:
+
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1  ; Size of GDT
+    dd gdt_start                ; Address of GDT
+
+; Pad to 1024 bytes (2 sectors)
+times 1024-($-$$) db 0
