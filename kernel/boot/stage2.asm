@@ -22,7 +22,6 @@ DATA_SEG equ 0x10       ; Data segment selector (second segment after null)
 
 ; Memory detection variables
 memory_map_entries dw 0 ; Number of memory map entries found
-total_memory dd 0       ; Total usable memory in bytes
 
 ; Memory map buffer (24 bytes per entry, max 10 entries = 240 bytes)
 memory_map_buffer times 240 db 0
@@ -63,22 +62,9 @@ start:
     call print_string
     call print_serial
 
-    ; Get current cursor position
-    mov ah, 0x03
-    xor bh, bh
-    int 0x10
-    push dx          ; Save cursor position for later
-
-    ; Add some newlines to create space
-    mov cx, 5        ; Add 5 blank lines
-    mov ah, 0x0E
-.newlines:
-    mov al, 13       ; Carriage return
-    int 0x10
-    mov al, 10       ; Line feed
-    int 0x10
-    loop .newlines
-
+    ; Store memory map count in EDI register before switching to protected mode
+    movzx edi, word [memory_map_entries]  ; Load count into EDI (32-bit)
+    
     ; Switch to protected mode
     cli                     ; Disable interrupts
     mov eax, cr0
@@ -208,6 +194,60 @@ print_serial:
     pop ax
     ret
 
+; Print hex value to serial port
+; AX = value to print
+print_hex_serial:
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov cx, 4               ; Print 4 hex digits
+    mov bx, ax              ; Save value in BX
+    
+.hex_loop:
+    rol bx, 4               ; Rotate left 4 bits to get next digit
+    mov al, bl              ; Get low 4 bits
+    and al, 0x0F            ; Mask to get only 4 bits
+    
+    ; Convert to ASCII
+    cmp al, 9
+    jle .digit
+    add al, 'A' - 10        ; Convert A-F
+    jmp .print_digit
+.digit:
+    add al, '0'             ; Convert 0-9
+    
+.print_digit:
+    ; Wait for transmitter to be empty
+.wait_hex:
+    push ax
+    mov dx, 0x3F8 + 5       ; COM1 + Line Status Register
+    in al, dx
+    test al, 0x20           ; Test if transmitter is empty
+    pop ax
+    jz .wait_hex
+    
+    ; Send character
+    mov dx, 0x3F8           ; COM1 base port
+    out dx, al
+    
+    loop .hex_loop
+    
+    ; Send newline
+    mov al, 13              ; Carriage return
+    mov dx, 0x3F8
+    out dx, al
+    mov al, 10              ; Line feed
+    mov dx, 0x3F8
+    out dx, al
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
 ;-----------------------------------------------------------------------------
 ; Kernel Loading Function
 ;-----------------------------------------------------------------------------
@@ -236,11 +276,11 @@ load_kernel:
     mov es, ax
     xor bx, bx              ; ES:BX = 0x0400:0x0000 = 0x4000 linear
     
-    ; Read kernel from sector 9 (BIOS sectors start from 1, disk sector 8 = BIOS sector 9)
+    ; Read kernel from sector 6 (BIOS sectors start from 1, disk sector 5 = BIOS sector 6)
     mov ah, 0x02            ; BIOS read sectors function
     mov al, 16              ; Number of sectors to read (8KB for C++ kernel)
     mov ch, 0               ; Cylinder 0
-    mov cl, 9               ; Starting sector (BIOS sector 9 = disk sector 8)
+    mov cl, 6               ; Starting sector (BIOS sector 6 = disk sector 5)
     mov dh, 0               ; Head 0
     mov dl, 0x80            ; Use hard-coded drive number (first hard disk)
     int 0x13                ; Call BIOS disk service
@@ -299,6 +339,10 @@ detect_memory_e820:
     cmp eax, 0x534D4150     ; Check 'SMAP' signature
     jne .done               ; If not, we're done
     
+    ; Check if we got valid data (ECX should be >= 20)
+    cmp ecx, 20
+    jb .skip_entry          ; Skip if less than 20 bytes returned
+    
     ; Increment entry counter
     inc word [memory_map_entries]
     
@@ -306,16 +350,29 @@ detect_memory_e820:
     add di, 24              ; Each entry is 24 bytes
     
     ; Check if we've reached max entries
-    cmp word [memory_map_entries], 10
-    jae .done               ; If we have 10 entries, we're done
+    cmp word [memory_map_entries], 20
+    jae .done               ; If we have 20 entries, we're done
     
-    ; Check if this was the last entry
+.skip_entry:
+    ; Check if this was the last entry (EBX = 0 means done)
     test ebx, ebx
     jz .done                ; If EBX is 0, we're done
     
+    ; Reset ECX for next iteration
+    mov ecx, 24             ; Request 24 bytes per entry
     jmp .loop               ; Otherwise, get next entry
     
 .done:
+    ; Debug: Print final count
+    push ax
+    push si
+    mov si, debug_final_msg
+    call print_serial
+    mov ax, [memory_map_entries]
+    call print_hex_serial
+    pop si
+    pop ax
+    
     pop di
     pop es
     pop dx
@@ -341,6 +398,11 @@ protected_mode:
     ; Set up stack
     mov esp, 0x90000       ; Set stack pointer to 0x90000
     
+    ; Pass memory map to kernel
+    ; EBX = memory map buffer address
+    ; EDI = number of entries (from EDI which was loaded before mode switch)
+    mov ebx, memory_map_buffer  ; Use the symbol directly
+    
     ; Jump to kernel
     jmp 0x4000             ; Jump to kernel at 0x4000
 
@@ -357,6 +419,7 @@ msg_gdt:            db 'Stage2: GDT loaded', 0
 msg_disk_start:     db 'Stage2: Loading kernel from disk...', 0
 msg_disk_success:   db 'Stage2: Kernel loaded successfully', 0
 msg_disk_error:     db 'Stage2: Error loading kernel', 0
+debug_final_msg:    db 'Final memory entries: ', 0
 
 ; GDT
 gdt_start:
@@ -386,5 +449,5 @@ gdt_descriptor:
     dw gdt_end - gdt_start - 1  ; Size of GDT
     dd gdt_start                ; Address of GDT
 
-; Pad to 1024 bytes (2 sectors)
-times 1024-($-$$) db 0
+; Pad to 2048 bytes (4 sectors)
+times 2048-($-$$) db 0
