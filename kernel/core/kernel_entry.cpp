@@ -156,7 +156,7 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
             }
         }
         
-        // Display total usable memory on line 15 (well separated from entries)
+        // Display total usable memory on line 12 (well separated from entries)
         u64 total_usable = 0;
         for (u32 i = 0; i < memory_map_count; i++) {
             if (entries[i].type == 1) { // Usable RAM
@@ -164,19 +164,19 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
             }
         }
         
-        volatile unsigned short* line15 = vga + 1200; // Line 15
+        volatile unsigned short* line12 = vga + 960; // Line 12
         const char* total_text = "Total Usable Memory: ";
         int bottom_offset = 0;
         for (int i = 0; total_text[i] != '\0'; i++) {
-            line15[bottom_offset++] = 0x1A00 | total_text[i]; // Green on blue
+            line12[bottom_offset++] = 0x1A00 | total_text[i]; // Green on blue
         }
         
         // Display total in MB
         u32 total_mb = (u32)(total_usable / (1024 * 1024));
-        display_decimal(line15, total_mb, bottom_offset);
-        line15[bottom_offset++] = 0x1A00 | ' ';
-        line15[bottom_offset++] = 0x1A00 | 'M';
-        line15[bottom_offset++] = 0x1A00 | 'B';
+        display_decimal(line12, total_mb, bottom_offset);
+        line12[bottom_offset++] = 0x1A00 | ' ';
+        line12[bottom_offset++] = 0x1A00 | 'M';
+        line12[bottom_offset++] = 0x1A00 | 'B';
         
         // If there are more entries than displayed, show a note on line 16
         if (memory_map_count > display_count) {
@@ -196,6 +196,13 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
     
     // Set cursor position to line 18 (where kernel main messages will start)
     set_cursor_position(23, 10);
+    
+    // Store memory map info in global variables for MemoryManager to access later
+    // This avoids calling MemoryManager functions in kernel_entry which causes size issues
+    extern u32 g_memory_map_addr;
+    extern u32 g_memory_map_count;
+    g_memory_map_addr = memory_map_addr;
+    g_memory_map_count = memory_map_count;
     
     // Call the main kernel function with VGA buffer
     kira::kernel::main(vga);

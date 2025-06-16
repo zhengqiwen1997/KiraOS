@@ -48,6 +48,7 @@ set(KERNEL_LINK_FLAGS
 add_library(kernel_core STATIC
     kernel/core/kernel_entry.cpp
     kernel/core/kernel.cpp
+    kernel/core/memory_manager.cpp
 )
 
 # Set kernel properties

@@ -62,9 +62,6 @@ start:
     call print_string
     call print_serial
 
-    ; Store memory map count in EDI register before switching to protected mode
-    movzx edi, word [memory_map_entries]  ; Load count into EDI (32-bit)
-    
     ; Switch to protected mode
     cli                     ; Disable interrupts
     mov eax, cr0
@@ -402,6 +399,12 @@ protected_mode:
     ; EBX = memory map buffer address
     ; EDI = number of entries (from EDI which was loaded before mode switch)
     mov ebx, memory_map_buffer  ; Use the symbol directly
+    movzx edi, word [memory_map_entries]  ; Load entry count into EDI
+    
+    ; Debug: Send a character to serial before jumping
+    mov al, 'J'             ; Send 'J' for Jump
+    mov dx, 0x3F8           ; COM1 port
+    out dx, al
     
     ; Jump to kernel
     jmp 0x4000             ; Jump to kernel at 0x4000
