@@ -82,7 +82,7 @@ $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(CPP_KERNEL_BIN)
 	@$(DD) if=$(STAGE2_BIN) of=$@ seek=1 conv=notrunc 2>/dev/null
 	@echo "  ✓ Stage2 loaded at sectors 1-4"
 	@$(DD) if=$(CPP_KERNEL_BIN) of=$@ seek=5 conv=notrunc 2>/dev/null
-	@echo "  ✓ C++ kernel loaded at disk sector 5, will be loaded to 0x4000"
+	@echo "  ✓ C++ kernel loaded at disk sector 5, will be moved to 0x100000 (1MB)"
 	@echo "  ✓ Disk image created: $@"
 
 #=============================================================================

@@ -1,40 +1,25 @@
 #include "system/types.hpp"
 #include "system/memory.hpp"
+#include "system/memory_manager.hpp"
+#include "display/vga_display.hpp"
 
 using namespace kira::system;
+using namespace kira::display;
 
 // Forward declaration of main kernel function
 namespace kira::kernel {
     void main(volatile unsigned short* vga_buffer) noexcept;
 }
 
-// Helper function to display hex number
-void display_hex(volatile unsigned short* pos, u32 value, int& offset) {
-    for (int i = 7; i >= 0; i--) {
-        u32 digit = (value >> (i * 4)) & 0xF;
-        char hex_char = (digit < 10) ? ('0' + digit) : ('A' + digit - 10);
-        pos[offset++] = 0x1F00 | hex_char;
-    }
-}
-
-// Helper function to display decimal number
-void display_decimal(volatile unsigned short* pos, u32 value, int& offset) {
-    if (value == 0) {
-        pos[offset++] = 0x1F00 | '0';
-        return;
-    }
-    
-    // Convert to string (simple method for small numbers)
-    char buffer[12];
-    int i = 0;
-    while (value > 0) {
-        buffer[i++] = '0' + (value % 10);
-        value /= 10;
-    }
-    
-    // Display in reverse order
-    for (int j = i - 1; j >= 0; j--) {
-        pos[offset++] = 0x1F00 | buffer[j];
+// Helper function to get memory type string
+const char* get_memory_type_string(u32 type) {
+    switch (type) {
+        case 1: return "Usable RAM";
+        case 2: return "Reserved";
+        case 3: return "ACPI Reclaim";
+        case 4: return "ACPI NVS";
+        case 5: return "Bad Memory";
+        default: return "Unknown";
     }
 }
 
@@ -65,20 +50,14 @@ void set_cursor_position(u8 row, u8 col) {
 
 // This is called from the custom bootloader (stage2.asm)
 extern "C" __attribute__((section(".text._start"))) void _start() {
-    // Initialize VGA buffer
-    volatile unsigned short* vga = (volatile unsigned short*)0xB8000;
+    // Initialize VGA display system
+    VGADisplay vga;
     
-    // Clear screen with dark blue background
-    for (int i = 0; i < 2000; i++) {
-        vga[i] = 0x1F20; // White on blue background, space character
-    }
+    // Clear screen with blue background
+    vga.clear_screen(VGA_WHITE_ON_BLUE);
     
-    // Display kernel entry message at top (Line 0)
-    const char* msg = "!!!KiraOS Kernel - Memory Map Analysis!!!";
-    volatile unsigned short* pos = vga;
-    for (int i = 0; msg[i] != '\0'; i++) {
-        pos[i] = 0x1F00 | msg[i]; // White on blue
-    }
+    // Display kernel entry message at top
+    vga.print_string(0, 0, "!!!KiraOS Kernel - Memory Map Analysis!!!", VGA_WHITE_ON_BLUE);
     
     // Get memory map from bootloader (passed in registers)
     u32 memory_map_addr = 0;
@@ -93,70 +72,35 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
     );
     
     // Display memory map summary on line 1
-    const char* summary = "Found ";
-    volatile unsigned short* line1 = vga + 80;
-    int pos_idx = 0;
-    
-    for (int i = 0; summary[i] != '\0'; i++) {
-        line1[pos_idx++] = 0x1F00 | summary[i];
-    }
-    
-    display_decimal(line1, memory_map_count, pos_idx);
-    
-    const char* regions_text = " memory regions at 0x";
-    for (int i = 0; regions_text[i] != '\0'; i++) {
-        line1[pos_idx++] = 0x1F00 | regions_text[i];
-    }
-    
-    display_hex(line1, memory_map_addr, pos_idx);
+    vga.print_string(1, 0, "Found ");
+    vga.print_decimal(1, 6, memory_map_count);
+    vga.print_string(1, 8, " memory regions at 0x");
+    vga.print_hex(1, 30, memory_map_addr);
     
     // Parse and display each memory region
     if (memory_map_count > 0 && memory_map_addr != 0) {
         MemoryMapEntry* entries = (MemoryMapEntry*)memory_map_addr;
         
-        // Display header on line 3 (skip line 2 for spacing)
-        volatile unsigned short* line3 = vga + 240; // Line 3
-        const char* header = "Base Address    Size (bytes)    Type";
-        for (int i = 0; header[i] != '\0'; i++) {
-            line3[i] = 0x1E00 | header[i]; // Yellow on blue
-        }
+        // Display header on line 3
+        vga.print_string(3, 0, "Base Address    Size (bytes)    Type", VGA_YELLOW_ON_BLUE);
         
         // Display each entry starting from line 4 (limit to 8 entries to fit on screen)
         u32 display_count = (memory_map_count > 8) ? 8 : memory_map_count;
         for (u32 i = 0; i < display_count; i++) {
-            volatile unsigned short* line = vga + 320 + (i * 80); // Starting from line 4
-            int offset = 0;
+            u32 line = 4 + i;
             
             // Display base address
-            line[offset++] = 0x1F00 | '0';
-            line[offset++] = 0x1F00 | 'x';
-            display_hex(line, (u32)entries[i].base_address, offset);
-            
-            // Add spacing to column 16
-            while (offset < 16) line[offset++] = 0x1F00 | ' ';
+            vga.print_hex(line, 0, (u32)entries[i].base_address);
             
             // Display size
-            display_decimal(line, (u32)entries[i].length, offset);
-            
-            // Add spacing to column 32
-            while (offset < 32) line[offset++] = 0x1F00 | ' ';
+            vga.print_decimal(line, 16, (u32)entries[i].length);
             
             // Display type
-            const char* type_str = "Unknown";
-            switch (entries[i].type) {
-                case 1: type_str = "Usable RAM"; break;
-                case 2: type_str = "Reserved"; break;
-                case 3: type_str = "ACPI Reclaim"; break;
-                case 4: type_str = "ACPI NVS"; break;
-                case 5: type_str = "Bad Memory"; break;
-            }
-            
-            for (int j = 0; type_str[j] != '\0'; j++) {
-                line[offset++] = 0x1F00 | type_str[j];
-            }
+            const char* type_str = get_memory_type_string(entries[i].type);
+            vga.print_string(line, 32, type_str);
         }
         
-        // Display total usable memory on line 12 (well separated from entries)
+        // Display total usable memory on line 12
         u64 total_usable = 0;
         for (u32 i = 0; i < memory_map_count; i++) {
             if (entries[i].type == 1) { // Usable RAM
@@ -164,50 +108,32 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
             }
         }
         
-        volatile unsigned short* line12 = vga + 960; // Line 12
-        const char* total_text = "Total Usable Memory: ";
-        int bottom_offset = 0;
-        for (int i = 0; total_text[i] != '\0'; i++) {
-            line12[bottom_offset++] = 0x1A00 | total_text[i]; // Green on blue
-        }
-        
-        // Display total in MB
+        vga.print_string(12, 0, "Total Usable Memory: ", VGA_GREEN_ON_BLUE);
         u32 total_mb = (u32)(total_usable / (1024 * 1024));
-        display_decimal(line12, total_mb, bottom_offset);
-        line12[bottom_offset++] = 0x1A00 | ' ';
-        line12[bottom_offset++] = 0x1A00 | 'M';
-        line12[bottom_offset++] = 0x1A00 | 'B';
+        vga.print_decimal(12, 21, total_mb, VGA_GREEN_ON_BLUE);
+        vga.print_string(12, 25, " MB", VGA_GREEN_ON_BLUE);
         
-        // If there are more entries than displayed, show a note on line 16
+        // If there are more entries than displayed, show a note
         if (memory_map_count > display_count) {
-            volatile unsigned short* line16 = vga + 1280; // Line 16
-            const char* more_text = "(... and ";
-            int more_offset = 0;
-            for (int i = 0; more_text[i] != '\0'; i++) {
-                line16[more_offset++] = 0x1C00 | more_text[i]; // Red on blue
-            }
-            display_decimal(line16, memory_map_count - display_count, more_offset);
-            const char* more_entries = " more entries)";
-            for (int i = 0; more_entries[i] != '\0'; i++) {
-                line16[more_offset++] = 0x1C00 | more_entries[i];
-            }
+            vga.print_string(14, 0, "(... and ", VGA_RED_ON_BLUE);
+            vga.print_decimal(14, 9, memory_map_count - display_count, VGA_RED_ON_BLUE);
+            vga.print_string(14, 11, " more entries)", VGA_RED_ON_BLUE);
         }
     }
     
-    // Set cursor position to line 18 (where kernel main messages will start)
-    set_cursor_position(23, 10);
-    
     // Store memory map info in global variables for MemoryManager to access later
-    // This avoids calling MemoryManager functions in kernel_entry which causes size issues
     extern u32 g_memory_map_addr;
     extern u32 g_memory_map_count;
     g_memory_map_addr = memory_map_addr;
     g_memory_map_count = memory_map_count;
     
-    // Call the main kernel function with VGA buffer
-    kira::kernel::main(vga);
+    // Set cursor position to line 18 (where kernel main messages will start)
+    set_cursor_position(18, 0);
     
-    // If kernel main returns, halt
+    // Call the main kernel function with VGA buffer for compatibility
+    kira::kernel::main((volatile unsigned short*)VGA_BUFFER);
+    
+    // Should never reach here
     while (true) {
         asm volatile("hlt");
     }

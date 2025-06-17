@@ -7,8 +7,8 @@ ENTRY(_start)
    kernel image. */
 SECTIONS
 {
-	/* Begin putting sections at 16KB (0x4000) */
-	    . = 0x4000;
+	/* Begin putting sections at 1MB (0x100000) - standard kernel location */
+	    . = 0x100000;
 
 	/* First we'll put the .text section. */
 	.text ALIGN(4K) :

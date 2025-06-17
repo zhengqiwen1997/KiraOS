@@ -66,7 +66,7 @@ load_stage2:
     mov ah, 0x02            ; Read sectors function
     mov al, STAGE2_SECTORS  ; Number of sectors to read
     mov ch, 0               ; Cylinder 0
-    mov cl, 2               ; Start from sector 2
+    mov cl, 2               ; Start from sector 2 (BIOS sector 2 = disk sector 1)
     xor dh, dh              ; Head 0
     mov dl, [boot_drive]    ; Drive number
     int 0x13
