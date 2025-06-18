@@ -49,6 +49,9 @@ add_library(kernel_core STATIC
     kernel/core/kernel_entry.cpp
     kernel/core/kernel.cpp
     kernel/core/memory_manager.cpp
+    kernel/core/idt.cpp
+    kernel/core/exceptions.cpp
+    kernel/arch/exception_stubs.s
 )
 
 # Set kernel properties
