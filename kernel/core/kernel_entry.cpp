@@ -108,16 +108,16 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
             }
         }
         
-        vga.print_string(12, 0, "Total Usable Memory: ", VGA_GREEN_ON_BLUE);
+        vga.print_string(10, 0, "Total Usable Memory: ", VGA_GREEN_ON_BLUE);
         u32 total_mb = (u32)(total_usable / (1024 * 1024));
-        vga.print_decimal(12, 21, total_mb, VGA_GREEN_ON_BLUE);
-        vga.print_string(12, 25, " MB", VGA_GREEN_ON_BLUE);
+        vga.print_decimal(10, 21, total_mb, VGA_GREEN_ON_BLUE);
+        vga.print_string(10, 25, " MB", VGA_GREEN_ON_BLUE);
         
         // If there are more entries than displayed, show a note
         if (memory_map_count > display_count) {
-            vga.print_string(14, 0, "(... and ", VGA_RED_ON_BLUE);
-            vga.print_decimal(14, 9, memory_map_count - display_count, VGA_RED_ON_BLUE);
-            vga.print_string(14, 11, " more entries)", VGA_RED_ON_BLUE);
+            vga.print_string(12, 0, "(... and ", VGA_RED_ON_BLUE);
+            vga.print_decimal(12, 9, memory_map_count - display_count, VGA_RED_ON_BLUE);
+            vga.print_string(12, 11, " more entries)", VGA_RED_ON_BLUE);
         }
     }
     

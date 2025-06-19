@@ -45,14 +45,7 @@ kira::system::u32 g_memory_map_count = 0;
 
 namespace kira::system {
 
-// Simple memset implementation for kernel use
-static void* memset(void* dest, int value, u32 count) {
-    u8* ptr = (u8*)dest;
-    for (u32 i = 0; i < count; i++) {
-        ptr[i] = (u8)value;
-    }
-    return dest;
-}
+
 
 // Boundary checking functions
 static bool is_address_valid(u32 address) {
