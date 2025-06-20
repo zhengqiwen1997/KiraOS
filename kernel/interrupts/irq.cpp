@@ -1,9 +1,9 @@
-#include "system/irq.hpp"
-#include "system/pic.hpp"
-#include "system/idt.hpp"
-#include "system/utils.hpp"
-#include "system/io.hpp"
-#include "display/vga_display.hpp"
+#include "interrupts/irq.hpp"
+#include "interrupts/pic.hpp"
+#include "arch/x86/idt.hpp"
+#include "core/utils.hpp"
+#include "core/io.hpp"
+#include "display/vga.hpp"
 
 namespace kira::system::irq {
 

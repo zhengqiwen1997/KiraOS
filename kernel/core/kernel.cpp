@@ -1,12 +1,12 @@
-#include "system/types.hpp"
-#include "system/memory_manager.hpp"
-#include "display/vga_display.hpp"
-#include "system/idt.hpp"
-#include "system/exceptions.hpp"
-#include "system/utils.hpp"
-#include "system/pic.hpp"
-#include "system/irq.hpp"
-#include "system/io.hpp"
+#include "core/types.hpp"
+#include "memory/memory_manager.hpp"
+#include "display/vga.hpp"
+#include "arch/x86/idt.hpp"
+#include "interrupts/exceptions.hpp"
+#include "core/utils.hpp"
+#include "interrupts/pic.hpp"
+#include "interrupts/irq.hpp"
+#include "core/io.hpp"
 
 namespace kira::kernel {
 

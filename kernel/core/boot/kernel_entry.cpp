@@ -1,7 +1,7 @@
-#include "system/types.hpp"
-#include "system/memory.hpp"
-#include "system/memory_manager.hpp"
-#include "display/vga_display.hpp"
+#include "core/types.hpp"
+#include "memory/memory.hpp"
+#include "memory/memory_manager.hpp"
+#include "display/vga.hpp"
 
 using namespace kira::system;
 using namespace kira::display;

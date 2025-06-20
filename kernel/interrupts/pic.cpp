@@ -1,5 +1,5 @@
-#include "system/pic.hpp"
-#include "system/io.hpp"
+#include "interrupts/pic.hpp"
+#include "core/io.hpp"
 
 namespace kira::system {
 

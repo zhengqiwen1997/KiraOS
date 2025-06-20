@@ -1,7 +1,7 @@
 #pragma once
 
-#include "system/memory.hpp"
-#include "system/types.hpp"
+#include "core/types.hpp"
+#include "memory/memory.hpp"
 
 namespace kira::system {
 

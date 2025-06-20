@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../system/types.hpp"
+#include "core/types.hpp"
 
 namespace kira {
 namespace display {

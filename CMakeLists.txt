@@ -46,14 +46,14 @@ set(KERNEL_LINK_FLAGS
 
 # Create kernel library
 add_library(kernel_core STATIC
-    kernel/core/kernel_entry.cpp
+    kernel/core/boot/kernel_entry.cpp
     kernel/core/kernel.cpp
-    kernel/core/memory_manager.cpp
-    kernel/core/idt.cpp
-    kernel/core/exceptions.cpp
-    kernel/core/pic.cpp
-    kernel/core/irq.cpp
-    kernel/arch/exception_stubs.s
+    kernel/memory/memory_manager.cpp
+    kernel/arch/x86/idt.cpp
+    kernel/interrupts/exceptions.cpp
+    kernel/interrupts/pic.cpp
+    kernel/interrupts/irq.cpp
+    kernel/arch/x86/exception_stubs.s
 )
 
 # Set kernel properties
@@ -61,7 +61,7 @@ target_compile_options(kernel_core PRIVATE ${KERNEL_CXX_FLAGS})
 target_include_directories(kernel_core PRIVATE include)
 
 # Create kernel executable (ELF format first)
-add_executable(kernel.elf kernel/core/kernel_entry.cpp)
+add_executable(kernel.elf kernel/core/boot/kernel_entry.cpp)
 
 # Link the kernel library to the executable
 target_link_libraries(kernel.elf PRIVATE kernel_core)

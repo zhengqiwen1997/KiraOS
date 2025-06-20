@@ -1,5 +1,7 @@
-#include "system/memory_manager.hpp"
-#include "system/memory.hpp"
+#include "memory/memory.hpp"
+#include "memory/memory_manager.hpp"
+#include "display/vga.hpp"
+#include "core/utils.hpp"
 
 // Kernel memory layout constants
 #define KERNEL_STRUCTURES_BASE  0x00200000  // 2MB - Base for kernel data structures (explicit 32-bit)

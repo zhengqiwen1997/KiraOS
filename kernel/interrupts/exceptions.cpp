@@ -1,7 +1,7 @@
-#include "system/exceptions.hpp"
-#include "system/idt.hpp"
-#include "display/vga_display.hpp"
-#include "system/io.hpp"
+#include "interrupts/exceptions.hpp"
+#include "arch/x86/idt.hpp"
+#include "display/vga.hpp"
+#include "core/io.hpp"
 
 namespace kira::system {
 
