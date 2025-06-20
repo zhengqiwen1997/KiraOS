@@ -117,6 +117,181 @@ exception_stub_14:
     pushl $14
     jmp exception_common
 
+# Hardware interrupt stubs (IRQ 0-15 -> INT 32-47)
+
+# External C-style hardware interrupt handler wrapper
+.extern irq_default_handler_wrapper
+
+# Timer interrupt stub (IRQ 0 -> INT 32)
+.global irq_stub_0
+irq_stub_0:
+    cli
+    pushl $0                # Push dummy error code
+    pushl $32               # Push interrupt number
+    jmp irq_common
+
+# Keyboard interrupt stub (IRQ 1 -> INT 33)
+.global irq_stub_1
+irq_stub_1:
+    cli
+    pushl $0
+    pushl $33
+    jmp irq_common
+
+# IRQ 2-15 stubs (cascade, COM, LPT, etc.)
+.global irq_stub_2
+irq_stub_2:
+    cli
+    pushl $0
+    pushl $34
+    jmp irq_common
+
+.global irq_stub_3
+irq_stub_3:
+    cli
+    pushl $0
+    pushl $35
+    jmp irq_common
+
+.global irq_stub_4
+irq_stub_4:
+    cli
+    pushl $0
+    pushl $36
+    jmp irq_common
+
+.global irq_stub_5
+irq_stub_5:
+    cli
+    pushl $0
+    pushl $37
+    jmp irq_common
+
+.global irq_stub_6
+irq_stub_6:
+    cli
+    pushl $0
+    pushl $38
+    jmp irq_common
+
+.global irq_stub_7
+irq_stub_7:
+    cli
+    pushl $0
+    pushl $39
+    jmp irq_common
+
+.global irq_stub_8
+irq_stub_8:
+    cli
+    pushl $0
+    pushl $40
+    jmp irq_common
+
+.global irq_stub_9
+irq_stub_9:
+    cli
+    pushl $0
+    pushl $41
+    jmp irq_common
+
+.global irq_stub_10
+irq_stub_10:
+    cli
+    pushl $0
+    pushl $42
+    jmp irq_common
+
+.global irq_stub_11
+irq_stub_11:
+    cli
+    pushl $0
+    pushl $43
+    jmp irq_common
+
+.global irq_stub_12
+irq_stub_12:
+    cli
+    pushl $0
+    pushl $44
+    jmp irq_common
+
+.global irq_stub_13
+irq_stub_13:
+    cli
+    pushl $0
+    pushl $45
+    jmp irq_common
+
+.global irq_stub_14
+irq_stub_14:
+    cli
+    pushl $0
+    pushl $46
+    jmp irq_common
+
+.global irq_stub_15
+irq_stub_15:
+    cli
+    pushl $0
+    pushl $47
+    jmp irq_common
+
+# Common hardware interrupt handler
+irq_common:
+    # DEBUG: Write 'A' to VGA memory to show assembly handler was called
+    # Position (14, 10) = 14*80+10 = 1130 * 2 = 2260 bytes from VGA start
+    # VGA memory starts at 0xB8000
+    pushl %eax
+    pushl %ebx
+    movl $0xB8000, %ebx
+    addl $2260, %ebx        # Position (14, 10)
+    movl $0x4C41, %eax      # Red background, white text, 'A' character
+    movw %ax, (%ebx)
+    popl %ebx
+    popl %eax
+    
+    # Save all general purpose registers
+    pusha
+    
+    # DEBUG: Write 'B' before calling C function
+    pushl %eax
+    pushl %ebx
+    movl $0xB8000, %ebx
+    addl $2264, %ebx        # Position (14, 12)
+    movl $0x4C42, %eax      # Red background, white text, 'B' character
+    movw %ax, (%ebx)
+    popl %ebx
+    popl %eax
+    
+    # Push pointer to IRQ frame (current ESP)
+    pushl %esp
+    
+    # Call C-style IRQ handler wrapper
+    call irq_default_handler_wrapper
+    
+    # DEBUG: Write 'C' after calling C function
+    pushl %eax
+    pushl %ebx
+    movl $0xB8000, %ebx
+    addl $2268, %ebx        # Position (14, 14)
+    movl $0x4C43, %eax      # Red background, white text, 'C' character
+    movw %ax, (%ebx)
+    popl %ebx
+    popl %eax
+    
+    # Clean up stack (remove frame pointer)
+    addl $4, %esp
+    
+    # Restore registers
+    popa
+    
+    # Remove interrupt number and error code from stack
+    addl $8, %esp
+    
+    # Return from interrupt
+    iret
+
 # Common exception handler
 exception_common:
     # Save all general purpose registers

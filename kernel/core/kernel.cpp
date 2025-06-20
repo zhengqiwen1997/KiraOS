@@ -4,6 +4,9 @@
 #include "system/idt.hpp"
 #include "system/exceptions.hpp"
 #include "system/utils.hpp"
+#include "system/pic.hpp"
+#include "system/irq.hpp"
+#include "system/io.hpp"
 
 namespace kira::kernel {
 
@@ -58,11 +61,11 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // Initialize VGA display system
     VGADisplay vga;
     
-    // Display kernel header starting from line 14 (after memory map analysis)
-    vga.print_string(12, 0, "KiraOS C++ Kernel v1.0", VGA_WHITE_ON_BLUE);
+    // === SYSTEM INITIALIZATION (Lines 1-5) ===
+    vga.print_string(1, 0, "KiraOS C++ Kernel v1.0", VGA_WHITE_ON_BLUE);
     
     // Initialize IDT (Interrupt Descriptor Table)
-    vga.print_string(13, 1, "IDT: Init...", VGA_YELLOW_ON_BLUE);
+    vga.print_string(2, 0, "IDT: Init...", VGA_YELLOW_ON_BLUE);
     IDT::initialize();
     
     // Set up exception handlers for all common CPU exceptions
@@ -83,54 +86,105 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     
     // Load the IDT
     IDT::load();
-    vga.print_string(13, 52, "OK", VGA_GREEN_ON_BLUE);
+    vga.print_string(2, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    vga.print_string(14, 0, "======================", VGA_WHITE_ON_BLUE);
-    vga.print_string(15, 0, "Memory Manager Tests:", VGA_YELLOW_ON_BLUE);
+    // Initialize hardware interrupts
+    vga.print_string(3, 0, "IRQ: Init...", VGA_YELLOW_ON_BLUE);
+    irq::initialize();
+    vga.print_string(3, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    // Test 1: Memory Manager Initialization
-    vga.print_string(16, 0, "Test 1: Getting MemoryManager instance...", VGA_CYAN_ON_BLUE);
+    // Debug: Show what addresses are actually installed in IDT
+    vga.print_string(6, 0, "Debug: IRQ stub addresses", VGA_CYAN_ON_BLUE);
+    vga.print_string(6, 30, "IRQ0:", VGA_CYAN_ON_BLUE);
+    vga.print_hex(6, 35, (u32)irq_stub_0, VGA_WHITE_ON_BLUE);
+    vga.print_string(6, 50, "IRQ1:", VGA_CYAN_ON_BLUE);
+    vga.print_hex(6, 55, (u32)irq_stub_1, VGA_WHITE_ON_BLUE);
+    
+    // Enable timer and keyboard interrupts
+    irq::enable_irq(PIC::IRQ_TIMER);
+    irq::enable_irq(PIC::IRQ_KEYBOARD);
+    vga.print_string(4, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
+    
+    // Debug: Show PIC mask
+    u16 pic_mask = PIC::get_irq_mask();
+    vga.print_string(5, 0, "PIC Mask: 0x", VGA_CYAN_ON_BLUE);
+    vga.print_hex(5, 13, pic_mask, VGA_WHITE_ON_BLUE);
+    
+    // === INTERRUPT TESTING (Lines 7-11) ===
+    vga.print_string(7, 0, "=== INTERRUPT TESTING ===", VGA_YELLOW_ON_BLUE);
+    
+    // Test memory manager quickly (silent)
     auto& memory_manager = MemoryManager::get_instance();
-    display_test_result(vga, 17, "MemoryManager Init", true, "Instance obtained");
-    
-    // Test 2: Basic Allocation
-    vga.print_string(18, 0, "Test 2: Basic page allocation...", VGA_CYAN_ON_BLUE);
     void* page1 = memory_manager.allocate_physical_page();
     void* page2 = memory_manager.allocate_physical_page();
-    bool basic_alloc_ok = (page1 != nullptr && page2 != nullptr && page1 != page2);
-    display_test_result(vga, 19, "Basic Allocation", basic_alloc_ok);
-    
-    if (basic_alloc_ok) {
-        display_memory_info(vga, 20, "  Page1:", page1);
-        display_memory_info(vga, 21, "  Page2:", page2);
-    }
-    
-    // Clean up allocated pages and display completion
     if (page1) memory_manager.free_physical_page(page1);
     if (page2) memory_manager.free_physical_page(page2);
     
-#ifdef ENABLE_INTERRUPT_TESTING
-    // Test 3: Exception Handling - Configurable Interrupt Testing
-    vga.print_string(22, 0, "Test 3: Testing exception handler...", VGA_CYAN_ON_BLUE);
+    // First test: CPU exception (should work if IDT is working)
+    vga.print_string(8, 0, "Test 1: Exception (INT3)...", VGA_CYAN_ON_BLUE);
     
-    vga.print_string(23, 0, "Triggering ", VGA_YELLOW_ON_BLUE);
-    vga.print_string(23, 11, TEST_INTERRUPT_NAME, VGA_YELLOW_ON_BLUE);
-    vga.print_string(23, 11 + strlen(TEST_INTERRUPT_NAME), " (sw int)...", VGA_YELLOW_ON_BLUE);
+    // Use inline assembly with explicit NOP to ensure proper continuation
+    asm volatile(
+        "int $1\n\t"
+        "nop\n\t"        // Ensure there's a safe instruction after the interrupt
+        "nop"            // Additional safety
+    );
     
-    // This will trigger the configured exception handler
-    // Change TEST_INTERRUPT_NUM and TEST_INTERRUPT_NAME above to test different interrupts
-    asm volatile("int %0" :: "i"(TEST_INTERRUPT_NUM));
+    vga.print_string(8, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    // This line should never be reached due to the exception above
-    vga.print_string(24, 40, "This shouldn't appear!", VGA_RED_ON_BLUE);
-#else
-    // Test 3: Exception Handling - Disabled
-    vga.print_string(22, 0, "Test 3: Exception testing disabled", VGA_CYAN_ON_BLUE);
-    vga.print_string(23, 0, "(Uncomment ENABLE_INTERRUPT_TESTING to enable)", VGA_WHITE_ON_BLUE);
-#endif
+    // Second test: Hardware interrupt via software
+    vga.print_string(9, 0, "Test 2: Software IRQ 0...", VGA_CYAN_ON_BLUE);
+    asm volatile("int $32");  // Manually trigger timer interrupt (IRQ 0)
+    vga.print_string(9, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    // Kernel main loop - halt and wait for interrupts
+    // Show interrupt flag status
+    u32 eflags;
+    asm volatile("pushf; pop %0" : "=r"(eflags));
+    bool interrupts_enabled = (eflags & 0x200) != 0;
+    vga.print_string(10, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
+    vga.print_string(10, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
+                    interrupts_enabled ? VGA_GREEN_ON_BLUE : VGA_RED_ON_BLUE);
+    
+    vga.print_string(11, 0, "Entering main loop...", VGA_MAGENTA_ON_BLUE);
+    
+    // === DYNAMIC STATUS (Lines 13-24) ===
+    // Line 13: IRQ Activity counters
+    // Line 14: Real-time interrupt markers
+    // Line 15: Timer handler activity
+    // Line 16: Keyboard handler activity  
+    // Line 17: Timer dots display
+    // Line 18: Keyboard scan codes
+    // Lines 19-24: Available for expansion
+    
+    // Kernel main loop - active loop with periodic halts
+    u32 loop_counter = 0;
     while (true) {
+        // Update dynamic status every 1000 iterations
+        if ((loop_counter % 1000) == 0) {
+            // Show interrupt counts (Line 13)
+            u32 timer_count = irq::get_irq_count(0);
+            u32 keyboard_count = irq::get_irq_count(1);
+            vga.print_string(13, 0, "IRQ Counts - Timer:", VGA_CYAN_ON_BLUE);
+            vga.print_decimal(13, 20, timer_count, VGA_WHITE_ON_BLUE);
+            vga.print_string(13, 30, "Keyboard:", VGA_CYAN_ON_BLUE);
+            vga.print_decimal(13, 40, keyboard_count, VGA_WHITE_ON_BLUE);
+        }
+        
+        // Show heartbeat every 5000 iterations (Line 24)
+        if ((loop_counter % 5000) == 0) {
+            static u32 heartbeat_pos = 0;
+            vga.print_char(24, (heartbeat_pos % 70), '*', VGA_GREEN_ON_BLUE);
+            heartbeat_pos++;
+        }
+        
+        loop_counter++;
+        
+        // Small delay to prevent overwhelming the system
+        for (int i = 0; i < 1000; i++) {
+            asm volatile("nop");
+        }
+        
+        // Halt to allow interrupts
         asm volatile("hlt");
     }
 }

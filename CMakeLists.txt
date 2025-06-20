@@ -51,6 +51,8 @@ add_library(kernel_core STATIC
     kernel/core/memory_manager.cpp
     kernel/core/idt.cpp
     kernel/core/exceptions.cpp
+    kernel/core/pic.cpp
+    kernel/core/irq.cpp
     kernel/arch/exception_stubs.s
 )
 

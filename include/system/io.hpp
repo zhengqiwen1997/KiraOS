@@ -82,4 +82,10 @@ inline void memory_barrier() {
     asm volatile("" : : : "memory");
 }
 
+// I/O wait function - provides a small delay for slow I/O devices
+inline void io_wait() {
+    // Use port 0x80 (unused diagnostic port) for a small delay
+    outb(0x80, 0);
+}
+
 } // namespace kira::system 

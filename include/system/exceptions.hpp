@@ -2,6 +2,11 @@
 
 #include "types.hpp"
 
+// Forward declarations
+namespace kira::display {
+    class VGADisplay;
+}
+
 namespace kira::system {
 
 // Exception frame structure (pushed by CPU and our handler)
@@ -69,6 +74,20 @@ public:
      * @return Human-readable exception name
      */
     static const char* get_exception_name(u32 exception_number);
+
+private:
+    /**
+     * @brief Handle exception based on its type and severity
+     * @param frame Exception frame with register state
+     * @param vga VGA display reference for output
+     */
+    static void handle_exception_by_type(ExceptionFrame* frame, kira::display::VGADisplay& vga);
+    
+    /**
+     * @brief Halt the system with a reason
+     * @param reason Reason for halting the system
+     */
+    static void halt_system(const char* reason);
 };
 
 // External assembly stubs (will be implemented in assembly)

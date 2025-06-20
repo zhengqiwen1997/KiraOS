@@ -40,11 +40,20 @@ const u8 INT_BOUND_RANGE = 5;
 const u8 INT_INVALID_OPCODE = 6;
 const u8 INT_DEVICE_NOT_AVAILABLE = 7;
 const u8 INT_DOUBLE_FAULT = 8;
+const u8 INT_COPROCESSOR_SEGMENT_OVERRUN = 9;  // Legacy, not used on modern CPUs
 const u8 INT_INVALID_TSS = 10;
 const u8 INT_SEGMENT_NOT_PRESENT = 11;
 const u8 INT_STACK_FAULT = 12;
 const u8 INT_GENERAL_PROTECTION = 13;
 const u8 INT_PAGE_FAULT = 14;
+// 15 is reserved
+const u8 INT_X87_FPU_ERROR = 16;
+const u8 INT_ALIGNMENT_CHECK = 17;
+const u8 INT_MACHINE_CHECK = 18;
+const u8 INT_SIMD_FPU_ERROR = 19;
+const u8 INT_VIRTUALIZATION_ERROR = 20;
+const u8 INT_CONTROL_PROTECTION_ERROR = 21;
+// 22-31 are reserved
 
 // Hardware interrupts (after PIC remapping)
 const u8 IRQ0_TIMER = 32;
