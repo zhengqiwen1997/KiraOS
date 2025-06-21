@@ -4,6 +4,7 @@
 #include "core/utils.hpp"
 #include "core/io.hpp"
 #include "display/vga.hpp"
+#include "drivers/keyboard.hpp"
 
 namespace kira::system::irq {
 
@@ -235,25 +236,92 @@ void keyboard_handler(IRQFrame* frame) {
     vga_mem[line16_offset + 10] = 0x0F30 + ((kb_count / 10) % 10);
     vga_mem[line16_offset + 11] = 0x0F30 + (kb_count % 10);
     
-    // Line 18: Show scan codes
+    // Update keyboard state using the existing Keyboard class
+    Keyboard::handle_key_press(scan_code);
+    
+    // Check if this is a key press or release
+    bool is_key_press = Keyboard::is_key_press(scan_code);
+    
+    // Line 18: Show scan codes (hex format)
     int line18_offset = 18 * 80;
-    static u32 key_position = 0;
-    u32 col = (key_position % 25) * 3;  // 25 scan codes per line
+    static u32 scan_position = 0;
+    u32 scan_col = (scan_position % 25) * 3;  // 25 scan codes per line
     
     // Convert scan code to hex and display
     char hex_chars[] = "0123456789ABCDEF";
-    vga_mem[line18_offset + col] = 0x0E00 + hex_chars[(scan_code >> 4) & 0xF];  // High nibble in yellow
-    vga_mem[line18_offset + col + 1] = 0x0E00 + hex_chars[scan_code & 0xF];     // Low nibble in yellow
-    vga_mem[line18_offset + col + 2] = 0x0E20;  // Space in yellow
+    vga_mem[line18_offset + scan_col] = 0x0E00 + hex_chars[(scan_code >> 4) & 0xF];  // High nibble in yellow
+    vga_mem[line18_offset + scan_col + 1] = 0x0E00 + hex_chars[scan_code & 0xF];     // Low nibble in yellow
+    vga_mem[line18_offset + scan_col + 2] = 0x0E20;  // Space in yellow
     
-    key_position++;
+    scan_position++;
     
-    // Clear line when it gets full
-    if ((key_position % 25) == 0) {
+    // Clear scan code line when it gets full
+    if ((scan_position % 25) == 0) {
         for (int i = 0; i < 75; i++) {
             vga_mem[line18_offset + i] = 0x0720;  // Space in white
         }
-        key_position = 0;
+        scan_position = 0;
+    }
+    
+    // Line 19: Show actual characters (only for key presses, not releases)
+    if (is_key_press) {
+        int line19_offset = 19 * 80;
+        static u32 char_position = 0;
+        
+        // Get ASCII character using the existing Keyboard class
+        char ascii_char = Keyboard::scan_code_to_ascii(scan_code);
+        
+        // Display the character if it's printable
+        if (ascii_char >= 32 && ascii_char <= 126) {  // Printable ASCII range
+            u32 char_col = char_position % 70;  // 70 characters per line
+            vga_mem[line19_offset + char_col] = 0x0A00 + ascii_char;  // Bright green character
+            char_position++;
+            
+            // Clear character line when it gets full
+            if ((char_position % 70) == 0) {
+                for (int i = 0; i < 70; i++) {
+                    vga_mem[line19_offset + i] = 0x0720;  // Space in white
+                }
+                char_position = 0;
+            }
+        }
+        // Handle special characters
+        else if (ascii_char == '\b' && char_position > 0) {  // Backspace
+            char_position--;
+            u32 char_col = char_position % 70;
+            vga_mem[line19_offset + char_col] = 0x0720;  // Clear with space
+        }
+        else if (ascii_char == '\n') {  // Enter
+            // Move to next line (simulate newline)
+            char_position = ((char_position / 70) + 1) * 70;
+            if (char_position >= 140) {  // If we exceed 2 lines, wrap to start
+                char_position = 0;
+                for (int i = 0; i < 70; i++) {
+                    vga_mem[line19_offset + i] = 0x0720;  // Clear line
+                }
+            }
+        }
+    }
+    
+    // Line 20: Show keyboard state - we'll access the private members through public interface
+    int line20_offset = 20 * 80;
+    
+    // For now, let's show the key name instead of shift/caps state
+    // since we can't access private members directly
+    if (is_key_press) {
+        const char* key_name = Keyboard::get_key_name(scan_code);
+        
+        // Clear the key name area first
+        for (int i = 0; i < 20; i++) {
+            vga_mem[line20_offset + i] = 0x0720;  // Clear with space
+        }
+        
+        // Display key name in cyan
+        int i = 0;
+        while (key_name[i] != '\0' && i < 15) {
+            vga_mem[line20_offset + i] = 0x0B00 + key_name[i];  // Cyan text
+            i++;
+        }
     }
 }
 
@@ -271,25 +339,7 @@ void unhandled_irq(IRQFrame* frame) {
 
 } // namespace kira::system::irq
 
-// Simple C-style interrupt handler for testing
-extern "C" void simple_irq_test_handler() {
-    // Write directly to VGA memory to test
-    volatile kira::system::u16* vga_mem = (volatile kira::system::u16*)0xB8000;
-    static kira::system::u32 test_count = 0;
-    test_count++;
-    
-    // Write "!" at position (18, 30) = offset 18*80+30 = 1470
-    kira::system::u16 pos = 18 * 80 + 30 + (test_count % 10);
-    vga_mem[pos] = 0x4C00 | '!';  // Red background, black text, '!' character
-}
-
-// C-style wrapper for our default handler to avoid name mangling issues
+// C-style wrapper for assembly to call our C++ default handler
 extern "C" void irq_default_handler_wrapper(kira::system::IRQFrame* frame) {
-    // DEBUG: Write 'D' to show C wrapper was called
-    volatile kira::system::u16* vga_mem = (volatile kira::system::u16*)0xB8000;
-    // Position (14, 16) = 14*80+16 = 1136 * 2 = 2272 bytes
-    vga_mem[1136] = 0x4C44;  // Red background, white text, 'D' character
-    
-    // Call our actual C++ handler
     kira::system::irq::default_handler(frame);
 } 

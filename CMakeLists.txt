@@ -53,6 +53,7 @@ add_library(kernel_core STATIC
     kernel/interrupts/exceptions.cpp
     kernel/interrupts/pic.cpp
     kernel/interrupts/irq.cpp
+    kernel/drivers/keyboard.cpp
     kernel/arch/x86/exception_stubs.s
 )
 

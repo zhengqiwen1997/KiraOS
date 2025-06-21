@@ -239,46 +239,14 @@ irq_stub_15:
 
 # Common hardware interrupt handler
 irq_common:
-    # DEBUG: Write 'A' to VGA memory to show assembly handler was called
-    # Position (14, 10) = 14*80+10 = 1130 * 2 = 2260 bytes from VGA start
-    # VGA memory starts at 0xB8000
-    pushl %eax
-    pushl %ebx
-    movl $0xB8000, %ebx
-    addl $2260, %ebx        # Position (14, 10)
-    movl $0x4C41, %eax      # Red background, white text, 'A' character
-    movw %ax, (%ebx)
-    popl %ebx
-    popl %eax
-    
     # Save all general purpose registers
     pusha
-    
-    # DEBUG: Write 'B' before calling C function
-    pushl %eax
-    pushl %ebx
-    movl $0xB8000, %ebx
-    addl $2264, %ebx        # Position (14, 12)
-    movl $0x4C42, %eax      # Red background, white text, 'B' character
-    movw %ax, (%ebx)
-    popl %ebx
-    popl %eax
     
     # Push pointer to IRQ frame (current ESP)
     pushl %esp
     
     # Call C-style IRQ handler wrapper
     call irq_default_handler_wrapper
-    
-    # DEBUG: Write 'C' after calling C function
-    pushl %eax
-    pushl %ebx
-    movl $0xB8000, %ebx
-    addl $2268, %ebx        # Position (14, 14)
-    movl $0x4C43, %eax      # Red background, white text, 'C' character
-    movw %ax, (%ebx)
-    popl %ebx
-    popl %eax
     
     # Clean up stack (remove frame pointer)
     addl $4, %esp
@@ -313,4 +281,4 @@ exception_common:
     addl $8, %esp
     
     # Return from interrupt
-    iret 
+    iret

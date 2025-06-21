@@ -7,6 +7,7 @@
 #include "interrupts/pic.hpp"
 #include "interrupts/irq.hpp"
 #include "core/io.hpp"
+#include "drivers/keyboard.hpp"
 
 namespace kira::kernel {
 
@@ -93,6 +94,11 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     irq::initialize();
     vga.print_string(3, 40, "OK", VGA_GREEN_ON_BLUE);
     
+    // Initialize keyboard system
+    vga.print_string(4, 0, "Keyboard: Init...", VGA_YELLOW_ON_BLUE);
+    Keyboard::initialize();
+    vga.print_string(4, 40, "OK", VGA_GREEN_ON_BLUE);
+    
     // Debug: Show what addresses are actually installed in IDT
     vga.print_string(6, 0, "Debug: IRQ stub addresses", VGA_CYAN_ON_BLUE);
     vga.print_string(6, 30, "IRQ0:", VGA_CYAN_ON_BLUE);
@@ -103,15 +109,15 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // Enable timer and keyboard interrupts
     irq::enable_irq(PIC::IRQ_TIMER);
     irq::enable_irq(PIC::IRQ_KEYBOARD);
-    vga.print_string(4, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
+    vga.print_string(5, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
     
     // Debug: Show PIC mask
     u16 pic_mask = PIC::get_irq_mask();
-    vga.print_string(5, 0, "PIC Mask: 0x", VGA_CYAN_ON_BLUE);
-    vga.print_hex(5, 13, pic_mask, VGA_WHITE_ON_BLUE);
+    vga.print_string(7, 0, "PIC Mask: 0x", VGA_CYAN_ON_BLUE);
+    vga.print_hex(7, 13, pic_mask, VGA_WHITE_ON_BLUE);
     
-    // === INTERRUPT TESTING (Lines 7-11) ===
-    vga.print_string(7, 0, "=== INTERRUPT TESTING ===", VGA_YELLOW_ON_BLUE);
+    // === INTERRUPT TESTING (Lines 8-12) ===
+    vga.print_string(8, 0, "=== INTERRUPT TESTING ===", VGA_YELLOW_ON_BLUE);
     
     // Test memory manager quickly (silent)
     auto& memory_manager = MemoryManager::get_instance();
@@ -121,7 +127,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     if (page2) memory_manager.free_physical_page(page2);
     
     // First test: CPU exception (should work if IDT is working)
-    vga.print_string(8, 0, "Test 1: Exception (INT3)...", VGA_CYAN_ON_BLUE);
+    vga.print_string(9, 0, "Test 1: Exception (INT3)...", VGA_CYAN_ON_BLUE);
     
     // Use inline assembly with explicit NOP to ensure proper continuation
     asm volatile(
@@ -130,22 +136,22 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         "nop"            // Additional safety
     );
     
-    vga.print_string(8, 40, "OK", VGA_GREEN_ON_BLUE);
+    vga.print_string(9, 40, "OK", VGA_GREEN_ON_BLUE);
     
     // Second test: Hardware interrupt via software
-    vga.print_string(9, 0, "Test 2: Software IRQ 0...", VGA_CYAN_ON_BLUE);
+    vga.print_string(10, 0, "Test 2: Software IRQ 0...", VGA_CYAN_ON_BLUE);
     asm volatile("int $32");  // Manually trigger timer interrupt (IRQ 0)
-    vga.print_string(9, 40, "OK", VGA_GREEN_ON_BLUE);
+    vga.print_string(10, 40, "OK", VGA_GREEN_ON_BLUE);
     
     // Show interrupt flag status
     u32 eflags;
     asm volatile("pushf; pop %0" : "=r"(eflags));
     bool interrupts_enabled = (eflags & 0x200) != 0;
-    vga.print_string(10, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
-    vga.print_string(10, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
+    vga.print_string(11, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
+    vga.print_string(11, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
                     interrupts_enabled ? VGA_GREEN_ON_BLUE : VGA_RED_ON_BLUE);
     
-    vga.print_string(11, 0, "Entering main loop...", VGA_MAGENTA_ON_BLUE);
+    vga.print_string(12, 0, "Entering main loop...", VGA_MAGENTA_ON_BLUE);
     
     // === DYNAMIC STATUS (Lines 13-24) ===
     // Line 13: IRQ Activity counters
@@ -153,8 +159,10 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // Line 15: Timer handler activity
     // Line 16: Keyboard handler activity  
     // Line 17: Timer dots display
-    // Line 18: Keyboard scan codes
-    // Lines 19-24: Available for expansion
+    // Line 18: Keyboard scan codes (hex)
+    // Line 19: Keyboard characters (ASCII)
+    // Line 20: Keyboard state (Shift, Caps Lock)
+    // Lines 21-24: Available for expansion
     
     // Kernel main loop - active loop with periodic halts
     u32 loop_counter = 0;
