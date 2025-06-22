@@ -48,6 +48,8 @@ set(KERNEL_LINK_FLAGS
 add_library(kernel_core STATIC
     kernel/core/boot/kernel_entry.cpp
     kernel/core/kernel.cpp
+    kernel/core/process.cpp
+    kernel/core/test_processes.cpp
     kernel/memory/memory_manager.cpp
     kernel/arch/x86/idt.cpp
     kernel/interrupts/exceptions.cpp
