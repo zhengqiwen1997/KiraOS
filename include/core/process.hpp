@@ -162,10 +162,7 @@ private:
      */
     u32 allocate_stack();
     
-    /**
-     * @brief Copy string safely
-     */
-    void safe_strcpy(char* dest, const char* src, u32 max_len);
+
 };
 
 } // namespace kira::system 

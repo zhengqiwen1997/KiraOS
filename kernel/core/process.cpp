@@ -1,7 +1,12 @@
+#include "core/types.hpp"
 #include "core/process.hpp"
+#include "core/utils.hpp"
 #include "display/vga.hpp"
 
 namespace kira::system {
+
+using namespace kira::system;
+using namespace kira::system::utils;
 
 // Global instance storage
 static ProcessManager g_process_manager_instance;
@@ -342,15 +347,6 @@ u32 ProcessManager::allocate_stack() {
     next_stack_index++;
     
     return stack_addr;
-}
-
-void ProcessManager::safe_strcpy(char* dest, const char* src, u32 max_len) {
-    u32 i = 0;
-    while (i < max_len && src[i] != '\0') {
-        dest[i] = src[i];
-        i++;
-    }
-    dest[i] = '\0';
 }
 
 } // namespace kira::system 

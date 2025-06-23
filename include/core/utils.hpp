@@ -48,6 +48,68 @@ inline i32 strcmp(const char* str1, const char* str2) {
 }
 
 /**
+ * @brief Safe string copy with bounds checking and overlap detection
+ * @param dest Destination buffer
+ * @param src Source string
+ * @param max_len Maximum number of characters to copy (including null terminator)
+ * @note Refuses to copy if source and destination overlap (sets dest to empty string)
+ */
+inline void safe_strcpy(char* dest, const char* src, u32 max_len) {
+    if (!dest || !src || max_len == 0) return;
+    if (dest == src) return;  // Same pointer, nothing to do
+    
+    // Calculate source length for overlap detection
+    u32 src_len = strlen(src);
+    
+    // Check for dangerous overlaps
+    bool overlaps = (dest > src && dest < src + src_len) ||
+                   (src > dest && src < dest + max_len);
+    
+    if (overlaps) {
+        // For kernel safety, refuse overlapping copies
+        dest[0] = '\0';  // Set to empty string
+        return;
+    }
+    
+    // Safe non-overlapping copy
+    u32 i = 0;
+    while (i < max_len - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+/**
+ * @brief String move - handles overlapping memory regions safely
+ * @param dest Destination buffer
+ * @param src Source string
+ * @param max_len Maximum number of characters to copy (including null terminator)
+ * @note Uses byte-by-byte copying in correct direction for overlapping regions
+ */
+inline void safe_strmove(char* dest, const char* src, u32 max_len) {
+    if (!dest || !src || max_len == 0) return;
+    if (dest == src) return;  // Same pointer, nothing to do
+    
+    u32 src_len = strlen(src);
+    u32 copy_len = (src_len < max_len - 1) ? src_len : max_len - 1;
+    
+    if (dest > src && dest < src + src_len) {
+        // Forward overlap: copy backwards to avoid corruption
+        for (u32 i = copy_len; i > 0; i--) {
+            dest[i - 1] = src[i - 1];
+        }
+    } else {
+        // No overlap or backward overlap: copy forwards
+        for (u32 i = 0; i < copy_len; i++) {
+            dest[i] = src[i];
+        }
+    }
+    
+    dest[copy_len] = '\0';
+}
+
+/**
  * @brief Copy memory from source to destination
  * @param dest Destination buffer
  * @param src Source buffer
