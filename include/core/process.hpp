@@ -25,8 +25,9 @@ struct ProcessContext {
     u32 eip;
     u32 eflags;
     
-    // Stack pointer for kernel stack
-    u32 kernel_esp;
+    // Stack pointers
+    u32 kernel_esp;             // Kernel mode stack pointer
+    u32 user_esp;               // User mode stack pointer
 } __attribute__((packed));
 
 // Process Control Block (PCB)
@@ -41,8 +42,14 @@ struct Process {
     ProcessContext context;     // Saved CPU state
     
     // Memory information
-    u32 stack_base;             // Base of process stack
-    u32 stack_size;             // Size of stack
+    u32 kernel_stack_base;      // Base of kernel stack
+    u32 kernel_stack_size;      // Size of kernel stack
+    u32 user_stack_base;        // Base of user stack  
+    u32 user_stack_size;        // Size of user stack
+    
+    // Process function (embedded user program)
+    void* user_function;        // User mode function to execute
+    bool is_user_mode;          // True if process runs in user mode
     
     // Scheduling information
     u32 creation_time;          // When process was created
@@ -71,7 +78,8 @@ private:
     u32 scheduler_ticks;           // Ticks since last schedule
     
     // Static stack allocation - safer than dynamic addresses
-    static u8 process_stacks[MAX_PROCESSES][STACK_SIZE];
+    static u8 kernel_stacks[MAX_PROCESSES][STACK_SIZE];  // Kernel mode stacks
+    static u8 user_stacks[MAX_PROCESSES][STACK_SIZE];    // User mode stacks
     u32 next_stack_index;
     
 public:
@@ -91,7 +99,16 @@ public:
     ProcessManager();
     
     /**
-     * @brief Create a new process
+     * @brief Create a new user mode process
+     * @param function Process entry point
+     * @param name Process name
+     * @param priority Process priority (0 = highest)
+     * @return Process ID or 0 if failed
+     */
+    u32 create_user_process(ProcessFunction function, const char* name, u32 priority = 5);
+    
+    /**
+     * @brief Create a new process (legacy - for compatibility)
      * @param function Process entry point
      * @param name Process name
      * @param priority Process priority (0 = highest)
@@ -135,6 +152,21 @@ public:
      * @brief Yield CPU to next process (cooperative scheduling)
      */
     void yield();
+    
+    /**
+     * @brief Get current process ID
+     */
+    u32 get_current_pid() const;
+    
+    /**
+     * @brief Terminate current process
+     */
+    void terminate_current_process();
+    
+    /**
+     * @brief Sleep current process for specified ticks
+     */
+    void sleep_current_process(u32 ticks);
 
 private:
     /**
@@ -153,15 +185,19 @@ private:
     void switch_process();
     
     /**
-     * @brief Initialize process context
+     * @brief Initialize process context for user mode
+     */
+    void init_user_process_context(Process* process, ProcessFunction function);
+    
+    /**
+     * @brief Initialize process context (legacy)
      */
     void init_process_context(Process* process, ProcessFunction function);
     
     /**
-     * @brief Allocate stack for process
+     * @brief Allocate stacks for process
      */
-    u32 allocate_stack();
-    
+    bool allocate_process_stacks(Process* process);
 
 };
 

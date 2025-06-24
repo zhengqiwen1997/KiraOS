@@ -50,13 +50,19 @@ add_library(kernel_core STATIC
     kernel/core/kernel.cpp
     kernel/core/process.cpp
     kernel/core/test_processes.cpp
+    kernel/core/syscalls.cpp
+    kernel/core/usermode.cpp
+    kernel/usermode/user_programs.cpp
     kernel/memory/memory_manager.cpp
     kernel/arch/x86/idt.cpp
+    kernel/arch/x86/gdt.cpp
+    kernel/arch/x86/tss.cpp
     kernel/interrupts/exceptions.cpp
     kernel/interrupts/pic.cpp
     kernel/interrupts/irq.cpp
     kernel/drivers/keyboard.cpp
     kernel/arch/x86/exception_stubs.s
+    kernel/arch/x86/syscall_stub.s
 )
 
 # Set kernel properties

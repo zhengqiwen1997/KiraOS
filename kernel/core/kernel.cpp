@@ -10,6 +10,11 @@
 #include "drivers/keyboard.hpp"
 #include "core/process.hpp"
 #include "core/test_processes.hpp"
+#include "core/syscalls.hpp"
+#include "core/usermode.hpp"
+#include "usermode/user_programs.hpp"
+#include "arch/x86/gdt.hpp"
+#include "arch/x86/tss.hpp"
 
 namespace kira::kernel {
 
@@ -65,57 +70,68 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     IDT::load();
     vga.print_string(2, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    // Initialize hardware interrupts
-    vga.print_string(3, 0, "IRQ: Init...", VGA_YELLOW_ON_BLUE);
-    irq::initialize();
+    // Initialize GDT with user mode support
+    vga.print_string(3, 0, "GDT: Init user mode...", VGA_YELLOW_ON_BLUE);
+    TSSManager::initialize();
+    GDTManager::initialize();
     vga.print_string(3, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    // Initialize keyboard system
-    vga.print_string(4, 0, "Keyboard: Init...", VGA_YELLOW_ON_BLUE);
-    Keyboard::initialize();
+    // Initialize hardware interrupts
+    vga.print_string(4, 0, "IRQ: Init...", VGA_YELLOW_ON_BLUE);
+    irq::initialize();
     vga.print_string(4, 40, "OK", VGA_GREEN_ON_BLUE);
     
-    // Initialize process management
-    vga.print_string(5, 0, "Process Manager: Init...", VGA_YELLOW_ON_BLUE);
-    ProcessManager::initialize();
+    // Initialize keyboard system
+    vga.print_string(5, 0, "Keyboard: Init...", VGA_YELLOW_ON_BLUE);
+    Keyboard::initialize();
     vga.print_string(5, 40, "OK", VGA_GREEN_ON_BLUE);
+    
+    // Initialize process management
+    vga.print_string(6, 0, "Process Manager: Init...", VGA_YELLOW_ON_BLUE);
+    ProcessManager::initialize();
+    vga.print_string(6, 40, "OK", VGA_GREEN_ON_BLUE);
+    
+    // Initialize system calls
+    vga.print_string(7, 0, "System Calls: Init...", VGA_YELLOW_ON_BLUE);
+    initialize_syscalls();
+    vga.print_string(7, 40, "OK", VGA_GREEN_ON_BLUE);
     
     // Enable timer and keyboard interrupts
     irq::enable_irq(PIC::IRQ_TIMER);
     irq::enable_irq(PIC::IRQ_KEYBOARD);
-    vga.print_string(6, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
+    vga.print_string(8, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
     
     // Show interrupt flag status
     u32 eflags;
     asm volatile("pushf; pop %0" : "=r"(eflags));
     bool interrupts_enabled = (eflags & 0x200) != 0;
-    vga.print_string(7, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
-    vga.print_string(7, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
+    vga.print_string(9, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
+    vga.print_string(9, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
                     interrupts_enabled ? VGA_GREEN_ON_BLUE : VGA_RED_ON_BLUE);
     
-    vga.print_string(8, 0, "Entering scheduler loop...", VGA_MAGENTA_ON_BLUE);
+    vga.print_string(10, 0, "Entering scheduler loop...", VGA_MAGENTA_ON_BLUE);
     
-    // === PROCESS CREATION (Lines 9-12) ===
-    vga.print_string(9, 0, "=== PROCESS MANAGEMENT TEST ===", VGA_YELLOW_ON_BLUE);
+    // === PROCESS CREATION (Lines 11-14) ===
+    vga.print_string(11, 0, "=== USER MODE PROCESS TEST ===", VGA_YELLOW_ON_BLUE);
     
-    // Create test processes
+    // Create user mode processes
     auto& pm = ProcessManager::get_instance();
     
-    u32 pid1 = pm.create_process(process_counter, "Counter", 5);
-    u32 pid2 = pm.create_process(process_spinner, "Spinner", 5);
-    u32 pid3 = pm.create_process(process_dots, "Dots", 5);
+    u32 pid1 = pm.create_user_process(kira::usermode::user_hello_world, "HelloUser", 5);
+    u32 pid2 = pm.create_user_process(kira::usermode::user_counter_program, "UserCount", 5);
+    u32 pid3 = pm.create_user_process(kira::usermode::user_interactive_program, "UserAnim", 5);
     
-    vga.print_string(10, 0, "Created processes: ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(10, 19, pid1, VGA_WHITE_ON_BLUE);
-    vga.print_string(10, 21, ", ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(10, 23, pid2, VGA_WHITE_ON_BLUE);
-    vga.print_string(10, 25, ", ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(10, 27, pid3, VGA_WHITE_ON_BLUE);
+    vga.print_string(12, 0, "Created user processes: ", VGA_CYAN_ON_BLUE);
+    vga.print_decimal(12, 24, pid1, VGA_WHITE_ON_BLUE);
+    vga.print_string(12, 26, ", ", VGA_CYAN_ON_BLUE);
+    vga.print_decimal(12, 28, pid2, VGA_WHITE_ON_BLUE);
+    vga.print_string(12, 30, ", ", VGA_CYAN_ON_BLUE);
+    vga.print_decimal(12, 32, pid3, VGA_WHITE_ON_BLUE);
     
     if (pid1 && pid2 && pid3) {
-        vga.print_string(11, 0, "Process creation: SUCCESS", VGA_GREEN_ON_BLUE);
+        vga.print_string(13, 0, "User mode processes: SUCCESS", VGA_GREEN_ON_BLUE);
     } else {
-        vga.print_string(11, 0, "Process creation: FAILED", VGA_RED_ON_BLUE);
+        vga.print_string(13, 0, "User mode processes: FAILED", VGA_RED_ON_BLUE);
     }
     
     // Test memory manager quickly (silent)
@@ -125,44 +141,44 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     if (page1) memory_manager.free_physical_page(page1);
     if (page2) memory_manager.free_physical_page(page2);
     
-    // === DYNAMIC STATUS (Lines 13-24) ===
-    // Line 13: IRQ Activity counters
-    // Line 14: Real-time interrupt markers
-    // Line 15: Process 1 output (Counter)
-    // Line 16: Process 2 output (Spinner)  
-    // Line 17: Process 3 output (Dots)
-    // Line 18: Keyboard scan codes (hex)
-    // Line 19: Keyboard characters (ASCII)
-    // Line 20: Keyboard state (key names)
-    // Line 21: Current process info
-    // Line 22: Process manager statistics
-    // Lines 23-24: Available for expansion
+    // === DYNAMIC STATUS (Lines 15-25) ===
+    // Line 15: IRQ Activity counters
+    // Line 16: Real-time interrupt markers
+    // Line 17: User program 1 output (Hello World)
+    // Line 18: User program 2 output (Counter)  
+    // Line 19: User program 3 output (Animation)
+    // Line 20: Keyboard scan codes (hex)
+    // Line 21: Keyboard characters (ASCII)
+    // Line 22: Keyboard state (key names)
+    // Line 23: Current process info
+    // Line 24: Process manager statistics
+    // Line 25: Available for expansion
     
     // Kernel main loop with process scheduling
     u32 loop_counter = 0;
     while (true) {
-        // Update line 22 (scheduler stats) less frequently since line 21 is updated immediately
+        // Update line 24 (scheduler stats) less frequently since line 23 is updated immediately
         if ((loop_counter % 100) == 0) {
-            // Only update line 22 (scheduler statistics) - line 21 is updated immediately by scheduler
+            // Only update line 24 (scheduler statistics) - line 23 is updated immediately by scheduler
             auto& pm = ProcessManager::get_instance();
             pm.display_stats();
         }
         
         // Update IRQ counts less frequently 
         if ((loop_counter % 500) == 0) {
-            // Show interrupt counts (Line 13)
+            // Show interrupt counts (Line 15)
             u32 timer_count = irq::get_irq_count(0);
             u32 keyboard_count = irq::get_irq_count(1);
-            vga.print_string(13, 0, "IRQ Counts - Timer:", VGA_CYAN_ON_BLUE);
-            vga.print_decimal(13, 20, timer_count, VGA_WHITE_ON_BLUE);
-            vga.print_string(13, 30, "Keyboard:", VGA_CYAN_ON_BLUE);
-            vga.print_decimal(13, 40, keyboard_count, VGA_WHITE_ON_BLUE);
+            vga.print_string(15, 0, "IRQ Counts - Timer:", VGA_CYAN_ON_BLUE);
+            vga.print_decimal(15, 20, timer_count, VGA_WHITE_ON_BLUE);
+            vga.print_string(15, 30, "Keyboard:", VGA_CYAN_ON_BLUE);
+            vga.print_decimal(15, 40, keyboard_count, VGA_WHITE_ON_BLUE);
         }
         
-        // Show heartbeat every 1000 iterations (Line 12)
+        // Show heartbeat every 1000 iterations (Line 14)
         if ((loop_counter % 1000) == 0) {
             static u32 heartbeat_pos = 0;
-            vga.print_char(12, (heartbeat_pos % 70), '*', VGA_GREEN_ON_BLUE);
+            vga.print_char(14, (heartbeat_pos % 70), '*', VGA_GREEN_ON_BLUE);
             heartbeat_pos++;
         }
         
