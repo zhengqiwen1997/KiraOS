@@ -3,6 +3,7 @@
 #include "core/utils.hpp"
 #include "core/usermode.hpp"
 #include "display/vga.hpp"
+#include "arch/x86/tss.hpp"
 
 namespace kira::system {
 
@@ -78,6 +79,7 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     process->next = nullptr;
     process->user_function = (void*)function;
     process->is_user_mode = true;
+    process->has_started = false;  // User process hasn't started yet
     
     // Initialize user mode context
     init_user_process_context(process, function);
@@ -123,9 +125,8 @@ void ProcessManager::schedule() {
         current_process->time_used++;
         current_process->total_cpu_time++;
         
-        // For user mode processes, we need to handle them differently
+        // For user mode processes, check if time slice expired
         if (current_process->is_user_mode) {
-            // User mode process - check if we need to switch
             if (current_process->time_used >= current_process->time_slice) {
                 // Time slice expired - yield to next process
                 current_process->time_used = 0;
@@ -134,8 +135,8 @@ void ProcessManager::schedule() {
                 current_process = nullptr;
                 switch_process();
             }
-            // Note: User mode process execution is handled by the scheduler
-            // calling switch_to_user_mode when the process gets CPU time
+            // User mode processes are already running - no need to call them again
+            // They will return to kernel via system calls or continue running
         } else {
             // Legacy kernel mode process execution
             ProcessFunction func = (ProcessFunction)current_process->context.eip;
@@ -266,11 +267,32 @@ void ProcessManager::switch_process() {
         
         // If this is a user mode process, switch to user mode
         if (current_process->is_user_mode) {
-            // Switch to user mode and execute the user function
-            UserMode::switch_to_user_mode(
-                current_process->user_function,
-                current_process->context.user_esp
-            );
+            // Check if this is the first time running this user process
+            if (!current_process->has_started) {
+                current_process->has_started = true;
+                
+                // Update TSS with this process's kernel stack
+                TSSManager::set_kernel_stack(current_process->context.kernel_esp);
+                
+                // Switch to user mode and execute the user function
+                // This should NEVER return - user program returns via system calls
+                UserMode::switch_to_user_mode(
+                    current_process->user_function,
+                    current_process->context.user_esp
+                );
+                
+                // If we get here, something went wrong
+                kira::display::VGADisplay vga;
+                vga.print_string(19, 0, "ERROR: User mode returned!", kira::display::VGA_RED_ON_BLUE);
+                current_process->state = ProcessState::TERMINATED;
+            } else {
+                // Process has already started - this means it yielded and is resuming
+                // For now, just call the function again (this is a simplified approach)
+                // In a real OS, we would restore the saved context
+                typedef void (*UserFunction)();
+                UserFunction user_func = (UserFunction)current_process->user_function;
+                user_func();
+            }
         }
     }
 }

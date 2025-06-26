@@ -94,6 +94,13 @@ public:
     static void set_interrupt_gate(u8 interrupt_number, void* handler);
     
     /**
+     * @brief Set a user-accessible interrupt gate (Ring 3)
+     * @param interrupt_number Interrupt number
+     * @param handler Handler function pointer
+     */
+    static void set_user_interrupt_gate(u8 interrupt_number, void* handler);
+    
+    /**
      * @brief Set a trap gate (doesn't disable interrupts)
      * @param interrupt_number Interrupt number  
      * @param handler Handler function pointer

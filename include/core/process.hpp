@@ -50,6 +50,7 @@ struct Process {
     // Process function (embedded user program)
     void* user_function;        // User mode function to execute
     bool is_user_mode;          // True if process runs in user mode
+    bool has_started;           // True if user mode process has been started
     
     // Scheduling information
     u32 creation_time;          // When process was created

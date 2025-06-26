@@ -61,6 +61,7 @@ private:
 /**
  * @brief Sample user mode programs
  */
+void user_test_simple();
 void user_hello_world();
 void user_counter_program();
 void user_interactive_program();

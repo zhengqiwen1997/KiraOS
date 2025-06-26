@@ -45,6 +45,11 @@ void IDT::set_interrupt_gate(u8 interrupt_number, void* handler) {
     set_handler(interrupt_number, handler, 0x08, type_attr); // 0x08 = kernel code segment
 }
 
+void IDT::set_user_interrupt_gate(u8 interrupt_number, void* handler) {
+    u8 type_attr = IDT_PRESENT | IDT_RING3 | IDT_INTERRUPT_GATE;
+    set_handler(interrupt_number, handler, 0x08, type_attr); // 0x08 = kernel code segment
+}
+
 void IDT::set_trap_gate(u8 interrupt_number, void* handler) {
     u8 type_attr = IDT_PRESENT | IDT_RING0 | IDT_TRAP_GATE;
     set_handler(interrupt_number, handler, 0x08, type_attr);

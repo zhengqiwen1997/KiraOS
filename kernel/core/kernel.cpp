@@ -114,24 +114,18 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // === PROCESS CREATION (Lines 11-14) ===
     vga.print_string(11, 0, "=== USER MODE PROCESS TEST ===", VGA_YELLOW_ON_BLUE);
     
-    // Create user mode processes
+    // Create single test user mode process
     auto& pm = ProcessManager::get_instance();
     
-    u32 pid1 = pm.create_user_process(kira::usermode::user_hello_world, "HelloUser", 5);
-    u32 pid2 = pm.create_user_process(kira::usermode::user_counter_program, "UserCount", 5);
-    u32 pid3 = pm.create_user_process(kira::usermode::user_interactive_program, "UserAnim", 5);
+    u32 pid1 = pm.create_user_process(kira::usermode::user_test_simple, "TestUser", 5);
     
-    vga.print_string(12, 0, "Created user processes: ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(12, 24, pid1, VGA_WHITE_ON_BLUE);
-    vga.print_string(12, 26, ", ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(12, 28, pid2, VGA_WHITE_ON_BLUE);
-    vga.print_string(12, 30, ", ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(12, 32, pid3, VGA_WHITE_ON_BLUE);
+    vga.print_string(12, 0, "Created test user process: ", VGA_CYAN_ON_BLUE);
+    vga.print_decimal(12, 27, pid1, VGA_WHITE_ON_BLUE);
     
-    if (pid1 && pid2 && pid3) {
-        vga.print_string(13, 0, "User mode processes: SUCCESS", VGA_GREEN_ON_BLUE);
+    if (pid1) {
+        vga.print_string(13, 0, "User mode process: SUCCESS", VGA_GREEN_ON_BLUE);
     } else {
-        vga.print_string(13, 0, "User mode processes: FAILED", VGA_RED_ON_BLUE);
+        vga.print_string(13, 0, "User mode process: FAILED", VGA_RED_ON_BLUE);
     }
     
     // Test memory manager quickly (silent)

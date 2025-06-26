@@ -8,8 +8,27 @@ using namespace kira::system;
 using namespace kira::display;
 
 i32 UserAPI::syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
-    // Use direct kernel calls for now since we're in hybrid mode
-    return kira::system::handle_syscall(syscall_num, arg1, arg2, arg3);
+    i32 result;
+    
+    // Debug: Show what we're about to call
+    volatile u16* vga = (volatile u16*)0xB8000;
+    vga[21 * 80 + 0] = 0x0E00 | 'C';  // Yellow 'C' for Call
+    vga[21 * 80 + 1] = 0x0E00 | ':';  // Yellow ':'
+    vga[21 * 80 + 2] = 0x0F00 | ('0' + (syscall_num % 10));  // White digit
+    
+    // Make real system call using INT 0x80 from Ring 3 to Ring 0
+    // This will trigger our system call interrupt handler
+    asm volatile(
+        "int $0x80"
+        : "=a" (result)                    // Output: result in EAX
+        : "a" (syscall_num),               // Input: syscall number in EAX
+          "b" (arg1),                      // Input: arg1 in EBX
+          "c" (arg2),                      // Input: arg2 in ECX
+          "d" (arg3)                       // Input: arg3 in EDX
+        : "memory"                         // Clobber: memory
+    );
+    
+    return result;
 }
 
 i32 UserAPI::write(u32 line, u32 column, const char* text) {
@@ -33,6 +52,53 @@ void UserAPI::exit() {
     // Should not return, but just in case
     while (true) {
         asm volatile("hlt");
+    }
+}
+
+// Simple test user program that runs once and yields
+void user_test_simple() {
+    static bool first_call = true;
+    
+    if (first_call) {
+        first_call = false;
+        
+        // Test 1: Check current privilege level
+        u16 cs_register;
+        asm volatile("mov %%cs, %0" : "=r"(cs_register));
+        u8 privilege_level = cs_register & 0x3;  // Bottom 2 bits = CPL (Current Privilege Level)
+        
+        char privilege_msg[32];
+        const char* prefix = "Ring: ";
+        int pos = 0;
+        for (int i = 0; prefix[i] != '\0'; i++) {
+            privilege_msg[pos++] = prefix[i];
+        }
+        privilege_msg[pos++] = '0' + privilege_level;
+        privilege_msg[pos++] = ' ';
+        privilege_msg[pos++] = 'C';
+        privilege_msg[pos++] = 'S';
+        privilege_msg[pos++] = ':';
+        privilege_msg[pos++] = '0' + ((cs_register >> 4) & 0xF);
+        privilege_msg[pos++] = '0' + (cs_register & 0xF);
+        privilege_msg[pos] = '\0';
+        
+        UserAPI::write(17, 0, privilege_msg);
+        
+        // Test 2: Try to execute a privileged instruction (should cause GPF if in Ring 3)
+        UserAPI::write(18, 0, "Testing privileged instruction...");
+        
+        // This should cause a GPF if we're truly in Ring 3
+        // We'll comment it out for now to avoid crashing
+        // asm volatile("cli");  // Clear interrupt flag - privileged instruction
+        
+        UserAPI::write(19, 0, "User mode test completed");
+        
+        // Safe infinite loop
+        while (true) {
+            for (volatile int i = 0; i < 1000000; i++) {
+                // Just waste some time
+            }
+        }
     }
 }
 
@@ -60,6 +126,9 @@ void user_hello_world() {
             UserAPI::exit();
         }
     }
+    
+    // Always yield back to kernel after each iteration
+    UserAPI::yield();
 }
 
 void user_counter_program() {

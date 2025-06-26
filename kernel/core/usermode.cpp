@@ -5,44 +5,64 @@
 namespace kira::system {
 
 void UserMode::switch_to_user_mode(void* function, u32 user_stack) {
-    // Debug: Show we're trying user mode
+    // Debug: Show we're attempting true user mode switch
     volatile u16* vga = (volatile u16*)0xB8000;
-    vga[20 * 80 + 0] = 0x0E00 | 'T';  // Yellow 'T'
-    vga[20 * 80 + 1] = 0x0E00 | 'R';  // Yellow 'R' 
-    vga[20 * 80 + 2] = 0x0E00 | 'Y';  // Yellow 'Y'
+    vga[16 * 80 + 0] = 0x0C00 | 'R';  // Red 'R' for Ring 3
+    vga[16 * 80 + 1] = 0x0C00 | 'I';  // Red 'I'
+    vga[16 * 80 + 2] = 0x0C00 | 'N';  // Red 'N'
+    vga[16 * 80 + 3] = 0x0C00 | 'G';  // Red 'G'
+    vga[16 * 80 + 4] = 0x0C00 | '3';  // Red '3'
     
-    // For now, let's use a hybrid approach that's safer
-    // Call user function in kernel mode but with proper system call interface
+    // Set up TSS with proper kernel stack for system call returns
+    u32 kernel_stack = get_current_kernel_stack();
+    TSSManager::set_kernel_stack(kernel_stack);
     
-    typedef void (*UserFunction)();
-    UserFunction user_func = (UserFunction)function;
+    // Prepare true user mode transition via IRET
+    // Stack frame that IRET expects (pushed in reverse order):
+    // [SS]     <- User stack segment (Ring 3)
+    // [ESP]    <- User stack pointer  
+    // [EFLAGS] <- Processor flags with interrupts enabled
+    // [CS]     <- User code segment (Ring 3)
+    // [EIP]    <- User function address
     
-    // Set up user segments (but stay in kernel mode)
+    u32 user_cs = 0x1B;      // User code selector (0x18 | 3 = Ring 3)
+    u32 user_ss = 0x23;      // User data selector (0x20 | 3 = Ring 3)
+    u32 user_eflags = 0x202; // Interrupts enabled, IOPL=0
+    
+    // Switch to user mode using IRET
+    // This is the critical part - we're actually switching privilege levels
     asm volatile (
-        "mov $0x23, %%ax\n\t"      // User data selector
-        "mov %%ax, %%ds\n\t"
-        "mov %%ax, %%es\n\t"
-        "mov %%ax, %%fs\n\t"
-        "mov %%ax, %%gs\n\t"
+        // Push the IRET frame in reverse order
+        "pushl %0\n\t"          // Push user SS (stack segment)
+        "pushl %1\n\t"          // Push user ESP (stack pointer)
+        "pushl %2\n\t"          // Push EFLAGS 
+        "pushl %3\n\t"          // Push user CS (code segment)
+        "pushl %4\n\t"          // Push user EIP (instruction pointer)
+        
+        // Set up user data segments before the switch
+        "movw $0x23, %%ax\n\t"  // Load user data segment selector
+        "movw %%ax, %%ds\n\t"
+        "movw %%ax, %%es\n\t"
+        "movw %%ax, %%fs\n\t"
+        "movw %%ax, %%gs\n\t"
+        
+        // Perform the actual privilege level switch
+        "iret\n\t"              // Interrupt return - switches to Ring 3!
         :
-        :
-        : "eax"
+        : "r"(user_ss),         // %0 - User stack segment
+          "r"(user_stack),      // %1 - User stack pointer
+          "r"(user_eflags),     // %2 - Flags register
+          "r"(user_cs),         // %3 - User code segment  
+          "r"((u32)function)    // %4 - User function address
+        : "eax", "memory"
     );
     
-    // Call user function
-    user_func();
-    
-    // Restore kernel segments
-    asm volatile (
-        "mov $0x10, %%ax\n\t"      // Kernel data selector
-        "mov %%ax, %%ds\n\t"
-        "mov %%ax, %%es\n\t"
-        "mov %%ax, %%fs\n\t"
-        "mov %%ax, %%gs\n\t"
-        :
-        :
-        : "eax"
-    );
+    // This code should NEVER be reached!
+    // The user program will return to kernel via system calls (INT 0x80)
+    // If we get here, something went very wrong
+    vga[22 * 80 + 6] = 0x4F00 | 'E';  // White on red 'E' for ERROR
+    vga[22 * 80 + 7] = 0x4F00 | 'R';  // White on red 'R'
+    vga[22 * 80 + 8] = 0x4F00 | 'R';  // White on red 'R'
 }
 
 u32 UserMode::setup_user_stack(u32 stack_base, u32 stack_size) {
