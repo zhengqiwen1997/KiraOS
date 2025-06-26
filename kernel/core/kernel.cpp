@@ -1,10 +1,11 @@
 #include "core/types.hpp"
 #include "memory/memory_manager.hpp"
 #include "display/vga.hpp"
+#include "arch/x86/gdt.hpp"
 #include "arch/x86/idt.hpp"
+#include "interrupts/pic.hpp"
 #include "interrupts/exceptions.hpp"
 #include "core/utils.hpp"
-#include "interrupts/pic.hpp"
 #include "interrupts/irq.hpp"
 #include "core/io.hpp"
 #include "drivers/keyboard.hpp"
@@ -12,8 +13,7 @@
 #include "core/test_processes.hpp"
 #include "core/syscalls.hpp"
 #include "core/usermode.hpp"
-#include "usermode/user_programs.hpp"
-#include "arch/x86/gdt.hpp"
+#include "user_programs.hpp"
 #include "arch/x86/tss.hpp"
 
 namespace kira::kernel {

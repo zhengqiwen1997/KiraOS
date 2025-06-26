@@ -1,5 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
 
+# Cross-compilation settings - must be set before project()
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR i686)
+
+# Set cross-compiler
+set(CMAKE_CXX_COMPILER i686-elf-g++)
+set(CMAKE_C_COMPILER i686-elf-gcc)
+set(CMAKE_ASM_COMPILER i686-elf-gcc)
+
+# Skip compiler tests for cross-compilation
+set(CMAKE_CXX_COMPILER_WORKS 1)
+set(CMAKE_C_COMPILER_WORKS 1)
+
 # Disable macOS-specific flags
 set(CMAKE_OSX_DEPLOYMENT_TARGET "")
 set(CMAKE_OSX_SYSROOT "")
@@ -17,10 +30,6 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# OS-specific settings
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_PROCESSOR i686)
 
 # Compiler flags for kernel code
 set(KERNEL_CXX_FLAGS
@@ -52,7 +61,9 @@ add_library(kernel_core STATIC
     kernel/core/test_processes.cpp
     kernel/core/syscalls.cpp
     kernel/core/usermode.cpp
-    kernel/usermode/user_programs.cpp
+    userspace/programs/test_simple.cpp
+    userspace/programs/test_syscall.cpp
+    userspace/lib/libkira.cpp
     kernel/memory/memory_manager.cpp
     kernel/arch/x86/idt.cpp
     kernel/arch/x86/gdt.cpp
@@ -67,7 +78,11 @@ add_library(kernel_core STATIC
 
 # Set kernel properties
 target_compile_options(kernel_core PRIVATE ${KERNEL_CXX_FLAGS})
-target_include_directories(kernel_core PRIVATE include)
+target_include_directories(kernel_core PRIVATE 
+    include
+    userspace/include
+    userspace/lib
+)
 
 # Create kernel executable (ELF format first)
 add_executable(kernel.elf kernel/core/boot/kernel_entry.cpp)
@@ -77,7 +92,11 @@ target_link_libraries(kernel.elf PRIVATE kernel_core)
 
 # Set the same compiler options for the executable
 target_compile_options(kernel.elf PRIVATE ${KERNEL_CXX_FLAGS})
-target_include_directories(kernel.elf PRIVATE include)
+target_include_directories(kernel.elf PRIVATE 
+    include
+    userspace/include
+    userspace/lib
+)
 
 # Set linker flags for the executable
 target_link_options(kernel.elf PRIVATE

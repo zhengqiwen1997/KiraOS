@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/types.hpp"
+#include "core/types.hpp"
 
 namespace kira::usermode {
 
@@ -8,7 +8,7 @@ using namespace kira::system;  // Import types
 
 /**
  * @brief User mode system call interface
- * These functions provide a clean interface for user programs to make system calls
+ * This is the userspace library (like libc) that provides system call wrappers
  */
 class UserAPI {
 public:
@@ -57,13 +57,5 @@ private:
      */
     static i32 syscall(u32 syscall_num, u32 arg1 = 0, u32 arg2 = 0, u32 arg3 = 0);
 };
-
-/**
- * @brief Sample user mode programs
- */
-void user_test_simple();
-void user_hello_world();
-void user_counter_program();
-void user_interactive_program();
 
 } // namespace kira::usermode 
