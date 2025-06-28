@@ -56,6 +56,7 @@ set(KERNEL_LINK_FLAGS
 # Create kernel library
 add_library(kernel_core STATIC
     kernel/core/boot/kernel_entry.cpp
+    kernel/core/boot/multiboot_entry.s
     kernel/core/kernel.cpp
     kernel/core/process.cpp
     kernel/core/test_processes.cpp
@@ -65,6 +66,9 @@ add_library(kernel_core STATIC
     userspace/programs/test_syscall.cpp
     userspace/lib/libkira.cpp
     kernel/memory/memory_manager.cpp
+    kernel/memory/virtual_memory.cpp
+    kernel/formats/elf.cpp
+    kernel/loaders/elf_loader.cpp
     kernel/arch/x86/idt.cpp
     kernel/arch/x86/gdt.cpp
     kernel/arch/x86/tss.cpp
@@ -72,8 +76,10 @@ add_library(kernel_core STATIC
     kernel/interrupts/pic.cpp
     kernel/interrupts/irq.cpp
     kernel/drivers/keyboard.cpp
+    kernel/drivers/timer.cpp
     kernel/arch/x86/exception_stubs.s
     kernel/arch/x86/syscall_stub.s
+    kernel/arch/x86/usermode_switch.s
 )
 
 # Set kernel properties

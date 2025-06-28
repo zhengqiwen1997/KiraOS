@@ -57,9 +57,23 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame, VGADisplay& vga
             break;
             
         case INT_INVALID_OPCODE:  // Interrupt 6 - Invalid instruction
+        {
             vga.print_string(2, 60, "UD", VGA_YELLOW_ON_BLUE);
-            frame->eip += 2;  // Skip "int $6" instruction (2 bytes: CD 06)
+            
+            // Show debugging information for invalid opcode
+            vga.print_string(3, 40, "EIP:", VGA_CYAN_ON_BLUE);
+            vga.print_hex(3, 44, frame->eip, VGA_WHITE_ON_BLUE);
+            
+            // Show the instruction bytes at EIP
+            vga.print_string(4, 40, "OP:", VGA_CYAN_ON_BLUE);
+            u8* instruction = (u8*)frame->eip;
+            vga.print_hex_byte(4, 43, instruction[0], VGA_WHITE_ON_BLUE);
+            vga.print_hex_byte(4, 45, instruction[1], VGA_WHITE_ON_BLUE);
+            
+            // Don't skip - halt to debug
+            halt_system("Invalid Opcode - Debugging needed");
             break;
+        }
             
         case INT_BOUND_RANGE:     // Interrupt 5 - Array bounds exceeded
             vga.print_string(2, 60, "BR", VGA_YELLOW_ON_BLUE);
@@ -83,10 +97,19 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame, VGADisplay& vga
             
         // ========== SERIOUS VIOLATIONS - MUST HALT ==========
         case INT_GENERAL_PROTECTION:  // Interrupt 13 - Memory/privilege violation
+        {
             vga.print_string(2, 60, "GPF", VGA_RED_ON_BLUE);
+            
+            // Show GPF error code and EIP for debugging
+            vga.print_string(3, 40, "ERR:", VGA_CYAN_ON_BLUE);
+            vga.print_hex(3, 44, frame->error_code, VGA_WHITE_ON_BLUE);
+            vga.print_string(4, 40, "EIP:", VGA_CYAN_ON_BLUE);
+            vga.print_hex(4, 44, frame->eip, VGA_WHITE_ON_BLUE);
+            
             vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
             halt_system("General Protection Fault - System integrity compromised");
             break;
+        }
             
         case INT_PAGE_FAULT:          // Interrupt 14 - Invalid memory page
             vga.print_string(2, 60, "PF", VGA_RED_ON_BLUE);

@@ -2,6 +2,9 @@
 #include "core/io.hpp"
 #include "arch/x86/tss.hpp"
 
+// Declare external assembly function
+extern "C" void usermode_switch_asm(kira::system::u32 user_ss, kira::system::u32 user_esp, kira::system::u32 user_eflags, kira::system::u32 user_cs, kira::system::u32 user_eip);
+
 namespace kira::system {
 
 void UserMode::switch_to_user_mode(void* function, u32 user_stack) {
@@ -29,33 +32,34 @@ void UserMode::switch_to_user_mode(void* function, u32 user_stack) {
     u32 user_ss = 0x23;      // User data selector (0x20 | 3 = Ring 3)
     u32 user_eflags = 0x202; // Interrupts enabled, IOPL=0
     
-    // Switch to user mode using IRET
-    // This is the critical part - we're actually switching privilege levels
-    asm volatile (
-        // Push the IRET frame in reverse order
-        "pushl %0\n\t"          // Push user SS (stack segment)
-        "pushl %1\n\t"          // Push user ESP (stack pointer)
-        "pushl %2\n\t"          // Push EFLAGS 
-        "pushl %3\n\t"          // Push user CS (code segment)
-        "pushl %4\n\t"          // Push user EIP (instruction pointer)
-        
-        // Set up user data segments before the switch
-        "movw $0x23, %%ax\n\t"  // Load user data segment selector
-        "movw %%ax, %%ds\n\t"
-        "movw %%ax, %%es\n\t"
-        "movw %%ax, %%fs\n\t"
-        "movw %%ax, %%gs\n\t"
-        
-        // Perform the actual privilege level switch
-        "iret\n\t"              // Interrupt return - switches to Ring 3!
-        :
-        : "r"(user_ss),         // %0 - User stack segment
-          "r"(user_stack),      // %1 - User stack pointer
-          "r"(user_eflags),     // %2 - Flags register
-          "r"(user_cs),         // %3 - User code segment  
-          "r"((u32)function)    // %4 - User function address
-        : "eax", "memory"
-    );
+    // Debug: Show function address being passed
+    u32 func_addr = (u32)function;
+    vga[16 * 80 + 6] = 0x0F00 | 'F';  // White 'F'
+    vga[16 * 80 + 7] = 0x0F00 | ':';  // White ':'
+    // Show all 8 hex digits of function address
+    for (int i = 0; i < 8; i++) {
+        u32 digit = (func_addr >> ((7-i) * 4)) & 0xF;
+        char hex_char = (digit < 10) ? ('0' + digit) : ('A' + digit - 10);
+        vga[16 * 80 + 8 + i] = 0x0F00 | hex_char;
+    }
+    
+    // Show CS and SS values in the same line (moved further right to avoid overlap)
+    vga[16 * 80 + 20] = 0x0A00 | 'C';  // Green 'C'
+    vga[16 * 80 + 21] = 0x0F00 | ('0' + ((user_cs >> 4) & 0xF));
+    vga[16 * 80 + 22] = 0x0F00 | ('0' + (user_cs & 0xF));
+    vga[16 * 80 + 23] = 0x0A00 | 'S';  // Green 'S'
+    vga[16 * 80 + 24] = 0x0F00 | ('0' + ((user_ss >> 4) & 0xF));
+    vga[16 * 80 + 25] = 0x0F00 | ('0' + (user_ss & 0xF));
+    
+    // Debug: Show the exact SS value being passed (full hex)
+    vga[16 * 80 + 27] = 0x0E00 | 'S';  // Yellow 'S'
+    vga[16 * 80 + 28] = 0x0E00 | 'S';  // Yellow 'S'
+    vga[16 * 80 + 29] = 0x0F00 | ':';  // White ':'
+    vga[16 * 80 + 30] = 0x0F00 | ('0' + ((user_ss >> 4) & 0xF));
+    vga[16 * 80 + 31] = 0x0F00 | ('0' + (user_ss & 0xF));
+    
+    // Call the assembly function to perform the switch
+    usermode_switch_asm(user_ss, user_stack, user_eflags, user_cs, (u32)function);
     
     // This code should NEVER be reached!
     // The user program will return to kernel via system calls (INT 0x80)

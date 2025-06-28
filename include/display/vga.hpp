@@ -88,6 +88,29 @@ public:
     }
     
     /**
+     * @brief Print a single byte as hexadecimal (2 characters)
+     * @param line Line number
+     * @param col Column number  
+     * @param value Byte value to print as hex
+     * @param color Text color
+     */
+    void print_hex_byte(u32 line, u32 col, u8 value, u16 color = VGA_WHITE_ON_BLUE) {
+        if (line >= VGA_HEIGHT || col + 2 > VGA_WIDTH) return;
+        
+        volatile u16* pos = buffer + (line * VGA_WIDTH) + col;
+        
+        // High nibble
+        u32 high_digit = (value >> 4) & 0xF;
+        char high_char = (high_digit < 10) ? ('0' + high_digit) : ('A' + high_digit - 10);
+        pos[0] = color | high_char;
+        
+        // Low nibble
+        u32 low_digit = value & 0xF;
+        char low_char = (low_digit < 10) ? ('0' + low_digit) : ('A' + low_digit - 10);
+        pos[1] = color | low_char;
+    }
+    
+    /**
      * @brief Print a 32-bit decimal value
      * @param line Line number
      * @param col Column number

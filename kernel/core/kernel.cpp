@@ -9,6 +9,7 @@
 #include "interrupts/irq.hpp"
 #include "core/io.hpp"
 #include "drivers/keyboard.hpp"
+#include "drivers/timer.hpp"
 #include "core/process.hpp"
 #include "core/test_processes.hpp"
 #include "core/syscalls.hpp"
@@ -96,36 +97,42 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     initialize_syscalls();
     vga.print_string(7, 40, "OK", VGA_GREEN_ON_BLUE);
     
+    // Initialize timer (PIT) to generate timer interrupts
+    vga.print_string(8, 0, "Timer: Init (100 Hz)...", VGA_YELLOW_ON_BLUE);
+    kira::drivers::Timer::initialize(100); // 100 Hz = 10ms intervals
+    vga.print_string(8, 40, "OK", VGA_GREEN_ON_BLUE);
+    
     // Enable timer and keyboard interrupts
     irq::enable_irq(PIC::IRQ_TIMER);
     irq::enable_irq(PIC::IRQ_KEYBOARD);
-    vga.print_string(8, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
+    vga.print_string(9, 0, "IRQ: Timer & Keyboard enabled", VGA_GREEN_ON_BLUE);
     
     // Show interrupt flag status
     u32 eflags;
     asm volatile("pushf; pop %0" : "=r"(eflags));
     bool interrupts_enabled = (eflags & 0x200) != 0;
-    vga.print_string(9, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
-    vga.print_string(9, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
+    vga.print_string(10, 0, "Interrupts: ", VGA_WHITE_ON_BLUE);
+    vga.print_string(10, 12, interrupts_enabled ? "ENABLED" : "DISABLED", 
                     interrupts_enabled ? VGA_GREEN_ON_BLUE : VGA_RED_ON_BLUE);
     
-    vga.print_string(10, 0, "Entering scheduler loop...", VGA_MAGENTA_ON_BLUE);
+    vga.print_string(11, 0, "Entering scheduler loop...", VGA_MAGENTA_ON_BLUE);
     
-    // === PROCESS CREATION (Lines 11-14) ===
-    vga.print_string(11, 0, "=== USER MODE PROCESS TEST ===", VGA_YELLOW_ON_BLUE);
+    // === PROCESS CREATION (Lines 12-15) ===
+    vga.print_string(12, 0, "=== USER MODE PROCESS TEST ===", VGA_YELLOW_ON_BLUE);
     
-    // Create single test user mode process
-    auto& pm = ProcessManager::get_instance();
+    // For now, create regular user mode processes instead of ELF loading
+    // ELF loading will be added after we get the basic system working
+    auto& process_manager = ProcessManager::get_instance();
     
-    u32 pid1 = pm.create_user_process(kira::usermode::user_test_simple, "TestUser", 5);
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestUser", 5);
     
-    vga.print_string(12, 0, "Created test user process: ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(12, 27, pid1, VGA_WHITE_ON_BLUE);
+    vga.print_string(13, 0, "Created test user process: ", VGA_CYAN_ON_BLUE);
+    vga.print_decimal(13, 27, pid1, VGA_WHITE_ON_BLUE);
     
     if (pid1) {
-        vga.print_string(13, 0, "User mode process: SUCCESS", VGA_GREEN_ON_BLUE);
+        vga.print_string(14, 0, "User mode process: SUCCESS", VGA_GREEN_ON_BLUE);
     } else {
-        vga.print_string(13, 0, "User mode process: FAILED", VGA_RED_ON_BLUE);
+        vga.print_string(14, 0, "User mode process: FAILED", VGA_RED_ON_BLUE);
     }
     
     // Test memory manager quickly (silent)

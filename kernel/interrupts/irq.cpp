@@ -122,25 +122,28 @@ void default_handler(IRQFrame* frame) {
         irq_counts[irq_number]++;
         
         // Show interrupt activity on line 14 using direct VGA memory writes
-        volatile u16* vga_mem = (volatile u16*)0xB8000;
-        int line14_offset = 14 * 80;  // Line 14 start
-        
-        // Write "IRQ" in green
-        vga_mem[line14_offset + 0] = 0x2049;  // 'I' green on black
-        vga_mem[line14_offset + 1] = 0x2052;  // 'R' green on black
-        vga_mem[line14_offset + 2] = 0x2051;  // 'Q' green on black
-        
-        // Write IRQ number in white
-        vga_mem[line14_offset + 3] = 0x0F30 + irq_number;  // IRQ number in white
-        
-        // Write ":" in green
-        vga_mem[line14_offset + 4] = 0x203A;  // ':' green on black
-        
-        // Write count (simple approach - just show last digit for now)
-        u32 count = irq_counts[irq_number];
-        vga_mem[line14_offset + 5] = 0x0F30 + (count % 10);  // Last digit in white
-        vga_mem[line14_offset + 6] = 0x0F30 + ((count / 10) % 10);  // Second to last digit
-        vga_mem[line14_offset + 7] = 0x0F30 + ((count / 100) % 10);  // Third to last digit
+        // BUT skip timer (IRQ 0) since timer_handler writes to line 14
+        if (irq_number != 0) {  // Don't overwrite timer display
+            volatile u16* vga_mem = (volatile u16*)0xB8000;
+            int line14_offset = 14 * 80;  // Line 14 start
+            
+            // Write "IRQ" in green at position 15 (after timer display)
+            vga_mem[line14_offset + 15] = 0x2049;  // 'I' green on black
+            vga_mem[line14_offset + 16] = 0x2052;  // 'R' green on black
+            vga_mem[line14_offset + 17] = 0x2051;  // 'Q' green on black
+            
+            // Write IRQ number in white
+            vga_mem[line14_offset + 18] = 0x0F30 + irq_number;  // IRQ number in white
+            
+            // Write ":" in green
+            vga_mem[line14_offset + 19] = 0x203A;  // ':' green on black
+            
+            // Write count (simple approach - just show last digit for now)
+            u32 count = irq_counts[irq_number];
+            vga_mem[line14_offset + 20] = 0x0F30 + (count % 10);  // Last digit in white
+            vga_mem[line14_offset + 21] = 0x0F30 + ((count / 10) % 10);  // Second to last digit
+            vga_mem[line14_offset + 22] = 0x0F30 + ((count / 100) % 10);  // Third to last digit
+        }
         
         // Call registered handler
         if (irq_handlers[irq_number]) {
@@ -153,8 +156,8 @@ void default_handler(IRQFrame* frame) {
         // Not a hardware interrupt
         volatile u16* vga_mem = (volatile u16*)0xB8000;
         int line14_offset = 14 * 80;
-        vga_mem[line14_offset + 20] = 0x0C23;  // '#' in red
-        vga_mem[line14_offset + 21] = 0x0F30 + (frame->interrupt_number % 10);
+        vga_mem[line14_offset + 30] = 0x0C23;  // '#' in red
+        vga_mem[line14_offset + 31] = 0x0F30 + (frame->interrupt_number % 10);
     }
 }
 
@@ -188,7 +191,7 @@ void timer_handler(IRQFrame* frame) {
     volatile u16* vga_mem = (volatile u16*)0xB8000;
     
     // Line 14: Show timer handler activity (minimal display)
-    int line14_offset = 14 * 80;
+    int line14_offset = 15 * 80;
     
     // Write "TIMER:" in green
     vga_mem[line14_offset + 0] = 0x2054;  // 'T'
@@ -203,6 +206,14 @@ void timer_handler(IRQFrame* frame) {
     vga_mem[line14_offset + 7] = 0x0F30 + ((timer_ticks / 100) % 10);
     vga_mem[line14_offset + 8] = 0x0F30 + ((timer_ticks / 10) % 10);
     vga_mem[line14_offset + 9] = 0x0F30 + (timer_ticks % 10);
+    
+    // Also put a marker on line 16 to prove timer is working
+    vga_mem[15 * 80 + 12] = 0x0E54;  // 'T' in yellow
+    vga_mem[15 * 80 + 13] = 0x0E49;  // 'I' in yellow  
+    vga_mem[15 * 80 + 14] = 0x0E4D;  // 'M' in yellow
+    vga_mem[15 * 80 + 15] = 0x0E45;  // 'E' in yellow
+    vga_mem[15 * 80 + 16] = 0x0E52;  // 'R' in yellow
+    vga_mem[15 * 80 + 17] = 0x0F30 + (timer_ticks % 10);  // Last digit
 }
 
 void keyboard_handler(IRQFrame* frame) {
