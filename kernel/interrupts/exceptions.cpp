@@ -59,19 +59,7 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame, VGADisplay& vga
         case INT_INVALID_OPCODE:  // Interrupt 6 - Invalid instruction
         {
             vga.print_string(2, 60, "UD", VGA_YELLOW_ON_BLUE);
-            
-            // Show debugging information for invalid opcode
-            vga.print_string(3, 40, "EIP:", VGA_CYAN_ON_BLUE);
-            vga.print_hex(3, 44, frame->eip, VGA_WHITE_ON_BLUE);
-            
-            // Show the instruction bytes at EIP
-            vga.print_string(4, 40, "OP:", VGA_CYAN_ON_BLUE);
-            u8* instruction = (u8*)frame->eip;
-            vga.print_hex_byte(4, 43, instruction[0], VGA_WHITE_ON_BLUE);
-            vga.print_hex_byte(4, 45, instruction[1], VGA_WHITE_ON_BLUE);
-            
-            // Don't skip - halt to debug
-            halt_system("Invalid Opcode - Debugging needed");
+            halt_system("Invalid Opcode");
             break;
         }
             
@@ -99,13 +87,6 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame, VGADisplay& vga
         case INT_GENERAL_PROTECTION:  // Interrupt 13 - Memory/privilege violation
         {
             vga.print_string(2, 60, "GPF", VGA_RED_ON_BLUE);
-            
-            // Show GPF error code and EIP for debugging
-            vga.print_string(3, 40, "ERR:", VGA_CYAN_ON_BLUE);
-            vga.print_hex(3, 44, frame->error_code, VGA_WHITE_ON_BLUE);
-            vga.print_string(4, 40, "EIP:", VGA_CYAN_ON_BLUE);
-            vga.print_hex(4, 44, frame->eip, VGA_WHITE_ON_BLUE);
-            
             vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
             halt_system("General Protection Fault - System integrity compromised");
             break;

@@ -19,17 +19,35 @@ STAGE2_SRC = $(BOOT_DIR)/stage2.asm
 STAGE1_BIN = $(BUILD_DIR)/stage1.bin
 STAGE2_BIN = $(BUILD_DIR)/stage2.bin
 CPP_KERNEL_BIN = $(CMAKE_BUILD_DIR)/kernel.bin
+CPP_KERNEL_ELF = $(CMAKE_BUILD_DIR)/kernel.elf
 DISK_IMAGE = $(BUILD_DIR)/kiraos.img
 SERIAL_LOG = $(BUILD_DIR)/serial.log
 
-# QEMU common flags
-QEMU_FLAGS = -drive file=$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk \
-             -cpu max \
-             -smp 1 \
-             -m 256M \
-             -no-reboot \
-             -no-shutdown \
-             -serial file:$(SERIAL_LOG)
+# QEMU flags for disk image boot
+QEMU_DISK_FLAGS = -drive file=$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk \
+                  -cpu max \
+                  -smp 1 \
+                  -m 256M \
+                  -no-reboot \
+                  -no-shutdown \
+                  -serial file:$(SERIAL_LOG)
+
+# QEMU flags for ELF kernel boot (recommended)
+QEMU_ELF_FLAGS = -kernel kernel.elf \
+                 -cpu max \
+                 -smp 1 \
+                 -m 32M \
+                 -no-reboot \
+                 -no-shutdown \
+                 -serial file:../$(SERIAL_LOG)
+
+# QEMU flags for simple ELF kernel boot (no serial logging)
+QEMU_ELF_SIMPLE_FLAGS = -kernel kernel.elf \
+                        -cpu max \
+                        -smp 1 \
+                        -m 32M \
+                        -no-reboot \
+                        -no-shutdown
 
 #=============================================================================
 # Build Targets
@@ -65,15 +83,18 @@ $(STAGE2_BIN): $(STAGE2_SRC) | $(BUILD_DIR)
 	@echo "  ✓ stage2.bin: $$(stat -f%z $@) bytes"
 
 # Build C++ kernel using CMake
-$(CPP_KERNEL_BIN):
+$(CPP_KERNEL_ELF):
 	@echo "Building C++ kernel..."
 	@mkdir -p $(CMAKE_BUILD_DIR)
 	@cd $(CMAKE_BUILD_DIR) && \
 		cmake .. -DCMAKE_TOOLCHAIN_FILE=../i686-elf-toolchain.cmake && \
 		cmake --build .
-	@echo "  ✓ C++ kernel built: $(CPP_KERNEL_BIN)"
+	@echo "  ✓ C++ kernel built: $(CPP_KERNEL_ELF)"
 
-# Create bootable disk image
+# Legacy target for binary kernel
+$(CPP_KERNEL_BIN): $(CPP_KERNEL_ELF)
+
+# Create bootable disk image (legacy method)
 $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(CPP_KERNEL_BIN)
 	@echo "Creating bootable disk image..."
 	@$(DD) if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
@@ -89,21 +110,37 @@ $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(CPP_KERNEL_BIN)
 # Run Targets
 #=============================================================================
 
-# Run KiraOS in QEMU
-run: $(DISK_IMAGE)
-	@echo "Starting KiraOS in QEMU..."
-	@$(QEMU) $(QEMU_FLAGS) -monitor stdio
+# Run KiraOS using ELF kernel (simple and reliable)
+run: $(CPP_KERNEL_ELF)
+	@echo "Starting KiraOS..."
+	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
+
+# Run KiraOS with serial logging and monitor
+run-with-log: $(CPP_KERNEL_ELF) | $(BUILD_DIR)
+	@echo "Starting KiraOS with serial logging..."
+	@echo "Note: Serial output will be saved to build/serial.log"
+	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
+
+# Run KiraOS simply (no serial logging) - kept for compatibility
+run-simple: $(CPP_KERNEL_ELF)
+	@echo "Starting KiraOS (simple mode)..."
+	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
 
 # Run with graphics disabled (serial output only)
-run-headless: $(DISK_IMAGE)
+run-headless: $(CPP_KERNEL_ELF) | $(BUILD_DIR)
 	@echo "Starting KiraOS in headless mode..."
-	@$(QEMU) $(QEMU_FLAGS) -nographic
+	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_FLAGS) -nographic
 
 # Run in debug mode with GDB server
-debug: $(DISK_IMAGE)
+debug: $(CPP_KERNEL_ELF) | $(BUILD_DIR)
 	@echo "Starting KiraOS in debug mode..."
 	@echo "Connect GDB with: target remote localhost:1234"
-	@$(QEMU) $(QEMU_FLAGS) -monitor stdio -s -S
+	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio -s -S
+
+# Run using legacy disk image method
+run-disk: $(DISK_IMAGE)
+	@echo "Starting KiraOS using disk image (legacy method)..."
+	@$(QEMU) $(QEMU_DISK_FLAGS) -monitor stdio
 
 #=============================================================================
 # Utility Targets
@@ -134,12 +171,15 @@ help:
 	@echo "  clean        - Remove all build files"
 	@echo ""
 	@echo "Run targets:"
-	@echo "  run          - Run KiraOS in QEMU with monitor"
+	@echo "  run          - Run KiraOS (simple, no logging)"
+	@echo "  run-with-log - Run KiraOS with serial logging"
+	@echo "  run-simple   - Run KiraOS simply (alias for run)"
 	@echo "  run-headless - Run KiraOS without graphics"
+	@echo "  run-disk     - Run KiraOS using disk image (legacy)"
 	@echo "  debug        - Run with GDB server (port 1234)"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  log          - Show serial port output"
 	@echo "  help         - Show this help message"
 
-.PHONY: all run run-headless debug log clean help 
+.PHONY: all run run-with-log run-simple run-headless run-disk debug log clean help 

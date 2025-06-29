@@ -1,5 +1,6 @@
 # Build directories
 build/
+cmake-build/
 cmake-build-*/
 
 # IDE directories
@@ -27,6 +28,14 @@ cmake-build-*/
 
 # Dependency files
 *.d
+
+# Temporary and log files
+*.log
+serial.log
+
+# Documentation drafts (optional)
+*_draft.md
+*_temp.md
 
 # OS-specific files
 .DS_Store

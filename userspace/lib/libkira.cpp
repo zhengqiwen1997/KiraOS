@@ -10,12 +10,6 @@ using namespace kira::display;
 i32 UserAPI::syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     i32 result;
     
-    // Debug: Show what we're about to call
-    volatile u16* vga = (volatile u16*)0xB8000;
-    vga[21 * 80 + 0] = 0x0E00 | 'C';  // Yellow 'C' for Call
-    vga[21 * 80 + 1] = 0x0E00 | ':';  // Yellow ':'
-    vga[21 * 80 + 2] = 0x0F00 | ('0' + (syscall_num % 10));  // White digit
-    
     // Make real system call using INT 0x80 from Ring 3 to Ring 0
     // This will trigger our system call interrupt handler
     asm volatile(

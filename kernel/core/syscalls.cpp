@@ -21,18 +21,9 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     VGADisplay vga;
     auto& pm = ProcessManager::get_instance();
     
-    // Debug: Show system call activity with more detail
-    static u32 syscall_count = 0;
-    syscall_count++;
-    vga.print_string(20, 0, "SYS:", VGA_YELLOW_ON_BLUE);
-    vga.print_decimal(20, 4, syscall_count % 1000, VGA_WHITE_ON_BLUE);
-    vga.print_string(20, 8, "T:", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(20, 10, syscall_num, VGA_WHITE_ON_BLUE);
-    
     switch (static_cast<SystemCall>(syscall_num)) {
         case SystemCall::EXIT:
             // Terminate current process
-            vga.print_string(20, 15, "EXIT", VGA_RED_ON_BLUE);
             pm.terminate_current_process();
             return static_cast<i32>(SyscallResult::SUCCESS);
             
@@ -54,7 +45,6 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
         
         case SystemCall::YIELD:
             // Yield CPU to scheduler
-            vga.print_string(20, 15, "YIELD", VGA_GREEN_ON_BLUE);
             pm.yield();
             return static_cast<i32>(SyscallResult::SUCCESS);
             
@@ -68,7 +58,6 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             return static_cast<i32>(SyscallResult::SUCCESS);
             
         default:
-            vga.print_string(20, 15, "UNK", VGA_RED_ON_BLUE);
             return static_cast<i32>(SyscallResult::INVALID_SYSCALL);
     }
 }

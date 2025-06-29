@@ -124,10 +124,10 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // ELF loading will be added after we get the basic system working
     auto& process_manager = ProcessManager::get_instance();
     
-    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestUser", 5);
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
     
     vga.print_string(13, 0, "Created test user process: ", VGA_CYAN_ON_BLUE);
-    vga.print_decimal(13, 27, pid1, VGA_WHITE_ON_BLUE);
+   vga.print_decimal(13, 27, pid1, VGA_WHITE_ON_BLUE);
     
     if (pid1) {
         vga.print_string(14, 0, "User mode process: SUCCESS", VGA_GREEN_ON_BLUE);
