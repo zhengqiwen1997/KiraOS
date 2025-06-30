@@ -6,6 +6,12 @@
 #include "display/vga.hpp"
 #include "drivers/keyboard.hpp"
 #include "core/process.hpp"
+#include "display/console.hpp"
+
+// Forward declaration of console from kernel namespace
+namespace kira::kernel {
+    extern kira::display::ScrollableConsole console;
+}
 
 namespace kira::system::irq {
 
@@ -31,6 +37,9 @@ void initialize() {
     // Register specific handlers
     register_handler(PIC::IRQ_TIMER, handlers::timer_handler);
     register_handler(PIC::IRQ_KEYBOARD, handlers::keyboard_handler);
+    
+    // Explicitly enable keyboard IRQ (IRQ1)
+    enable_irq(PIC::IRQ_KEYBOARD);
     
     // Install IRQ stubs in IDT (interrupts 32-47)
     IDT::set_interrupt_gate(32, (void*)irq_stub_0);
@@ -123,6 +132,8 @@ void default_handler(IRQFrame* frame) {
         
         // Show interrupt activity on line 14 using direct VGA memory writes
         // BUT skip timer (IRQ 0) since timer_handler writes to line 14
+        // COMMENTED OUT - IRQ display not needed for now
+        /*
         if (irq_number != 0) {  // Don't overwrite timer display
             volatile u16* vga_mem = (volatile u16*)0xB8000;
             int line14_offset = 14 * 80;  // Line 14 start
@@ -144,6 +155,7 @@ void default_handler(IRQFrame* frame) {
             vga_mem[line14_offset + 21] = 0x0F30 + ((count / 10) % 10);  // Second to last digit
             vga_mem[line14_offset + 22] = 0x0F30 + ((count / 100) % 10);  // Third to last digit
         }
+        */
         
         // Call registered handler
         if (irq_handlers[irq_number]) {
@@ -153,11 +165,7 @@ void default_handler(IRQFrame* frame) {
         // Send EOI to PIC
         PIC::send_eoi(irq_number);
     } else {
-        // Not a hardware interrupt
-        volatile u16* vga_mem = (volatile u16*)0xB8000;
-        int line14_offset = 14 * 80;
-        vga_mem[line14_offset + 30] = 0x0C23;  // '#' in red
-        vga_mem[line14_offset + 31] = 0x0F30 + (frame->interrupt_number % 10);
+        // Not a hardware interrupt - no VGA output to avoid console conflicts
     }
 }
 
@@ -187,33 +195,7 @@ void timer_handler(IRQFrame* frame) {
     auto& pm = ProcessManager::get_instance();
     pm.schedule();
     
-    // Show timer activity using direct VGA memory writes (simplified)
-    volatile u16* vga_mem = (volatile u16*)0xB8000;
-    
-    // Line 14: Show timer handler activity (minimal display)
-    int line14_offset = 15 * 80;
-    
-    // Write "TIMER:" in green
-    vga_mem[line14_offset + 0] = 0x2054;  // 'T'
-    vga_mem[line14_offset + 1] = 0x2049;  // 'I'
-    vga_mem[line14_offset + 2] = 0x204D;  // 'M'
-    vga_mem[line14_offset + 3] = 0x2045;  // 'E'
-    vga_mem[line14_offset + 4] = 0x2052;  // 'R'
-    vga_mem[line14_offset + 5] = 0x203A;  // ':'
-    
-    // Write tick count (last 4 digits)
-    vga_mem[line14_offset + 6] = 0x0F30 + ((timer_ticks / 1000) % 10);
-    vga_mem[line14_offset + 7] = 0x0F30 + ((timer_ticks / 100) % 10);
-    vga_mem[line14_offset + 8] = 0x0F30 + ((timer_ticks / 10) % 10);
-    vga_mem[line14_offset + 9] = 0x0F30 + (timer_ticks % 10);
-    
-    // Also put a marker on line 16 to prove timer is working
-    vga_mem[15 * 80 + 12] = 0x0E54;  // 'T' in yellow
-    vga_mem[15 * 80 + 13] = 0x0E49;  // 'I' in yellow  
-    vga_mem[15 * 80 + 14] = 0x0E4D;  // 'M' in yellow
-    vga_mem[15 * 80 + 15] = 0x0E45;  // 'E' in yellow
-    vga_mem[15 * 80 + 16] = 0x0E52;  // 'R' in yellow
-    vga_mem[15 * 80 + 17] = 0x0F30 + (timer_ticks % 10);  // Last digit
+    // Timer functionality only - no VGA output to avoid conflicts with console
 }
 
 void keyboard_handler(IRQFrame* frame) {
@@ -223,20 +205,11 @@ void keyboard_handler(IRQFrame* frame) {
     // Update keyboard state using the existing Keyboard class
     Keyboard::handle_key_press(scan_code);
     
-    // Simple keyboard activity indicator on line 18 instead of 16
-    volatile u16* vga_mem = (volatile u16*)0xB8000;
-    int line18_offset = 18 * 80;
-    
-    // Show "KEYBOARD" activity on line 18 (right side)
-    int pos = 60; // Right side of screen
-    vga_mem[line18_offset + pos++] = 0x054B;  // 'K'
-    vga_mem[line18_offset + pos++] = 0x0545;  // 'E'
-    vga_mem[line18_offset + pos++] = 0x0559;  // 'Y'
-    vga_mem[line18_offset + pos++] = 0x0542;  // 'B'
-    vga_mem[line18_offset + pos++] = 0x054F;  // 'O'
-    vga_mem[line18_offset + pos++] = 0x0541;  // 'A'
-    vga_mem[line18_offset + pos++] = 0x0552;  // 'R'
-    vga_mem[line18_offset + pos++] = 0x0544;  // 'D'
+    // Forward keyboard input to console (declared in kernel namespace in kernel.cpp)
+    if (kira::kernel::console.handle_keyboard_input(scan_code)) {
+        // Console handled the key, refresh display
+        kira::kernel::console.refresh_display();
+    }
 }
 
 void unhandled_irq(IRQFrame* frame) {

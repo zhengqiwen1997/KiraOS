@@ -48,6 +48,85 @@ inline i32 strcmp(const char* str1, const char* str2) {
 }
 
 /**
+ * @brief Simple string copy (no bounds checking)
+ * @param dest Destination buffer
+ * @param src Source string
+ * @note Assumes dest has enough space for src
+ */
+inline void string_copy(char* dest, const char* src) {
+    if (!dest || !src) return;
+    
+    while (*src) {
+        *dest++ = *src++;
+    }
+    *dest = '\0';
+}
+
+/**
+ * @brief Simple string concatenation (no bounds checking)
+ * @param dest Destination buffer (must already contain a string)
+ * @param src Source string to append
+ * @note Assumes dest has enough space for concatenated result
+ */
+inline void string_concat(char* dest, const char* src) {
+    if (!dest || !src) return;
+    
+    // Find end of dest string
+    while (*dest) {
+        dest++;
+    }
+    
+    // Copy src to end of dest
+    while (*src) {
+        *dest++ = *src++;
+    }
+    *dest = '\0';
+}
+
+/**
+ * @brief Convert number to hexadecimal string (8 characters, lowercase)
+ * @param buffer Output buffer (must be at least 9 characters)
+ * @param number Number to convert
+ */
+inline void number_to_hex(char* buffer, u32 number) {
+    if (!buffer) return;
+    
+    const char hex[] = "0123456789abcdef";
+    for (int i = 0; i < 8; i++) {
+        buffer[i] = hex[(number >> (28 - i * 4)) & 0xF];
+    }
+    buffer[8] = '\0';
+}
+
+/**
+ * @brief Convert number to decimal string
+ * @param buffer Output buffer (must be at least 11 characters for u32)
+ * @param number Number to convert
+ */
+inline void number_to_decimal(char* buffer, u32 number) {
+    if (!buffer) return;
+    
+    if (number == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
+    }
+    
+    char temp[16];
+    int i = 0;
+    while (number > 0) {
+        temp[i++] = '0' + (number % 10);
+        number /= 10;
+    }
+    
+    int j = 0;
+    while (i > 0) {
+        buffer[j++] = temp[--i];
+    }
+    buffer[j] = '\0';
+}
+
+/**
  * @brief Safe string copy with bounds checking and overlap detection
  * @param dest Destination buffer
  * @param src Source string

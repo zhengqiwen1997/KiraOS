@@ -77,6 +77,7 @@ add_library(kernel_core STATIC
     kernel/interrupts/irq.cpp
     kernel/drivers/keyboard.cpp
     kernel/drivers/timer.cpp
+    kernel/display/console.cpp
     kernel/arch/x86/exception_stubs.s
     kernel/arch/x86/syscall_stub.s
     kernel/arch/x86/usermode_switch.s

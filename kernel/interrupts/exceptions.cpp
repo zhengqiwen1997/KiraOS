@@ -1,11 +1,19 @@
 #include "interrupts/exceptions.hpp"
 #include "arch/x86/idt.hpp"
 #include "display/vga.hpp"
+#include "display/console.hpp"
 #include "core/io.hpp"
+#include "core/utils.hpp"
+
+// Forward declaration to access global console from kernel namespace
+namespace kira::kernel {
+    extern kira::display::ScrollableConsole console;
+}
 
 namespace kira::system {
 
 using namespace kira::display;
+using namespace kira::system::utils;
 
 void Exceptions::initialize() {
     // Set up basic exception handlers
@@ -26,134 +34,131 @@ void Exceptions::initialize() {
 }
 
 void Exceptions::default_handler(ExceptionFrame* frame) {
-    VGADisplay vga;
+    // Log exception to console
+    char msg[80];
+    const char* exc_name = get_exception_name(frame->interrupt_number);
     
-    // Display exception info in top-right corner
-    vga.print_string(0, 60, "EXC!", VGA_WHITE_ON_BLUE);
-    vga.print_decimal(1, 60, frame->interrupt_number, VGA_WHITE_ON_BLUE);
+    // Format: "EXCEPTION: [name] (INT xx) at EIP 0xXXXXXXXX"
+    format_exception_message(msg, exc_name, frame->interrupt_number, frame->eip);
+    
+    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+    kira::kernel::console.refresh_display();
     
     // Handle exceptions based on severity and type
-    handle_exception_by_type(frame, vga);
+    handle_exception_by_type(frame);
 }
 
-void Exceptions::handle_exception_by_type(ExceptionFrame* frame, VGADisplay& vga) {
+void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
     switch (frame->interrupt_number) {
         // ========== RECOVERABLE EXCEPTIONS ==========
         case INT_BREAKPOINT:  // Interrupt 3 - Debugging breakpoint
-            vga.print_string(2, 60, "BP", VGA_GREEN_ON_BLUE);
+            kira::kernel::console.add_message("Breakpoint hit - continuing", VGA_GREEN_ON_BLUE);
             // For testing: increment EIP to skip the int $3 instruction
             frame->eip += 2;  // Skip "int $3" instruction (2 bytes: CD 03)
             break;
             
         case INT_OVERFLOW:    // Interrupt 4 - Arithmetic overflow
-            vga.print_string(2, 60, "OF", VGA_GREEN_ON_BLUE);
+            kira::kernel::console.add_message("Arithmetic overflow - continuing", VGA_YELLOW_ON_BLUE);
             frame->eip += 2;  // Skip "int $4" instruction (2 bytes: CD 04)
             break;
             
         // ========== POTENTIALLY RECOVERABLE (SKIP INSTRUCTION) ==========
         case INT_DIVIDE_ERROR:    // Interrupt 0 - Division by zero
-            vga.print_string(2, 60, "DIV", VGA_YELLOW_ON_BLUE);
-            //frame->eip += 2;  // Skip "int $0" instruction (2 bytes: CD 00)
+            kira::kernel::console.add_message("Division by zero detected!", VGA_YELLOW_ON_BLUE);
+            divide_error_handler(frame);
             break;
             
         case INT_INVALID_OPCODE:  // Interrupt 6 - Invalid instruction
         {
-            vga.print_string(2, 60, "UD", VGA_YELLOW_ON_BLUE);
+            kira::kernel::console.add_message("Invalid opcode - system halted", VGA_RED_ON_BLUE);
             halt_system("Invalid Opcode");
             break;
         }
             
         case INT_BOUND_RANGE:     // Interrupt 5 - Array bounds exceeded
-            vga.print_string(2, 60, "BR", VGA_YELLOW_ON_BLUE);
+            kira::kernel::console.add_message("Array bounds exceeded - continuing", VGA_YELLOW_ON_BLUE);
             frame->eip += 2;  // Skip "int $5" instruction (2 bytes: CD 05)
             break;
             
         case INT_DEVICE_NOT_AVAILABLE:  // Interrupt 7 - FPU not available
-            vga.print_string(2, 60, "NM", VGA_YELLOW_ON_BLUE);
+            kira::kernel::console.add_message("FPU not available - continuing", VGA_YELLOW_ON_BLUE);
             frame->eip += 2;  // Skip "int $7" instruction (2 bytes: CD 07)
             break;
             
         case INT_X87_FPU_ERROR:   // Interrupt 16 - x87 FPU error
-            vga.print_string(2, 60, "MF", VGA_YELLOW_ON_BLUE);
+            kira::kernel::console.add_message("x87 FPU error - continuing", VGA_YELLOW_ON_BLUE);
             frame->eip += 2;  // Skip "int $16" instruction (2 bytes: CD 10)
             break;
             
         case INT_SIMD_FPU_ERROR:  // Interrupt 19 - SIMD FPU error
-            vga.print_string(2, 60, "XM", VGA_YELLOW_ON_BLUE);
+            kira::kernel::console.add_message("SIMD FPU error - continuing", VGA_YELLOW_ON_BLUE);
             frame->eip += 2;  // Skip "int $19" instruction (2 bytes: CD 13)
             break;
             
         // ========== SERIOUS VIOLATIONS - MUST HALT ==========
         case INT_GENERAL_PROTECTION:  // Interrupt 13 - Memory/privilege violation
         {
-            vga.print_string(2, 60, "GPF", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: General Protection Fault!", VGA_RED_ON_BLUE);
+            general_protection_handler(frame);
             halt_system("General Protection Fault - System integrity compromised");
             break;
         }
             
         case INT_PAGE_FAULT:          // Interrupt 14 - Invalid memory page
-            vga.print_string(2, 60, "PF", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: Page Fault!", VGA_RED_ON_BLUE);
+            page_fault_handler(frame);
             halt_system("Page Fault - Invalid memory access");
             break;
             
         case INT_STACK_FAULT:         // Interrupt 12 - Stack segment fault
-            vga.print_string(2, 60, "SF", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: Stack Fault!", VGA_RED_ON_BLUE);
             halt_system("Stack Fault - Stack segment violation");
             break;
             
         case INT_SEGMENT_NOT_PRESENT: // Interrupt 11 - Segment not present
-            vga.print_string(2, 60, "NP", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: Segment Not Present!", VGA_RED_ON_BLUE);
             halt_system("Segment Not Present - Invalid segment access");
             break;
             
         case INT_INVALID_TSS:         // Interrupt 10 - Invalid TSS
-            vga.print_string(2, 60, "TS", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: Invalid TSS!", VGA_RED_ON_BLUE);
             halt_system("Invalid TSS - Task state segment error");
             break;
             
         case INT_ALIGNMENT_CHECK:     // Interrupt 17 - Alignment check
-            vga.print_string(2, 60, "AC", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: Alignment Check!", VGA_RED_ON_BLUE);
             halt_system("Alignment Check - Unaligned memory access");
             break;
             
         // ========== CRITICAL SYSTEM ERRORS - IMMEDIATE HALT ==========
         case INT_DOUBLE_FAULT:        // Interrupt 8 - Critical system error
-            vga.print_string(2, 60, "DF", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("FATAL: Double Fault!", VGA_RED_ON_BLUE);
             halt_system("Double Fault - Critical system failure");
             break;
             
         case INT_MACHINE_CHECK:       // Interrupt 18 - Hardware error
-            vga.print_string(2, 60, "MC", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("FATAL: Machine Check!", VGA_RED_ON_BLUE);
             halt_system("Machine Check - Hardware failure detected");
             break;
             
         // ========== SPECIAL CASES ==========
         case INT_DEBUG:               // Interrupt 1 - Debug exception
-            vga.print_string(2, 60, "DB", VGA_CYAN_ON_BLUE);
+            kira::kernel::console.add_message("Debug exception", VGA_CYAN_ON_BLUE);
             // Don't modify EIP - debugger should handle this
             break;
             
         case INT_NMI:                 // Interrupt 2 - Non-maskable interrupt
-            vga.print_string(2, 60, "NMI", VGA_MAGENTA_ON_BLUE);
+            kira::kernel::console.add_message("Non-maskable interrupt", VGA_MAGENTA_ON_BLUE);
             // NMI is usually hardware-related, just acknowledge
             break;
             
         case INT_VIRTUALIZATION_ERROR:    // Interrupt 20 - Virtualization error
-            vga.print_string(2, 60, "VE", VGA_YELLOW_ON_BLUE);
+            kira::kernel::console.add_message("Virtualization error", VGA_YELLOW_ON_BLUE);
             halt_system("Virtualization Error - VM operation failed");
             break;
             
         case INT_CONTROL_PROTECTION_ERROR: // Interrupt 21 - Control flow protection
-            vga.print_string(2, 60, "CP", VGA_RED_ON_BLUE);
-            vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+            kira::kernel::console.add_message("CRITICAL: Control Protection Error!", VGA_RED_ON_BLUE);
             halt_system("Control Protection Error - ROP/JOP attack detected");
             break;
             
@@ -161,58 +166,113 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame, VGADisplay& vga
         default:
             if (frame->interrupt_number <= 31) {
                 // Reserved CPU exception
-                vga.print_string(2, 60, "RSV", VGA_RED_ON_BLUE);
-                vga.print_string(3, 60, "HALT", VGA_RED_ON_BLUE);
+                kira::kernel::console.add_message("CRITICAL: Reserved Exception!", VGA_RED_ON_BLUE);
                 halt_system("Reserved Exception - Unknown CPU exception");
             } else {
                 // Hardware interrupt or software interrupt
-                vga.print_string(2, 60, "UNK", VGA_YELLOW_ON_BLUE);
+                kira::kernel::console.add_message("Unknown interrupt", VGA_YELLOW_ON_BLUE);
                 halt_system("Unknown Interrupt - Unhandled interrupt");
             }
             break;
     }
+    
+    // Refresh console after handling exception
+    kira::kernel::console.refresh_display();
 }
 
 void Exceptions::halt_system(const char* reason) {
-    // Log the halt reason (could be expanded for logging systems)
-    // For now, just halt the system
+    // Log the halt reason to console
+    char msg[80];
+    string_copy(msg, "SYSTEM HALT: ");
+    string_concat(msg, reason);
+    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+    kira::kernel::console.add_message("System stopped - manual restart required", VGA_RED_ON_BLUE);
+    kira::kernel::console.refresh_display();
+    
+    // Halt the system
     halt();
 }
 
 void Exceptions::divide_error_handler(ExceptionFrame* frame) {
-    VGADisplay vga;
-    vga.clear_screen(VGA_RED_ON_BLUE);
-    vga.print_string(0, 0, "*** DIVISION BY ZERO ERROR ***", VGA_WHITE_ON_BLUE);
-    vga.print_string(2, 0, "A division by zero occurred at:", VGA_YELLOW_ON_BLUE);
-    vga.print_string(3, 0, "EIP: ", VGA_CYAN_ON_BLUE);
-    vga.print_hex(3, 5, frame->eip, VGA_WHITE_ON_BLUE);
+    char msg[80];
+    format_eip_message(msg, frame->eip);
+    kira::kernel::console.add_message(msg, VGA_YELLOW_ON_BLUE);
+    kira::kernel::console.add_message("Attempting to continue...", VGA_YELLOW_ON_BLUE);
     
-    default_handler(frame);
+    // Skip the problematic instruction (this is a simple approach)
+    frame->eip += 2;  // Skip typical 2-byte instruction
 }
 
 void Exceptions::general_protection_handler(ExceptionFrame* frame) {
-    VGADisplay vga;
-    vga.clear_screen(VGA_RED_ON_BLUE);
-    vga.print_string(0, 0, "*** GENERAL PROTECTION FAULT ***", VGA_WHITE_ON_BLUE);
-    vga.print_string(2, 0, "Invalid memory access or privilege violation", VGA_YELLOW_ON_BLUE);
-    
-    default_handler(frame);
+    char msg[80];
+    format_gpf_message(msg, frame->error_code);
+    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+    kira::kernel::console.add_message("Memory/privilege violation detected", VGA_RED_ON_BLUE);
 }
 
 void Exceptions::page_fault_handler(ExceptionFrame* frame) {
-    VGADisplay vga;
-    vga.clear_screen(VGA_RED_ON_BLUE);
-    vga.print_string(0, 0, "*** PAGE FAULT ***", VGA_WHITE_ON_BLUE);
-    vga.print_string(2, 0, "Invalid memory page access", VGA_YELLOW_ON_BLUE);
-    
     // Get the faulting address from CR2 register
     u32 fault_addr;
     asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
     
-    vga.print_string(3, 0, "Fault Address: ", VGA_CYAN_ON_BLUE);
-    vga.print_hex(3, 15, fault_addr, VGA_WHITE_ON_BLUE);
+    char msg[80];
+    format_eip_message(msg, frame->eip);
+    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
     
-    default_handler(frame);
+    format_page_fault_message(msg, fault_addr, frame->error_code);
+    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+    
+    // Decode error code
+    const char* access_type = (frame->error_code & 0x2) ? "write" : "read";
+    const char* privilege = (frame->error_code & 0x4) ? "user" : "kernel";
+    const char* present = (frame->error_code & 0x1) ? "protection" : "not present";
+    
+    string_copy(msg, "Type: ");
+    string_concat(msg, privilege);
+    string_concat(msg, " ");
+    string_concat(msg, access_type);
+    string_concat(msg, " (");
+    string_concat(msg, present);
+    string_concat(msg, ")");
+    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+}
+
+// Helper function implementations - now using common utils
+void Exceptions::format_exception_message(char* buffer, const char* name, u32 number, u32 eip) {
+    string_copy(buffer, "EXCEPTION: ");
+    string_concat(buffer, name);
+    string_concat(buffer, " (INT ");
+    
+    char num_buf[16];
+    number_to_decimal(num_buf, number);
+    string_concat(buffer, num_buf);
+    
+    string_concat(buffer, ") at EIP 0x");
+    
+    char hex_buf[16];
+    number_to_hex(hex_buf, eip);
+    string_concat(buffer, hex_buf);
+}
+
+void Exceptions::format_eip_message(char* buffer, u32 eip) {
+    string_copy(buffer, "EIP: 0x");
+    char hex_buf[16];
+    number_to_hex(hex_buf, eip);
+    string_concat(buffer, hex_buf);
+}
+
+void Exceptions::format_gpf_message(char* buffer, u32 error_code) {
+    string_copy(buffer, "GPF Error: 0x");
+    char hex_buf[16];
+    number_to_hex(hex_buf, error_code);
+    string_concat(buffer, hex_buf);
+}
+
+void Exceptions::format_page_fault_message(char* buffer, u32 fault_addr, u32 error_code) {
+    string_copy(buffer, "Fault address: 0x");
+    char hex_buf[16];
+    number_to_hex(hex_buf, fault_addr);
+    string_concat(buffer, hex_buf);
 }
 
 const char* Exceptions::get_exception_name(u32 exception_number) {

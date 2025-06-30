@@ -39,7 +39,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             }
             
-            vga.print_string(arg1, arg2, str, VGA_WHITE_ON_BLUE);
+            // vga.print_string(arg1, arg2, str, VGA_WHITE_ON_BLUE);  // Disabled to avoid overwriting console
             return static_cast<i32>(SyscallResult::SUCCESS);
         }
         

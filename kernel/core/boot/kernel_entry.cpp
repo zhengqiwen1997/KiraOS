@@ -38,15 +38,6 @@ void set_cursor_position(u8 row, u8 col) {
 
 // This is called from the custom bootloader (stage2.asm)
 extern "C" __attribute__((section(".text._start"))) void _start() {
-    // Initialize VGA display system
-    VGADisplay vga;
-    
-    // Clear screen with blue background
-    vga.clear_screen(VGA_WHITE_ON_BLUE);
-    
-    // Simple kernel startup message
-    vga.print_string(0, 0, "KiraOS Kernel Started", VGA_WHITE_ON_BLUE);
-    
     // Get memory map from bootloader (but don't display the table)
     u32 memory_map_addr = 0;
     u32 memory_map_count = 0;

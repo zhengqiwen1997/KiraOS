@@ -15,6 +15,7 @@ const u16 VGA_RED_ON_BLUE = 0x1C00;
 const u16 VGA_CYAN_ON_BLUE = 0x1B00;
 const u16 VGA_MAGENTA_ON_BLUE = 0x1D00;
 const u16 VGA_LIGHT_GRAY_ON_BLUE = 0x1700;
+const u16 VGA_BLACK_ON_CYAN = 0x3000;
 
 // VGA Layout Constants
 const u32 VGA_BUFFER = 0xB8000;

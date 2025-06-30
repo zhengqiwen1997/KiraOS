@@ -33,7 +33,7 @@ using ExceptionHandler = void (*)(ExceptionFrame* frame);
 /**
  * @brief Exception management class
  * 
- * Provides basic exception handling capabilities with simple error reporting.
+ * Provides exception handling capabilities with console-based error reporting.
  */
 class Exceptions {
 public:
@@ -45,7 +45,7 @@ public:
     
     /**
      * @brief Default exception handler
-     * Displays exception information and halts the system
+     * Logs exception information to console and handles based on type
      * @param frame Exception frame with register state
      */
     static void default_handler(ExceptionFrame* frame);
@@ -79,15 +79,45 @@ private:
     /**
      * @brief Handle exception based on its type and severity
      * @param frame Exception frame with register state
-     * @param vga VGA display reference for output
      */
-    static void handle_exception_by_type(ExceptionFrame* frame, kira::display::VGADisplay& vga);
+    static void handle_exception_by_type(ExceptionFrame* frame);
     
     /**
      * @brief Halt the system with a reason
      * @param reason Reason for halting the system
      */
     static void halt_system(const char* reason);
+    
+    /**
+     * @brief Format exception message with name, number and EIP
+     * @param buffer Output buffer
+     * @param name Exception name
+     * @param number Exception number
+     * @param eip Instruction pointer
+     */
+    static void format_exception_message(char* buffer, const char* name, u32 number, u32 eip);
+    
+    /**
+     * @brief Format EIP message
+     * @param buffer Output buffer
+     * @param eip Instruction pointer
+     */
+    static void format_eip_message(char* buffer, u32 eip);
+    
+    /**
+     * @brief Format GPF message
+     * @param buffer Output buffer
+     * @param error_code Error code
+     */
+    static void format_gpf_message(char* buffer, u32 error_code);
+    
+    /**
+     * @brief Format page fault message
+     * @param buffer Output buffer
+     * @param fault_addr Fault address
+     * @param error_code Error code
+     */
+    static void format_page_fault_message(char* buffer, u32 fault_addr, u32 error_code);
 };
 
 // External assembly stubs (will be implemented in assembly)
