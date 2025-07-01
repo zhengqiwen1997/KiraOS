@@ -183,8 +183,8 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
 void Exceptions::halt_system(const char* reason) {
     // Log the halt reason to console
     char msg[80];
-    string_copy(msg, "SYSTEM HALT: ");
-    string_concat(msg, reason);
+    strcpy(msg, "SYSTEM HALT: ");
+    strcat(msg, reason);
     kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
     kira::kernel::console.add_message("System stopped - manual restart required", VGA_RED_ON_BLUE);
     kira::kernel::console.refresh_display();
@@ -227,52 +227,52 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
     const char* privilege = (frame->error_code & 0x4) ? "user" : "kernel";
     const char* present = (frame->error_code & 0x1) ? "protection" : "not present";
     
-    string_copy(msg, "Type: ");
-    string_concat(msg, privilege);
-    string_concat(msg, " ");
-    string_concat(msg, access_type);
-    string_concat(msg, " (");
-    string_concat(msg, present);
-    string_concat(msg, ")");
+    strcpy(msg, "Type: ");
+    strcat(msg, privilege);
+    strcat(msg, " ");
+    strcat(msg, access_type);
+    strcat(msg, " (");
+    strcat(msg, present);
+    strcat(msg, ")");
     kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
 }
 
 // Helper function implementations - now using common utils
 void Exceptions::format_exception_message(char* buffer, const char* name, u32 number, u32 eip) {
-    string_copy(buffer, "EXCEPTION: ");
-    string_concat(buffer, name);
-    string_concat(buffer, " (INT ");
+    strcpy(buffer, "EXCEPTION: ");
+    strcat(buffer, name);
+    strcat(buffer, " (INT ");
     
     char num_buf[16];
     number_to_decimal(num_buf, number);
-    string_concat(buffer, num_buf);
+    strcat(buffer, num_buf);
     
-    string_concat(buffer, ") at EIP 0x");
+    strcat(buffer, ") at EIP 0x");
     
     char hex_buf[16];
     number_to_hex(hex_buf, eip);
-    string_concat(buffer, hex_buf);
+    strcat(buffer, hex_buf);
 }
 
 void Exceptions::format_eip_message(char* buffer, u32 eip) {
-    string_copy(buffer, "EIP: 0x");
+    strcpy(buffer, "EIP: 0x");
     char hex_buf[16];
     number_to_hex(hex_buf, eip);
-    string_concat(buffer, hex_buf);
+    strcat(buffer, hex_buf);
 }
 
 void Exceptions::format_gpf_message(char* buffer, u32 error_code) {
-    string_copy(buffer, "GPF Error: 0x");
+    strcpy(buffer, "GPF Error: 0x");
     char hex_buf[16];
     number_to_hex(hex_buf, error_code);
-    string_concat(buffer, hex_buf);
+    strcat(buffer, hex_buf);
 }
 
 void Exceptions::format_page_fault_message(char* buffer, u32 fault_addr, u32 error_code) {
-    string_copy(buffer, "Fault address: 0x");
+    strcpy(buffer, "Fault address: 0x");
     char hex_buf[16];
     number_to_hex(hex_buf, fault_addr);
-    string_concat(buffer, hex_buf);
+    strcat(buffer, hex_buf);
 }
 
 const char* Exceptions::get_exception_name(u32 exception_number) {

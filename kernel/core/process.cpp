@@ -69,7 +69,7 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     
     // Initialize process
     process->pid = next_pid++;
-    safe_strcpy(process->name, name, sizeof(process->name));
+    strcpy_s(process->name, name, sizeof(process->name));
     process->state = ProcessState::READY;
     process->priority = priority;
     process->time_slice = DEFAULT_TIME_SLICE;

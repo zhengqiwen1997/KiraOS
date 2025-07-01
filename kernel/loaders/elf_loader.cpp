@@ -2,7 +2,6 @@
 #include "memory/memory_manager.hpp"
 #include "memory/virtual_memory.hpp"
 #include "core/process.hpp"
-#include "display/vga.hpp"
 #include "core/utils.hpp"
 
 namespace kira::loaders {

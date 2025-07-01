@@ -59,7 +59,6 @@ add_library(kernel_core STATIC
     kernel/core/boot/multiboot_entry.s
     kernel/core/kernel.cpp
     kernel/core/process.cpp
-    kernel/core/test_processes.cpp
     kernel/core/syscalls.cpp
     kernel/core/usermode.cpp
     userspace/programs/test_simple.cpp

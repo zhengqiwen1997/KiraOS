@@ -1,11 +1,9 @@
 #include "libkira.hpp"
 #include "core/syscalls.hpp"
-#include "display/vga.hpp"
 
 namespace kira::usermode {
 
 using namespace kira::system;
-using namespace kira::display;
 
 i32 UserAPI::syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     i32 result;

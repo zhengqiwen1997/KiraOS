@@ -1,6 +1,5 @@
 #include "arch/x86/idt.hpp"
 #include "core/io.hpp"
-#include "display/vga.hpp"
 
 namespace kira::system {
 

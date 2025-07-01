@@ -1,6 +1,5 @@
 #include "memory/memory.hpp"
 #include "memory/memory_manager.hpp"
-#include "display/vga.hpp"
 #include "core/utils.hpp"
 
 // Kernel memory layout constants

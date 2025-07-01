@@ -53,7 +53,7 @@ inline i32 strcmp(const char* str1, const char* str2) {
  * @param src Source string
  * @note Assumes dest has enough space for src
  */
-inline void string_copy(char* dest, const char* src) {
+inline void strcpy(char* dest, const char* src) {
     if (!dest || !src) return;
     
     while (*src) {
@@ -68,7 +68,7 @@ inline void string_copy(char* dest, const char* src) {
  * @param src Source string to append
  * @note Assumes dest has enough space for concatenated result
  */
-inline void string_concat(char* dest, const char* src) {
+inline void strcat(char* dest, const char* src) {
     if (!dest || !src) return;
     
     // Find end of dest string
@@ -133,7 +133,7 @@ inline void number_to_decimal(char* buffer, u32 number) {
  * @param max_len Maximum number of characters to copy (including null terminator)
  * @note Refuses to copy if source and destination overlap (sets dest to empty string)
  */
-inline void safe_strcpy(char* dest, const char* src, u32 max_len) {
+inline void strcpy_s(char* dest, const char* src, u32 max_len) {
     if (!dest || !src || max_len == 0) return;
     if (dest == src) return;  // Same pointer, nothing to do
     
@@ -166,7 +166,7 @@ inline void safe_strcpy(char* dest, const char* src, u32 max_len) {
  * @param max_len Maximum number of characters to copy (including null terminator)
  * @note Uses byte-by-byte copying in correct direction for overlapping regions
  */
-inline void safe_strmove(char* dest, const char* src, u32 max_len) {
+inline void strmove_s(char* dest, const char* src, u32 max_len) {
     if (!dest || !src || max_len == 0) return;
     if (dest == src) return;  // Same pointer, nothing to do
     
