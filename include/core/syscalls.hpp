@@ -31,13 +31,13 @@ enum class SyscallResult : i32 {
  * @brief System call handler
  * Processes system calls from user mode programs
  * 
- * @param syscall_num System call number
+ * @param syscallNum System call number
  * @param arg1 First argument
  * @param arg2 Second argument  
  * @param arg3 Third argument
  * @return System call result
  */
-i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3);
+i32 handle_syscall(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3);
 
 /**
  * @brief Initialize system call handling

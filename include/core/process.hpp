@@ -26,8 +26,8 @@ struct ProcessContext {
     u32 eflags;
     
     // Stack pointers
-    u32 kernel_esp;             // Kernel mode stack pointer
-    u32 user_esp;               // User mode stack pointer
+    u32 kernelEsp;              // Kernel mode stack pointer
+    u32 userEsp;                // User mode stack pointer
 } __attribute__((packed));
 
 // Process Control Block (PCB)
@@ -36,25 +36,25 @@ struct Process {
     char name[32];              // Process name
     ProcessState state;         // Current state
     u32 priority;               // Process priority (0 = highest)
-    u32 time_slice;             // Time quantum for scheduling
-    u32 time_used;              // Time used in current slice
+    u32 timeSlice;              // Time quantum for scheduling
+    u32 timeUsed;               // Time used in current slice
     
     ProcessContext context;     // Saved CPU state
     
     // Memory information
-    u32 kernel_stack_base;      // Base of kernel stack
-    u32 kernel_stack_size;      // Size of kernel stack
-    u32 user_stack_base;        // Base of user stack  
-    u32 user_stack_size;        // Size of user stack
+    u32 kernelStackBase;        // Base of kernel stack
+    u32 kernelStackSize;        // Size of kernel stack
+    u32 userStackBase;          // Base of user stack  
+    u32 userStackSize;          // Size of user stack
     
     // Process function (embedded user program)
-    void* user_function;        // User mode function to execute
-    bool is_user_mode;          // True if process runs in user mode
-    bool has_started;           // True if user mode process has been started
+    void* userFunction;         // User mode function to execute
+    bool isUserMode;            // True if process runs in user mode
+    bool hasStarted;            // True if user mode process has been started
     
     // Scheduling information
-    u32 creation_time;          // When process was created
-    u32 total_cpu_time;         // Total CPU time used
+    u32 creationTime;           // When process was created
+    u32 totalCpuTime;           // Total CPU time used
     
     Process* next;              // Next process in queue (for linked list)
 } __attribute__((packed));

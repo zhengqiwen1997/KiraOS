@@ -12,11 +12,11 @@ namespace kira::system {
  */
 struct IRQFrame {
     // Registers saved by pusha (in reverse order)
-    u32 edi, esi, ebp, esp_dummy, ebx, edx, ecx, eax;
+    u32 edi, esi, ebp, espDummy, ebx, edx, ecx, eax;
     
     // Interrupt information pushed by our stub
-    u32 interrupt_number;
-    u32 error_code;  // Always 0 for IRQs
+    u32 interruptNumber;
+    u32 errorCode;  // Always 0 for IRQs
     
     // CPU state saved automatically by processor
     u32 eip, cs, eflags, esp, ss;
@@ -48,46 +48,46 @@ void initialize();
 
 /**
  * @brief Register a custom IRQ handler
- * @param irq_number IRQ number (0-15)
+ * @param irqNumber IRQ number (0-15)
  * @param handler Pointer to handler function
  * @return true if successful, false if invalid IRQ number
  */
-bool register_handler(u8 irq_number, IRQHandler handler);
+bool register_handler(u8 irqNumber, IRQHandler handler);
 
 /**
  * @brief Unregister an IRQ handler (restore default)
- * @param irq_number IRQ number (0-15)
+ * @param irqNumber IRQ number (0-15)
  * @return true if successful, false if invalid IRQ number
  */
-bool unregister_handler(u8 irq_number);
+bool unregister_handler(u8 irqNumber);
 
 /**
  * @brief Enable a specific IRQ
- * @param irq_number IRQ number (0-15)
+ * @param irqNumber IRQ number (0-15)
  * @return true if successful, false if invalid IRQ number
  */
-bool enable_irq(u8 irq_number);
+bool enable_irq(u8 irqNumber);
 
 /**
  * @brief Disable a specific IRQ
- * @param irq_number IRQ number (0-15)
+ * @param irqNumber IRQ number (0-15)
  * @return true if successful, false if invalid IRQ number
  */
-bool disable_irq(u8 irq_number);
+bool disable_irq(u8 irqNumber);
 
 /**
  * @brief Check if an IRQ is enabled
- * @param irq_number IRQ number (0-15)
+ * @param irqNumber IRQ number (0-15)
  * @return true if enabled, false if disabled or invalid
  */
-bool is_irq_enabled(u8 irq_number);
+bool is_irq_enabled(u8 irqNumber);
 
 /**
  * @brief Get IRQ statistics for debugging
- * @param irq_number IRQ number (0-15)
+ * @param irqNumber IRQ number (0-15)
  * @return Number of times this IRQ has been triggered
  */
-u32 get_irq_count(u8 irq_number);
+u32 get_irq_count(u8 irqNumber);
 
 /**
  * @brief Default IRQ handler (called by assembly stub)

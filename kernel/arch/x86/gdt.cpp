@@ -5,7 +5,7 @@ namespace kira::system {
 
 // Static GDT and descriptor
 GDTEntry GDTManager::gdt[GDT_ENTRIES];
-GDTDescriptor GDTManager::gdt_descriptor;
+GDTDescriptor GDTManager::gdtDescriptor;
 
 void GDTManager::initialize() {
     // Set up GDT entries
@@ -43,12 +43,12 @@ void GDTManager::set_gdt_entry(u32 index, u32 base, u32 limit, u8 access, u8 gra
     GDTEntry& entry = gdt[index];
     
     // Base address
-    entry.base_low = base & 0xFFFF;
-    entry.base_middle = (base >> 16) & 0xFF;
-    entry.base_high = (base >> 24) & 0xFF;
+    entry.baseLow = base & 0xFFFF;
+    entry.baseMiddle = (base >> 16) & 0xFF;
+    entry.baseHigh = (base >> 24) & 0xFF;
     
     // Limit
-    entry.limit_low = limit & 0xFFFF;
+    entry.limitLow = limit & 0xFFFF;
     entry.granularity = (limit >> 16) & 0x0F;
     
     // Granularity flags
@@ -60,8 +60,8 @@ void GDTManager::set_gdt_entry(u32 index, u32 base, u32 limit, u8 access, u8 gra
 
 void GDTManager::load_gdt() {
     // Set up GDT descriptor
-    gdt_descriptor.limit = (sizeof(GDTEntry) * GDT_ENTRIES) - 1;
-    gdt_descriptor.base = reinterpret_cast<u32>(&gdt);
+    gdtDescriptor.limit = (sizeof(GDTEntry) * GDT_ENTRIES) - 1;
+    gdtDescriptor.base = reinterpret_cast<u32>(&gdt);
     
     // Load GDT using inline assembly
     asm volatile (
@@ -75,7 +75,7 @@ void GDTManager::load_gdt() {
         "ljmp $0x08, $1f\n\t"  // Far jump to reload CS
         "1:\n\t"
         :
-        : "m"(gdt_descriptor)
+        : "m"(gdtDescriptor)
         : "eax"
     );
 }

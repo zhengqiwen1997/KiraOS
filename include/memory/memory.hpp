@@ -6,7 +6,7 @@ namespace kira::system {
 
 // Memory map entry structure (matches E820h format)
 struct MemoryMapEntry {
-    u64 base_address;    // Base address of the memory region
+    u64 baseAddress;    // Base address of the memory region
     u64 length;         // Length of the memory region
     u32 type;          // Type of memory region
     u32 acpi;          // ACPI 3.0 extended attributes

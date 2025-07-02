@@ -130,19 +130,19 @@ inline void number_to_decimal(char* buffer, u32 number) {
  * @brief Safe string copy with bounds checking and overlap detection
  * @param dest Destination buffer
  * @param src Source string
- * @param max_len Maximum number of characters to copy (including null terminator)
+ * @param maxLen Maximum number of characters to copy (including null terminator)
  * @note Refuses to copy if source and destination overlap (sets dest to empty string)
  */
-inline void strcpy_s(char* dest, const char* src, u32 max_len) {
-    if (!dest || !src || max_len == 0) return;
+inline void strcpy_s(char* dest, const char* src, u32 maxLen) {
+    if (!dest || !src || maxLen == 0) return;
     if (dest == src) return;  // Same pointer, nothing to do
     
     // Calculate source length for overlap detection
-    u32 src_len = strlen(src);
+    u32 srcLen = strlen(src);
     
     // Check for dangerous overlaps
-    bool overlaps = (dest > src && dest < src + src_len) ||
-                   (src > dest && src < dest + max_len);
+    bool overlaps = (dest > src && dest < src + srcLen) ||
+                   (src > dest && src < dest + maxLen);
     
     if (overlaps) {
         // For kernel safety, refuse overlapping copies
@@ -152,7 +152,7 @@ inline void strcpy_s(char* dest, const char* src, u32 max_len) {
     
     // Safe non-overlapping copy
     u32 i = 0;
-    while (i < max_len - 1 && src[i] != '\0') {
+    while (i < maxLen - 1 && src[i] != '\0') {
         dest[i] = src[i];
         i++;
     }
@@ -163,29 +163,29 @@ inline void strcpy_s(char* dest, const char* src, u32 max_len) {
  * @brief String move - handles overlapping memory regions safely
  * @param dest Destination buffer
  * @param src Source string
- * @param max_len Maximum number of characters to copy (including null terminator)
+ * @param maxLen Maximum number of characters to copy (including null terminator)
  * @note Uses byte-by-byte copying in correct direction for overlapping regions
  */
-inline void strmove_s(char* dest, const char* src, u32 max_len) {
-    if (!dest || !src || max_len == 0) return;
+inline void strmove_s(char* dest, const char* src, u32 maxLen) {
+    if (!dest || !src || maxLen == 0) return;
     if (dest == src) return;  // Same pointer, nothing to do
     
-    u32 src_len = strlen(src);
-    u32 copy_len = (src_len < max_len - 1) ? src_len : max_len - 1;
+    u32 srcLen = strlen(src);
+    u32 copyLen = (srcLen < maxLen - 1) ? srcLen : maxLen - 1;
     
-    if (dest > src && dest < src + src_len) {
+    if (dest > src && dest < src + srcLen) {
         // Forward overlap: copy backwards to avoid corruption
-        for (u32 i = copy_len; i > 0; i--) {
+        for (u32 i = copyLen; i > 0; i--) {
             dest[i - 1] = src[i - 1];
         }
     } else {
         // No overlap or backward overlap: copy forwards
-        for (u32 i = 0; i < copy_len; i++) {
+        for (u32 i = 0; i < copyLen; i++) {
             dest[i] = src[i];
         }
     }
     
-    dest[copy_len] = '\0';
+    dest[copyLen] = '\0';
 }
 
 /**

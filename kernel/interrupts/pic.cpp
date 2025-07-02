@@ -5,8 +5,8 @@ namespace kira::system {
 
 void PIC::initialize() {
     // Save current IRQ masks
-    u8 master_mask = inb(MASTER_PIC_DATA);
-    u8 slave_mask = inb(SLAVE_PIC_DATA);
+    u8 masterMask = inb(MASTER_PIC_DATA);
+    u8 slaveMask = inb(SLAVE_PIC_DATA);
     
     // Remap PIC to interrupts 32-47
     remap(IRQ_BASE, IRQ_BASE + 8);
@@ -17,30 +17,30 @@ void PIC::initialize() {
     outb(SLAVE_PIC_DATA, 0xFF);   // Mask all slave IRQs initially
 }
 
-void PIC::remap(u8 master_offset, u8 slave_offset) {
-    // Start initialization sequence (ICW1)
+void PIC::remap(u8 masterOffset, u8 slaveOffset) {
+    // Save current masks
+    u8 masterMask = inb(MASTER_PIC_DATA);
+    u8 slaveMask = inb(SLAVE_PIC_DATA);
+    
+    // Start initialization sequence
     outb(MASTER_PIC_COMMAND, ICW1_INIT | ICW1_ICW4);
-    io_wait();
     outb(SLAVE_PIC_COMMAND, ICW1_INIT | ICW1_ICW4);
-    io_wait();
     
-    // Set interrupt vector offsets (ICW2)
-    outb(MASTER_PIC_DATA, master_offset);  // Master PIC offset
-    io_wait();
-    outb(SLAVE_PIC_DATA, slave_offset);    // Slave PIC offset
-    io_wait();
+    // Set interrupt vector offsets
+    outb(MASTER_PIC_DATA, masterOffset);    // Master PIC offset
+    outb(SLAVE_PIC_DATA, slaveOffset);      // Slave PIC offset
     
-    // Set up cascade connection (ICW3)
-    outb(MASTER_PIC_DATA, 4);  // Tell master PIC that slave is at IRQ2 (0000 0100)
-    io_wait();
-    outb(SLAVE_PIC_DATA, 2);   // Tell slave PIC its cascade identity (0000 0010)
-    io_wait();
+    // Configure cascade
+    outb(MASTER_PIC_DATA, 4);               // IRQ2 has slave
+    outb(SLAVE_PIC_DATA, 2);                // Slave cascade identity
     
-    // Set mode (ICW4)
-    outb(MASTER_PIC_DATA, ICW4_8086);  // 8086 mode
-    io_wait();
-    outb(SLAVE_PIC_DATA, ICW4_8086);   // 8086 mode
-    io_wait();
+    // Set mode
+    outb(MASTER_PIC_DATA, ICW4_8086);
+    outb(SLAVE_PIC_DATA, ICW4_8086);
+    
+    // Restore masks
+    outb(MASTER_PIC_DATA, masterMask);
+    outb(SLAVE_PIC_DATA, slaveMask);
 }
 
 void PIC::send_eoi(u8 irq) {
@@ -90,19 +90,19 @@ void PIC::disable_irq(u8 irq) {
 }
 
 bool PIC::all_irqs_masked() {
-    u8 master_mask = inb(MASTER_PIC_DATA);
-    u8 slave_mask = inb(SLAVE_PIC_DATA);
+    u8 masterMask = inb(MASTER_PIC_DATA);
+    u8 slaveMask = inb(SLAVE_PIC_DATA);
     
     // All IRQs are masked if both masks are 0xFF
-    return (master_mask == 0xFF) && (slave_mask == 0xFF);
+    return (masterMask == 0xFF) && (slaveMask == 0xFF);
 }
 
 u16 PIC::get_irq_mask() {
-    u8 master_mask = inb(MASTER_PIC_DATA);
-    u8 slave_mask = inb(SLAVE_PIC_DATA);
+    u8 masterMask = inb(MASTER_PIC_DATA);
+    u8 slaveMask = inb(SLAVE_PIC_DATA);
     
     // Combine masks: low 8 bits = master, high 8 bits = slave
-    return (static_cast<u16>(slave_mask) << 8) | master_mask;
+    return (static_cast<u16>(slaveMask) << 8) | masterMask;
 }
 
 } // namespace kira::system 

@@ -140,18 +140,18 @@ public:
     
     /**
      * @brief Get program header by index
-     * @param elf_data ELF file data
+     * @param elfData ELF file data
      * @param index Program header index
      * @return Pointer to program header or nullptr
      */
-    static const Elf32_Phdr* get_program_header(const void* elf_data, u32 index);
+    static const Elf32_Phdr* get_program_header(const void* elfData, u32 index);
     
     /**
      * @brief Count loadable segments in ELF
-     * @param elf_data ELF file data
+     * @param elfData ELF file data
      * @return Number of PT_LOAD segments
      */
-    static u32 count_loadable_segments(const void* elf_data);
+    static u32 count_loadable_segments(const void* elfData);
 };
 
 } // namespace kira::formats 

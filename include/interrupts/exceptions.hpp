@@ -13,15 +13,15 @@ namespace kira::system {
 struct ExceptionFrame {
     // Pushed by our handler
     u32 edi, esi, ebp, esp, ebx, edx, ecx, eax;  // General purpose registers
-    u32 interrupt_number;                         // Interrupt number
-    u32 error_code;                              // Error code (if applicable)
+    u32 interruptNumber;                         // Interrupt number
+    u32 errorCode;                              // Error code (if applicable)
     
     // Pushed by CPU
     u32 eip;                                     // Instruction pointer
     u32 cs;                                      // Code segment
     u32 eflags;                                  // Flags register
-    u32 user_esp;                                // User stack pointer (if privilege change)
-    u32 user_ss;                                 // User stack segment (if privilege change)
+    u32 userEsp;                                // User stack pointer (if privilege change)
+    u32 userSs;                                 // User stack segment (if privilege change)
 } __attribute__((packed));
 
 /**
@@ -73,7 +73,7 @@ public:
      * @param exception_number Exception number (0-31)
      * @return Human-readable exception name
      */
-    static const char* get_exception_name(u32 exception_number);
+    static const char* get_exception_name(u32 exceptionNumber);
 
 private:
     /**
@@ -105,19 +105,19 @@ private:
     static void format_eip_message(char* buffer, u32 eip);
     
     /**
-     * @brief Format GPF message
+     * @brief Format GPF error message
      * @param buffer Output buffer
-     * @param error_code Error code
+     * @param errorCode Error code
      */
-    static void format_gpf_message(char* buffer, u32 error_code);
+    static void format_gpf_message(char* buffer, u32 errorCode);
     
     /**
-     * @brief Format page fault message
+     * @brief Format page fault message  
      * @param buffer Output buffer
-     * @param fault_addr Fault address
-     * @param error_code Error code
+     * @param faultAddr Fault address
+     * @param errorCode Error code
      */
-    static void format_page_fault_message(char* buffer, u32 fault_addr, u32 error_code);
+    static void format_page_fault_message(char* buffer, u32 faultAddr, u32 errorCode);
 };
 
 // External assembly stubs (will be implemented in assembly)

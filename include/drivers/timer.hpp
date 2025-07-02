@@ -48,7 +48,7 @@ public:
     static void set_frequency(u32 frequency);
 
 private:
-    static u32 current_frequency;
+    static u32 currentFrequency;
     
     /**
      * @brief Calculate the divisor for a given frequency

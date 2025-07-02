@@ -4,10 +4,10 @@
 namespace kira::system {
 
 // Static member definitions
-bool Keyboard::shift_pressed = false;
-bool Keyboard::ctrl_pressed = false;
-bool Keyboard::alt_pressed = false;
-bool Keyboard::caps_lock_on = false;
+bool Keyboard::shiftPressed = false;
+bool Keyboard::ctrlPressed = false;
+bool Keyboard::altPressed = false;
+bool Keyboard::capsLockOn = false;
 
 // Scan code to ASCII conversion table (unshifted)
 static const char scan_code_to_ascii_table[128] = {
@@ -51,70 +51,70 @@ static const char scan_code_to_ascii_shifted_table[128] = {
 
 void Keyboard::initialize() {
     // Reset keyboard state
-    shift_pressed = false;
-    ctrl_pressed = false;
-    alt_pressed = false;
-    caps_lock_on = false;
+    shiftPressed = false;
+    ctrlPressed = false;
+    altPressed = false;
+    capsLockOn = false;
 }
 
-char Keyboard::scan_code_to_ascii(u8 scan_code) {
+char Keyboard::scan_code_to_ascii(u8 scanCode) {
     // Remove release flag
-    u8 base_code = get_base_scan_code(scan_code);
+    u8 baseCode = get_base_scan_code(scanCode);
     
     // Check bounds
-    if (base_code >= 128) {
+    if (baseCode >= 128) {
         return 0;
     }
     
     // Get character from appropriate table
     char ch;
-    if (shift_pressed) {
-        ch = scan_code_to_ascii_shifted_table[base_code];
+    if (shiftPressed) {
+        ch = scan_code_to_ascii_shifted_table[baseCode];
     } else {
-        ch = scan_code_to_ascii_table[base_code];
+        ch = scan_code_to_ascii_table[baseCode];
     }
     
     // Handle caps lock for letters
-    if (caps_lock_on && ch >= 'a' && ch <= 'z') {
+    if (capsLockOn && ch >= 'a' && ch <= 'z') {
         ch = ch - 'a' + 'A';
-    } else if (caps_lock_on && ch >= 'A' && ch <= 'Z') {
+    } else if (capsLockOn && ch >= 'A' && ch <= 'Z') {
         ch = ch - 'A' + 'a';
     }
     
     return ch;
 }
 
-void Keyboard::handle_key_press(u8 scan_code) {
-    u8 base_code = get_base_scan_code(scan_code);
-    bool is_press = is_key_press(scan_code);
+void Keyboard::handle_key_press(u8 scanCode) {
+    u8 baseCode = get_base_scan_code(scanCode);
+    bool isPress = is_key_press(scanCode);
     
     // Handle modifier keys
-    switch (base_code) {
+    switch (baseCode) {
         case KEY_LSHIFT:
         case KEY_RSHIFT:
-            shift_pressed = is_press;
+            shiftPressed = isPress;
             break;
             
         case KEY_LCTRL:
-            ctrl_pressed = is_press;
+            ctrlPressed = isPress;
             break;
             
         case KEY_LALT:
-            alt_pressed = is_press;
+            altPressed = isPress;
             break;
             
         case KEY_CAPS_LOCK:
-            if (is_press) {
-                caps_lock_on = !caps_lock_on;
+            if (isPress) {
+                capsLockOn = !capsLockOn;
             }
             break;
     }
 }
 
-const char* Keyboard::get_key_name(u8 scan_code) {
-    u8 base_code = get_base_scan_code(scan_code);
+const char* Keyboard::get_key_name(u8 scanCode) {
+    u8 baseCode = get_base_scan_code(scanCode);
     
-    switch (base_code) {
+    switch (baseCode) {
         case KEY_ESC: return "ESC";
         case KEY_F1: return "F1";
         case KEY_F2: return "F2";

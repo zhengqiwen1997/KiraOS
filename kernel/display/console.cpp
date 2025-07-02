@@ -6,101 +6,80 @@ namespace kira::display {
 using namespace kira::system;
 
 void ScrollableConsole::initialize() {
-    // Initialize all buffer lines
+    // Clear all buffer lines
     for (u32 i = 0; i < BUFFER_LINES; i++) {
         clear_buffer_line(i);
         colors[i] = VGA_WHITE_ON_BLUE;
     }
     
-    current_line = 0;
-    scroll_offset = 0;
-    total_lines = 0;
+    currentLine = 0;
+    scrollOffset = 0;
+    totalLines = 0;
     active = false;
 }
 
 void ScrollableConsole::add_message(const char* message, u16 color) {
     if (!message) return;
     
-    // Copy message to current buffer line
-    copy_to_buffer_line(current_line, message, color);
+    // Add to circular buffer
+    copy_to_buffer_line(currentLine, message, color);
     
-    // Move to next line
-    current_line = (current_line + 1) % BUFFER_LINES;
-    total_lines++;
+    // Move to next line (circular)
+    currentLine = (currentLine + 1) % BUFFER_LINES;
+    totalLines++;
     
-    // If not in active scroll mode, automatically refresh display
+    // Auto-refresh display if not in active scroll mode
     if (!active) {
         refresh_display();
     }
 }
 
 void ScrollableConsole::add_formatted_message(u32 line, u32 col, const char* message, u16 color) {
-    // For now, just add as regular message
-    // TODO: Implement proper formatting if needed
+    // For now, just add as regular message - formatting could be enhanced later
     add_message(message, color);
 }
 
-bool ScrollableConsole::handle_keyboard_input(u8 scan_code) {
-    // Handle F1 key to toggle active mode
-    if (scan_code == KEY_F1) {
-        toggle_active_mode();
-        return true;
-    }
-    
-    // Only handle other keys if in active mode
+bool ScrollableConsole::handle_keyboard_input(u8 scanCode) {
     if (!active) {
+        if (scanCode == KEY_F1) {
+            active = true;
+            refresh_display();
+            return true;
+        }
         return false;
     }
     
-    // Handle scrolling keys
-    switch (scan_code) {
+    // Handle scroll mode keys
+    switch (scanCode) {
         case KEY_UP:
-            if (active) {
-                scroll_down(1);  // UP arrow should show older messages (scroll down in buffer)
-                refresh_display();
-                return true;
-            }
-            break;
+            scroll_down(1);  // UP arrow should show older messages (scroll down in buffer)
+            refresh_display();
+            return true;
             
         case KEY_DOWN:
-            if (active) {
-                scroll_up(1);    // DOWN arrow should show newer messages (scroll up in buffer)
-                refresh_display();
-                return true;
-            }
-            break;
+            scroll_up(1);    // DOWN arrow should show newer messages (scroll up in buffer)
+            refresh_display();
+            return true;
             
         case KEY_PAGE_UP:
-            if (active) {
-                scroll_up(DISPLAY_LINES);
-                refresh_display();
-                return true;
-            }
-            break;
+            scroll_up(DISPLAY_LINES);
+            refresh_display();
+            return true;
             
         case KEY_PAGE_DOWN:
-            if (active) {
-                scroll_down(DISPLAY_LINES);
-                refresh_display();
-                return true;
-            }
-            break;
+            scroll_down(DISPLAY_LINES);
+            refresh_display();
+            return true;
             
         case KEY_HOME:
-            if (active) {
-                scroll_to_top();
-                refresh_display();
-                return true;
-            }
-            break;
+            scroll_to_top();
+            refresh_display();
+            return true;
             
         case KEY_END:
-            if (active) {
-                scroll_to_bottom();
-                refresh_display();
-                return true;
-            }
-            break;
+            scroll_to_bottom();
+            refresh_display();
+            return true;
     }
     
     return false;  // Key not handled
@@ -121,28 +100,28 @@ void ScrollableConsole::refresh_display() {
     int display_start = 0;
     int max_display_lines = 24;  // Lines 0-23 = 24 lines
     
-    if (total_lines > max_display_lines) {
+    if (totalLines > max_display_lines) {
         // We have more messages than can fit, so calculate the start position
         if (active) {
             // In scroll mode, use scroll_offset
-            display_start = total_lines - max_display_lines - scroll_offset;
+            display_start = totalLines - max_display_lines - scrollOffset;
         } else {
             // In normal mode, always show the latest messages
-            display_start = total_lines - max_display_lines;
+            display_start = totalLines - max_display_lines;
         }
         
         // Ensure display_start is within bounds
         if (display_start < 0) display_start = 0;
-        if (display_start + max_display_lines > total_lines) {
-            display_start = total_lines - max_display_lines;
+        if (display_start + max_display_lines > totalLines) {
+            display_start = totalLines - max_display_lines;
         }
     }
     
     // Display the messages using direct buffer access
     int lines_shown = 0;
-    for (int i = 0; i < total_lines && lines_shown < max_display_lines; i++) {
+    for (int i = 0; i < totalLines && lines_shown < max_display_lines; i++) {
         int message_index = display_start + i;
-        if (message_index >= total_lines) break;
+        if (message_index >= totalLines) break;
         
         int buffer_index = message_index % BUFFER_LINES;
         int display_line = 0 + lines_shown;  // Start from line 0
@@ -188,59 +167,59 @@ void ScrollableConsole::toggle_active_mode() {
 }
 
 void ScrollableConsole::scroll_up(u32 lines) {
-    u32 old_offset = scroll_offset;
-    if (scroll_offset >= lines) {
-        scroll_offset -= lines;
+    u32 old_offset = scrollOffset;
+    if (scrollOffset >= lines) {
+        scrollOffset -= lines;
     } else {
-        scroll_offset = 0;
+        scrollOffset = 0;
     }
 }
 
 void ScrollableConsole::scroll_down(u32 lines) {
-    u32 max_offset = (total_lines > DISPLAY_LINES) ? total_lines - DISPLAY_LINES : 0;
-    u32 old_offset = scroll_offset;
+    u32 max_offset = (totalLines > DISPLAY_LINES) ? totalLines - DISPLAY_LINES : 0;
+    u32 old_offset = scrollOffset;
     
-    if (scroll_offset + lines <= max_offset) {
-        scroll_offset += lines;
+    if (scrollOffset + lines <= max_offset) {
+        scrollOffset += lines;
     } else {
-        scroll_offset = max_offset;
+        scrollOffset = max_offset;
     }
 }
 
 void ScrollableConsole::scroll_to_top() {
-    scroll_offset = 0;
+    scrollOffset = 0;
 }
 
 void ScrollableConsole::scroll_to_bottom() {
-    if (total_lines > DISPLAY_LINES) {
-        scroll_offset = total_lines - DISPLAY_LINES;
+    if (totalLines > DISPLAY_LINES) {
+        scrollOffset = totalLines - DISPLAY_LINES;
     } else {
-        scroll_offset = 0;
+        scrollOffset = 0;
     }
 }
 
-void ScrollableConsole::get_scroll_info(u32& current_top, u32& total_lines_available) const {
-    current_top = scroll_offset;
-    total_lines_available = total_lines;
+void ScrollableConsole::get_scroll_info(u32& currentTop, u32& totalLinesAvailable) const {
+    currentTop = scrollOffset;
+    totalLinesAvailable = totalLines;
 }
 
-void ScrollableConsole::clear_buffer_line(u32 line_index) {
-    if (line_index >= BUFFER_LINES) return;
+void ScrollableConsole::clear_buffer_line(u32 lineIndex) {
+    if (lineIndex >= BUFFER_LINES) return;
     
     for (u32 i = 0; i < LINE_WIDTH; i++) {
-        buffer[line_index][i] = ' ';
+        buffer[lineIndex][i] = ' ';
     }
-    buffer[line_index][LINE_WIDTH - 1] = '\0';
+    buffer[lineIndex][LINE_WIDTH - 1] = '\0';
 }
 
-void ScrollableConsole::copy_to_buffer_line(u32 line_index, const char* text, u16 color) {
-    if (line_index >= BUFFER_LINES || !text) return;
+void ScrollableConsole::copy_to_buffer_line(u32 lineIndex, const char* text, u16 color) {
+    if (lineIndex >= BUFFER_LINES || !text) return;
     
-    clear_buffer_line(line_index);
-    colors[line_index] = color;
+    clear_buffer_line(lineIndex);
+    colors[lineIndex] = color;
     
     for (u32 i = 0; text[i] != '\0' && i < (LINE_WIDTH - 1); i++) {
-        buffer[line_index][i] = text[i];
+        buffer[lineIndex][i] = text[i];
     }
 }
 

@@ -100,10 +100,10 @@ const u16 KEYBOARD_STATUS_PORT = 0x64;
  */
 class Keyboard {
 private:
-    static bool shift_pressed;
-    static bool ctrl_pressed;
-    static bool alt_pressed;
-    static bool caps_lock_on;
+    static bool shiftPressed;
+    static bool ctrlPressed;
+    static bool altPressed;
+    static bool capsLockOn;
 
 public:
     /**
@@ -144,40 +144,40 @@ public:
     
     /**
      * @brief Convert scan code to ASCII character
-     * @param scan_code Raw scan code from keyboard
+     * @param scanCode Raw scan code from keyboard
      * @return ASCII character or 0 if not printable
      */
-    static char scan_code_to_ascii(u8 scan_code);
+    static char scan_code_to_ascii(u8 scanCode);
     
     /**
      * @brief Handle keyboard interrupt (called from IRQ handler)
-     * @param scan_code Raw scan code from keyboard
+     * @param scanCode Raw scan code from keyboard
      */
-    static void handle_key_press(u8 scan_code);
+    static void handle_key_press(u8 scanCode);
     
     /**
      * @brief Get human-readable key name
-     * @param scan_code Raw scan code
+     * @param scanCode Raw scan code
      * @return Key name string
      */
-    static const char* get_key_name(u8 scan_code);
+    static const char* get_key_name(u8 scanCode);
     
     /**
      * @brief Check if a scan code represents a key press (not release)
-     * @param scan_code Raw scan code
+     * @param scanCode Raw scan code
      * @return true if key press, false if key release
      */
-    static bool is_key_press(u8 scan_code) {
-        return (scan_code & KEY_RELEASED) == 0;
+    static bool is_key_press(u8 scanCode) {
+        return (scanCode & KEY_RELEASED) == 0;
     }
     
     /**
      * @brief Get the base scan code (without release flag)
-     * @param scan_code Raw scan code
+     * @param scanCode Raw scan code
      * @return Base scan code
      */
-    static u8 get_base_scan_code(u8 scan_code) {
-        return scan_code & ~KEY_RELEASED;
+    static u8 get_base_scan_code(u8 scanCode) {
+        return scanCode & ~KEY_RELEASED;
     }
 
 private:

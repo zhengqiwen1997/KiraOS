@@ -12,7 +12,7 @@ namespace kira::system {
  * or system calls.
  */
 struct TSS {
-    u32 prev_tss;   // Previous TSS (unused in our implementation)
+    u32 prevTss;   // Previous TSS (unused in our implementation)
     u32 esp0;       // Stack pointer for Ring 0 (kernel stack)
     u32 ss0;        // Stack segment for Ring 0 (kernel data segment)
     u32 esp1;       // Stack pointer for Ring 1 (unused)
@@ -27,7 +27,7 @@ struct TSS {
     u32 es, cs, ss, ds, fs, gs;  // Segment registers (unused)
     u32 ldt;        // Local Descriptor Table selector (unused)
     u16 trap;       // Debug trap flag (unused)
-    u16 iomap_base; // I/O permission bitmap base (unused)
+    u16 iomapBase; // I/O permission bitmap base (unused)
 } __attribute__((packed));
 
 /**
@@ -45,9 +45,9 @@ public:
     
     /**
      * @brief Set the kernel stack for the current process
-     * @param kernel_stack_top Top of the kernel stack for this process
+     * @param kernelStackTop Top of the kernel stack for this process
      */
-    static void set_kernel_stack(u32 kernel_stack_top);
+    static void set_kernel_stack(u32 kernelStackTop);
     
     /**
      * @brief Get the TSS instance

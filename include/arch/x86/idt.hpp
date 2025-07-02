@@ -6,11 +6,11 @@ namespace kira::system {
 
 // IDT entry structure (8 bytes per entry)
 struct IDTEntry {
-    u16 offset_low;     // Lower 16 bits of handler address
+    u16 offsetLow;     // Lower 16 bits of handler address
     u16 selector;       // Code segment selector
     u8  reserved;       // Always 0
-    u8  type_attr;      // Type and attributes
-    u16 offset_high;    // Upper 16 bits of handler address
+    u8  typeAttr;      // Type and attributes
+    u16 offsetHigh;    // Upper 16 bits of handler address
 } __attribute__((packed));
 
 // IDT descriptor for LIDT instruction
@@ -67,8 +67,8 @@ const u8 IRQ1_KEYBOARD = 33;
  */
 class IDT {
 private:
-    static IDTEntry idt_table[IDT_SIZE];
-    static IDTDescriptor idt_descriptor;
+    static IDTEntry idtTable[IDT_SIZE];
+    static IDTDescriptor idtDescriptor;
     
 public:
     /**
@@ -79,33 +79,33 @@ public:
     
     /**
      * @brief Set an interrupt handler
-     * @param interrupt_number Interrupt/exception number (0-255)
+     * @param interruptNumber Interrupt/exception number (0-255)
      * @param handler Pointer to handler function
      * @param selector Code segment selector (usually 0x08)
-     * @param type_attr Type and attribute flags
+     * @param typeAttr Type and attribute flags
      */
-    static void set_handler(u8 interrupt_number, void* handler, u16 selector, u8 type_attr);
+    static void set_handler(u8 interruptNumber, void* handler, u16 selector, u8 typeAttr);
     
     /**
      * @brief Set a standard interrupt gate
-     * @param interrupt_number Interrupt number
+     * @param interruptNumber Interrupt number
      * @param handler Handler function pointer
      */
-    static void set_interrupt_gate(u8 interrupt_number, void* handler);
+    static void set_interrupt_gate(u8 interruptNumber, void* handler);
     
     /**
      * @brief Set a user-accessible interrupt gate (Ring 3)
-     * @param interrupt_number Interrupt number
+     * @param interruptNumber Interrupt number
      * @param handler Handler function pointer
      */
-    static void set_user_interrupt_gate(u8 interrupt_number, void* handler);
+    static void set_user_interrupt_gate(u8 interruptNumber, void* handler);
     
     /**
      * @brief Set a trap gate (doesn't disable interrupts)
-     * @param interrupt_number Interrupt number  
+     * @param interruptNumber Interrupt number  
      * @param handler Handler function pointer
      */
-    static void set_trap_gate(u8 interrupt_number, void* handler);
+    static void set_trap_gate(u8 interruptNumber, void* handler);
     
     /**
      * @brief Load the IDT into the CPU
@@ -114,10 +114,10 @@ public:
     
     /**
      * @brief Get IDT entry for debugging
-     * @param interrupt_number Interrupt number
+     * @param interruptNumber Interrupt number
      * @return Pointer to IDT entry or nullptr if invalid
      */
-    static const IDTEntry* get_entry(u8 interrupt_number);
+    static const IDTEntry* get_entry(u8 interruptNumber);
 };
 
 } // namespace kira::system 

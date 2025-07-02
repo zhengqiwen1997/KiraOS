@@ -51,10 +51,10 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
     );
     
     // Store memory map info in global variables for MemoryManager to access later
-    extern u32 g_memory_map_addr;
-    extern u32 g_memory_map_count;
-    g_memory_map_addr = memory_map_addr;
-    g_memory_map_count = memory_map_count;
+    extern u32 gMemoryMapAddr;
+    extern u32 gMemoryMapCount;
+    gMemoryMapAddr = memory_map_addr;
+    gMemoryMapCount = memory_map_count;
     
     // Call the main kernel function with VGA buffer for compatibility
     kira::kernel::main((volatile unsigned short*)VGA_BUFFER);

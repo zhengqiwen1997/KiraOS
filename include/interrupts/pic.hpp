@@ -123,10 +123,10 @@ public:
 private:
     /**
      * @brief Remap PIC to new interrupt vectors
-     * @param master_offset New interrupt base for master PIC (IRQ 0-7)
-     * @param slave_offset New interrupt base for slave PIC (IRQ 8-15)
+     * @param masterOffset New interrupt base for master PIC
+     * @param slaveOffset New interrupt base for slave PIC
      */
-    static void remap(u8 master_offset, u8 slave_offset);
+    static void remap(u8 masterOffset, u8 slaveOffset);
 };
 
 } // namespace kira::system 

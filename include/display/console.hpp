@@ -26,9 +26,9 @@ private:
     // Console buffer
     char buffer[BUFFER_LINES][LINE_WIDTH];
     u16 colors[BUFFER_LINES];              // Color for each line
-    u32 current_line;                      // Next line to write to
-    u32 scroll_offset;                     // Top line currently displayed
-    u32 total_lines;                       // Total lines written
+    u32 currentLine;                       // Next line to write to
+    u32 scrollOffset;                      // Top line currently displayed
+    u32 totalLines;                        // Total lines written
     
     bool active;                           // Whether console is actively scrolling
     
@@ -59,7 +59,7 @@ public:
      * @param scan_code Keyboard scan code
      * @return true if key was handled
      */
-    bool handle_keyboard_input(u8 scan_code);
+    bool handle_keyboard_input(u8 scanCode);
     
     /**
      * @brief Refresh the display with current scroll position
@@ -101,18 +101,18 @@ public:
     /**
      * @brief Get current scroll position info
      */
-    void get_scroll_info(u32& current_top, u32& total_lines_available) const;
+    void get_scroll_info(u32& currentTop, u32& totalLinesAvailable) const;
 
 private:
     /**
      * @brief Clear a line in the buffer
      */
-    void clear_buffer_line(u32 line_index);
+    void clear_buffer_line(u32 lineIndex);
     
     /**
      * @brief Copy string to buffer line (with bounds checking)
      */
-    void copy_to_buffer_line(u32 line_index, const char* text, u16 color);
+    void copy_to_buffer_line(u32 lineIndex, const char* text, u16 color);
 };
 
 } // namespace kira::display 

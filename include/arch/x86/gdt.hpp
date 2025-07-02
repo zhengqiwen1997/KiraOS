@@ -8,12 +8,12 @@ namespace kira::system {
  * @brief GDT Entry structure
  */
 struct GDTEntry {
-    u16 limit_low;      // Lower 16 bits of limit
-    u16 base_low;       // Lower 16 bits of base
-    u8  base_middle;    // Next 8 bits of base
+    u16 limitLow;      // Lower 16 bits of limit
+    u16 baseLow;       // Lower 16 bits of base
+    u8  baseMiddle;    // Next 8 bits of base
     u8  access;         // Access flags
     u8  granularity;    // Granularity and upper limit
-    u8  base_high;      // Upper 8 bits of base
+    u8  baseHigh;      // Upper 8 bits of base
 } __attribute__((packed));
 
 /**
@@ -96,7 +96,7 @@ public:
 private:
     static constexpr u32 GDT_ENTRIES = 6;  // null, kcode, kdata, ucode, udata, tss
     static GDTEntry gdt[GDT_ENTRIES];
-    static GDTDescriptor gdt_descriptor;
+    static GDTDescriptor gdtDescriptor;
 };
 
 } // namespace kira::system 

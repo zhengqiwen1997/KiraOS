@@ -83,8 +83,8 @@ public:
         
         for (int i = 7; i >= 0; i--) {
             u32 digit = (value >> (i * 4)) & 0xF;
-            char hex_char = (digit < 10) ? ('0' + digit) : ('A' + digit - 10);
-            pos[2 + (7 - i)] = color | hex_char;
+            char hexChar = (digit < 10) ? ('0' + digit) : ('A' + digit - 10);
+            pos[2 + (7 - i)] = color | hexChar;
         }
     }
     
@@ -101,14 +101,14 @@ public:
         volatile u16* pos = buffer + (line * VGA_WIDTH) + col;
         
         // High nibble
-        u32 high_digit = (value >> 4) & 0xF;
-        char high_char = (high_digit < 10) ? ('0' + high_digit) : ('A' + high_digit - 10);
-        pos[0] = color | high_char;
+        u32 highDigit = (value >> 4) & 0xF;
+        char highChar = (highDigit < 10) ? ('0' + highDigit) : ('A' + highDigit - 10);
+        pos[0] = color | highChar;
         
         // Low nibble
-        u32 low_digit = value & 0xF;
-        char low_char = (low_digit < 10) ? ('0' + low_digit) : ('A' + low_digit - 10);
-        pos[1] = color | low_char;
+        u32 lowDigit = value & 0xF;
+        char lowChar = (lowDigit < 10) ? ('0' + lowDigit) : ('A' + lowDigit - 10);
+        pos[1] = color | lowChar;
     }
     
     /**
@@ -133,16 +133,16 @@ public:
         
         // Convert to string (reverse order)
         char digits[12]; // Enough for 32-bit number
-        int digit_count = 0;
+        int digitCount = 0;
         
-        while (value > 0 && digit_count < 11) {
-            digits[digit_count++] = '0' + (value % 10);
+        while (value > 0 && digitCount < 11) {
+            digits[digitCount++] = '0' + (value % 10);
             value /= 10;
         }
         
         // Print digits in correct order
-        for (int i = digit_count - 1; i >= 0 && col + (digit_count - 1 - i) < VGA_WIDTH; i--) {
-            pos[digit_count - 1 - i] = color | digits[i];
+        for (int i = digitCount - 1; i >= 0 && col + (digitCount - 1 - i) < VGA_WIDTH; i--) {
+            pos[digitCount - 1 - i] = color | digits[i];
         }
     }
     

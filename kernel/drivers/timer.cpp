@@ -6,7 +6,7 @@ namespace kira::drivers {
 using namespace kira::system;
 
 // Static member definition
-u32 Timer::current_frequency = 0;
+u32 Timer::currentFrequency = 0;
 
 void Timer::initialize(u32 frequency) {
     // Calculate the divisor for the desired frequency
@@ -22,11 +22,11 @@ void Timer::initialize(u32 frequency) {
     outb(PIT_CHANNEL_0, (divisor >> 8) & 0xFF); // High byte
     
     // Store the current frequency
-    current_frequency = frequency;
+    currentFrequency = frequency;
 }
 
 u32 Timer::get_frequency() {
-    return current_frequency;
+    return currentFrequency;
 }
 
 void Timer::set_frequency(u32 frequency) {

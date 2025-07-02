@@ -29,16 +29,16 @@ constexpr u32 USER_TEXT_START = 0x08048000;     // Standard ELF text start
  */
 class AddressSpace {
 private:
-    u32* page_directory;        // Physical address of page directory
-    u32 page_directory_phys;    // Physical address (for CR3)
-    bool is_kernel_space;       // True if this is kernel address space
+    u32* pageDirectory;        // Physical address of page directory
+    u32 pageDirectoryPhys;    // Physical address (for CR3)
+    bool isKernelSpace;       // True if this is kernel address space
     
 public:
     /**
      * @brief Create new address space
-     * @param kernel_space True to create kernel address space
+     * @param kernelSpace True to create kernel address space
      */
-    AddressSpace(bool kernel_space = false);
+    AddressSpace(bool kernelSpace = false);
     
     /**
      * @brief Destructor - cleans up page tables
@@ -47,34 +47,34 @@ public:
     
     /**
      * @brief Map virtual page to physical page
-     * @param virtual_addr Virtual address (page-aligned)
-     * @param physical_addr Physical address (page-aligned)  
+     * @param virtualAddr Virtual address (page-aligned)
+     * @param physicalAddr Physical address (page-aligned)  
      * @param writable True if page should be writable
      * @param user True if page should be user-accessible
      * @return true on success
      */
-    bool map_page(u32 virtual_addr, u32 physical_addr, bool writable = true, bool user = true);
+    bool map_page(u32 virtualAddr, u32 physicalAddr, bool writable = true, bool user = true);
     
     /**
      * @brief Unmap virtual page
-     * @param virtual_addr Virtual address to unmap
+     * @param virtualAddr Virtual address to unmap
      * @return true on success
      */
-    bool unmap_page(u32 virtual_addr);
+    bool unmap_page(u32 virtualAddr);
     
     /**
      * @brief Get physical address for virtual address
-     * @param virtual_addr Virtual address to translate
+     * @param virtualAddr Virtual address to translate
      * @return Physical address or 0 if not mapped
      */
-    u32 get_physical_address(u32 virtual_addr) const;
+    u32 get_physical_address(u32 virtualAddr) const;
     
     /**
      * @brief Check if virtual address is mapped
-     * @param virtual_addr Virtual address to check
+     * @param virtualAddr Virtual address to check
      * @return true if mapped
      */
-    bool is_mapped(u32 virtual_addr) const;
+    bool is_mapped(u32 virtualAddr) const;
     
     /**
      * @brief Switch to this address space
@@ -85,36 +85,36 @@ public:
      * @brief Get page directory physical address
      * @return Physical address of page directory
      */
-    u32 get_page_directory_phys() const { return page_directory_phys; }
+    u32 get_page_directory_phys() const { return pageDirectoryPhys; }
     
     /**
      * @brief Map multiple pages for a memory region
-     * @param virtual_start Virtual start address
-     * @param physical_start Physical start address
+     * @param virtualStart Virtual start address
+     * @param physicalStart Physical start address
      * @param size Size in bytes
      * @param writable True if pages should be writable
      * @param user True if pages should be user-accessible
      * @return true on success
      */
-    bool map_region(u32 virtual_start, u32 physical_start, u32 size, 
+    bool map_region(u32 virtualStart, u32 physicalStart, u32 size, 
                    bool writable = true, bool user = true);
     
     /**
      * @brief Unmap multiple pages for a memory region
-     * @param virtual_start Virtual start address
+     * @param virtualStart Virtual start address
      * @param size Size in bytes
      * @return true on success
      */
-    bool unmap_region(u32 virtual_start, u32 size);
+    bool unmap_region(u32 virtualStart, u32 size);
 
 private:
     /**
      * @brief Get or create page table for virtual address
-     * @param virtual_addr Virtual address
+     * @param virtualAddr Virtual address
      * @param create True to create if doesn't exist
      * @return Pointer to page table or nullptr
      */
-    PageTableEntry* get_page_table(u32 virtual_addr, bool create = false);
+    PageTableEntry* get_page_table(u32 virtualAddr, bool create = false);
     
     /**
      * @brief Create new page table
@@ -137,8 +137,8 @@ private:
 class VirtualMemoryManager {
 private:
     static VirtualMemoryManager* instance;
-    AddressSpace* current_address_space;
-    AddressSpace* kernel_address_space;
+    AddressSpace* currentAddressSpace;
+    AddressSpace* kernelAddressSpace;
     
 public:
     /**
@@ -159,19 +159,19 @@ public:
     
     /**
      * @brief Switch to address space
-     * @param address_space Address space to switch to
+     * @param addressSpace Address space to switch to
      */
-    void switch_address_space(AddressSpace* address_space);
+    void switch_address_space(AddressSpace* addressSpace);
     
     /**
      * @brief Get current address space
      */
-    AddressSpace* get_current_address_space() const { return current_address_space; }
+    AddressSpace* get_current_address_space() const { return currentAddressSpace; }
     
     /**
      * @brief Get kernel address space
      */
-    AddressSpace* get_kernel_address_space() const { return kernel_address_space; }
+    AddressSpace* get_kernel_address_space() const { return kernelAddressSpace; }
     
     /**
      * @brief Flush TLB (Translation Lookaside Buffer)
@@ -180,9 +180,9 @@ public:
     
     /**
      * @brief Flush single TLB entry
-     * @param virtual_addr Virtual address to flush
+     * @param virtualAddr Virtual address to flush
      */
-    static void flush_tlb_single(u32 virtual_addr);
+    static void flush_tlb_single(u32 virtualAddr);
     
     /**
      * @brief Enable paging

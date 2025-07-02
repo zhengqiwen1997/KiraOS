@@ -13,95 +13,93 @@ extern "C" {
     void enable_paging_asm();
     kira::system::u32 get_cr0();
     void flush_tlb_asm();
-    void invlpg(kira::system::u32 virtual_addr);
+    void invlpg(kira::system::u32 virtualAddr);
 }
 
 //=============================================================================
 // AddressSpace Implementation
 //=============================================================================
 
-AddressSpace::AddressSpace(bool kernel_space) : is_kernel_space(kernel_space) {
-    // Allocate page directory
-    auto& memory_manager = MemoryManager::get_instance();
-    void* page_dir_mem = memory_manager.allocate_physical_page();
+AddressSpace::AddressSpace(bool kernel_space) : isKernelSpace(kernel_space) {
+    auto& memoryManager = MemoryManager::get_instance();
+    void* pageDirMem = memoryManager.allocate_physical_page();
     
-    if (!page_dir_mem) {
-        page_directory = nullptr;
-        page_directory_phys = 0;
+    if (!pageDirMem) {
+        pageDirectory = nullptr;
+        pageDirectoryPhys = 0;
         return;
     }
     
-    page_directory_phys = reinterpret_cast<u32>(page_dir_mem);
-    page_directory = reinterpret_cast<u32*>(page_dir_mem);
+    pageDirectoryPhys = reinterpret_cast<u32>(pageDirMem);
+    pageDirectory = reinterpret_cast<u32*>(pageDirMem);
     
     // Clear page directory
     for (u32 i = 0; i < PAGE_DIRECTORY_ENTRIES; i++) {
-        page_directory[i] = 0;
+        pageDirectory[i] = 0;
     }
     
-    if (is_kernel_space) {
+    if (kernel_space) {
         setup_kernel_mappings();
     }
 }
 
 AddressSpace::~AddressSpace() {
-    if (!page_directory) return;
+    if (!pageDirectory) return;
     
-    auto& memory_manager = MemoryManager::get_instance();
+    auto& memoryManager = MemoryManager::get_instance();
     
     // Free all page tables
     for (u32 i = 0; i < PAGE_DIRECTORY_ENTRIES; i++) {
         PageDirectoryEntry pde;
-        pde.value = page_directory[i];
+        pde.value = pageDirectory[i];
         
         if (pde.is_present()) {
-            // Free the page table
-            memory_manager.free_physical_page(reinterpret_cast<void*>(pde.get_address()));
+            memoryManager.free_physical_page(reinterpret_cast<void*>(pde.get_address()));
         }
     }
     
     // Free page directory
-    memory_manager.free_physical_page(reinterpret_cast<void*>(page_directory_phys));
+    memoryManager.free_physical_page(reinterpret_cast<void*>(pageDirectoryPhys));
 }
 
-bool AddressSpace::map_page(u32 virtual_addr, u32 physical_addr, bool writable, bool user) {
-    if (!page_directory) return false;
+bool AddressSpace::map_page(u32 virtualAddr, u32 physicalAddr, bool writable, bool user) {
+    if (!pageDirectory) return false;
     
     // Align addresses to page boundaries
-    virtual_addr &= PAGE_MASK;
-    physical_addr &= PAGE_MASK;
+    virtualAddr &= PAGE_MASK;
+    physicalAddr &= PAGE_MASK;
     
     // Get page table
-    PageTableEntry* page_table = get_page_table(virtual_addr, true);
-    if (!page_table) return false;
+    PageTableEntry* pageTable = get_page_table(virtualAddr, true);
+    if (!pageTable) return false;
     
     // Calculate page table index
-    u32 pt_index = (virtual_addr >> 12) & 0x3FF;
+    u32 ptIndex = (virtualAddr >> 12) & 0x3FF;
     
     // Set up page table entry
-    PageTableEntry& pte = page_table[pt_index];
+    PageTableEntry& pte = pageTable[ptIndex];
     pte.value = 0;
-    pte.set_address(physical_addr);
+    pte.set_address(physicalAddr);
     pte.set_present(true);
     pte.set_writable(writable);
     pte.set_user(user);
     
     // Flush TLB for this address
-    VirtualMemoryManager::flush_tlb_single(virtual_addr);
+    VirtualMemoryManager::flush_tlb_single(virtualAddr);
     
     return true;
 }
 
-bool AddressSpace::unmap_page(u32 virtual_addr) {
-    if (!page_directory) return false;
+bool AddressSpace::unmap_page(u32 virtualAddr) {
+    if (!pageDirectory) return false;
     
-    virtual_addr &= PAGE_MASK;
+    virtualAddr &= PAGE_MASK;
     
-    PageTableEntry* page_table = get_page_table(virtual_addr, false);
-    if (!page_table) return false;
+    PageTableEntry* pageTable = get_page_table(virtualAddr, false);
+    if (!pageTable) return false;
     
-    u32 pt_index = (virtual_addr >> 12) & 0x3FF;
-    PageTableEntry& pte = page_table[pt_index];
+    u32 ptIndex = (virtualAddr >> 12) & 0x3FF;
+    PageTableEntry& pte = pageTable[ptIndex];
     
     if (!pte.is_present()) return false;
     
@@ -109,53 +107,53 @@ bool AddressSpace::unmap_page(u32 virtual_addr) {
     pte.value = 0;
     
     // Flush TLB for this address
-    VirtualMemoryManager::flush_tlb_single(virtual_addr);
+    VirtualMemoryManager::flush_tlb_single(virtualAddr);
     
     return true;
 }
 
-u32 AddressSpace::get_physical_address(u32 virtual_addr) const {
-    if (!page_directory) return 0;
+u32 AddressSpace::get_physical_address(u32 virtualAddr) const {
+    if (!pageDirectory) return 0;
     
-    PageTableEntry* page_table = const_cast<AddressSpace*>(this)->get_page_table(virtual_addr, false);
-    if (!page_table) return 0;
+    PageTableEntry* pageTable = const_cast<AddressSpace*>(this)->get_page_table(virtualAddr, false);
+    if (!pageTable) return 0;
     
-    u32 pt_index = (virtual_addr >> 12) & 0x3FF;
-    PageTableEntry& pte = page_table[pt_index];
+    u32 ptIndex = (virtualAddr >> 12) & 0x3FF;
+    PageTableEntry& pte = pageTable[ptIndex];
     
     if (!pte.is_present()) return 0;
     
-    return pte.get_address() | (virtual_addr & 0xFFF);
+    return pte.get_address() | (virtualAddr & 0xFFF);
 }
 
-bool AddressSpace::is_mapped(u32 virtual_addr) const {
-    return get_physical_address(virtual_addr) != 0;
+bool AddressSpace::is_mapped(u32 virtualAddr) const {
+    return get_physical_address(virtualAddr) != 0;
 }
 
 void AddressSpace::switch_to() const {
-    if (page_directory_phys != 0) {
-        load_page_directory(page_directory_phys);
+    if (pageDirectoryPhys != 0) {
+        load_page_directory(pageDirectoryPhys);
     }
 }
 
-bool AddressSpace::map_region(u32 virtual_start, u32 physical_start, u32 size, 
+bool AddressSpace::map_region(u32 virtualStart, u32 physicalStart, u32 size, 
                              bool writable, bool user) {
     // Align to page boundaries
-    u32 virtual_end = virtual_start + size;
-    virtual_start &= PAGE_MASK;
-    virtual_end = (virtual_end + PAGE_SIZE - 1) & PAGE_MASK;
-    physical_start &= PAGE_MASK;
+    u32 virtualEnd = virtualStart + size;
+    virtualStart &= PAGE_MASK;
+    virtualEnd = (virtualEnd + PAGE_SIZE - 1) & PAGE_MASK;
+    physicalStart &= PAGE_MASK;
     
-    u32 pages = (virtual_end - virtual_start) / PAGE_SIZE;
+    u32 pages = (virtualEnd - virtualStart) / PAGE_SIZE;
     
     for (u32 i = 0; i < pages; i++) {
-        u32 virt_addr = virtual_start + (i * PAGE_SIZE);
-        u32 phys_addr = physical_start + (i * PAGE_SIZE);
+        u32 virtAddr = virtualStart + (i * PAGE_SIZE);
+        u32 physAddr = physicalStart + (i * PAGE_SIZE);
         
-        if (!map_page(virt_addr, phys_addr, writable, user)) {
+        if (!map_page(virtAddr, physAddr, writable, user)) {
             // Cleanup on failure
             for (u32 j = 0; j < i; j++) {
-                unmap_page(virtual_start + (j * PAGE_SIZE));
+                unmap_page(virtualStart + (j * PAGE_SIZE));
             }
             return false;
         }
@@ -164,60 +162,60 @@ bool AddressSpace::map_region(u32 virtual_start, u32 physical_start, u32 size,
     return true;
 }
 
-bool AddressSpace::unmap_region(u32 virtual_start, u32 size) {
-    u32 virtual_end = virtual_start + size;
-    virtual_start &= PAGE_MASK;
-    virtual_end = (virtual_end + PAGE_SIZE - 1) & PAGE_MASK;
+bool AddressSpace::unmap_region(u32 virtualStart, u32 size) {
+    u32 virtualEnd = virtualStart + size;
+    virtualStart &= PAGE_MASK;
+    virtualEnd = (virtualEnd + PAGE_SIZE - 1) & PAGE_MASK;
     
-    u32 pages = (virtual_end - virtual_start) / PAGE_SIZE;
+    u32 pages = (virtualEnd - virtualStart) / PAGE_SIZE;
     
     for (u32 i = 0; i < pages; i++) {
-        unmap_page(virtual_start + (i * PAGE_SIZE));
+        unmap_page(virtualStart + (i * PAGE_SIZE));
     }
     
     return true;
 }
 
-PageTableEntry* AddressSpace::get_page_table(u32 virtual_addr, bool create) {
-    if (!page_directory) return nullptr;
+PageTableEntry* AddressSpace::get_page_table(u32 virtualAddr, bool create) {
+    if (!pageDirectory) return nullptr;
     
-    u32 pd_index = (virtual_addr >> 22) & 0x3FF;
+    u32 pdIndex = (virtualAddr >> 22) & 0x3FF;
     PageDirectoryEntry pde;
-    pde.value = page_directory[pd_index];
+    pde.value = pageDirectory[pdIndex];
     
     if (!pde.is_present()) {
         if (!create) return nullptr;
         
         // Create new page table
-        u32 page_table_phys = create_page_table();
-        if (page_table_phys == 0) return nullptr;
+        u32 pageTablePhys = create_page_table();
+        if (pageTablePhys == 0) return nullptr;
         
         // Update page directory entry
         pde.value = 0;
-        pde.set_address(page_table_phys);
+        pde.set_address(pageTablePhys);
         pde.set_present(true);
         pde.set_writable(true);
-        pde.set_user(!is_kernel_space);
+        pde.set_user(!isKernelSpace);
         
-        page_directory[pd_index] = pde.value;
+        pageDirectory[pdIndex] = pde.value;
     }
     
     return reinterpret_cast<PageTableEntry*>(pde.get_address());
 }
 
 u32 AddressSpace::create_page_table() {
-    auto& memory_manager = MemoryManager::get_instance();
-    void* page_table_mem = memory_manager.allocate_physical_page();
+    auto& memoryManager = MemoryManager::get_instance();
+    void* pageTableMem = memoryManager.allocate_physical_page();
     
-    if (!page_table_mem) return 0;
+    if (!pageTableMem) return 0;
     
     // Clear page table
-    PageTableEntry* page_table = reinterpret_cast<PageTableEntry*>(page_table_mem);
+    PageTableEntry* pageTable = reinterpret_cast<PageTableEntry*>(pageTableMem);
     for (u32 i = 0; i < PAGE_TABLE_ENTRIES; i++) {
-        page_table[i].value = 0;
+        pageTable[i].value = 0;
     }
     
-    return reinterpret_cast<u32>(page_table_mem);
+    return reinterpret_cast<u32>(pageTableMem);
 }
 
 void AddressSpace::setup_kernel_mappings() {
@@ -245,24 +243,24 @@ VirtualMemoryManager& VirtualMemoryManager::get_instance() {
 
 void VirtualMemoryManager::initialize() {
     // Create kernel address space
-    kernel_address_space = new AddressSpace(true);
-    current_address_space = kernel_address_space;
+    kernelAddressSpace = new AddressSpace(true);
+    currentAddressSpace = kernelAddressSpace;
     
     // Enable paging
     enable_paging();
     
     // Switch to kernel address space
-    kernel_address_space->switch_to();
+    kernelAddressSpace->switch_to();
 }
 
 AddressSpace* VirtualMemoryManager::create_user_address_space() {
     return new AddressSpace(false);
 }
 
-void VirtualMemoryManager::switch_address_space(AddressSpace* address_space) {
-    if (address_space && address_space != current_address_space) {
-        current_address_space = address_space;
-        address_space->switch_to();
+void VirtualMemoryManager::switch_address_space(AddressSpace* addressSpace) {
+    if (addressSpace && addressSpace != currentAddressSpace) {
+        currentAddressSpace = addressSpace;
+        addressSpace->switch_to();
     }
 }
 
@@ -270,8 +268,8 @@ void VirtualMemoryManager::flush_tlb() {
     flush_tlb_asm();
 }
 
-void VirtualMemoryManager::flush_tlb_single(u32 virtual_addr) {
-    invlpg(virtual_addr);
+void VirtualMemoryManager::flush_tlb_single(u32 virtualAddr) {
+    invlpg(virtualAddr);
 }
 
 void VirtualMemoryManager::enable_paging() {
@@ -329,13 +327,11 @@ void flush_tlb_asm() {
     );
 }
 
-void invlpg(kira::system::u32 virtual_addr) {
-    asm volatile(
-        "invlpg (%0)"
-        :
-        : "r" (virtual_addr)
-        : "memory"
-    );
+void invlpg(kira::system::u32 virtualAddr) {
+    asm volatile("invlpg (%0)" 
+                 : 
+                 : "r" (virtualAddr)
+                 : "memory");
 }
 
 } 

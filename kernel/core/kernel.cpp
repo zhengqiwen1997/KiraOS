@@ -38,7 +38,7 @@ using namespace kira::system::utils;
 
 // Global console instance
 ScrollableConsole console;
-bool console_initialized = false;
+bool consoleInitialized = false;
 
 // Kernel main function
 void main(volatile unsigned short* vga_buffer) noexcept {
@@ -61,9 +61,9 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     initialize_syscalls();
     
     // Initialize console after system is ready
-    if (!console_initialized) {
+    if (!consoleInitialized) {
         console.initialize();
-        console_initialized = true;
+        consoleInitialized = true;
     }
     
     // Add system initialization messages to console
@@ -95,11 +95,11 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // }
     
     // Test memory manager quickly (silent)
-    auto& memory_manager = MemoryManager::get_instance();
-    void* page1 = memory_manager.allocate_physical_page();
-    void* page2 = memory_manager.allocate_physical_page();
-    if (page1) memory_manager.free_physical_page(page1);
-    if (page2) memory_manager.free_physical_page(page2);
+    auto& memoryManager = MemoryManager::get_instance();
+    void* page1 = memoryManager.allocate_physical_page();
+    void* page2 = memoryManager.allocate_physical_page();
+    if (page1) memoryManager.free_physical_page(page1);
+    if (page2) memoryManager.free_physical_page(page2);
     
     // === DYNAMIC STATUS (Lines 15-25) ===
     // Line 15: IRQ Activity counters

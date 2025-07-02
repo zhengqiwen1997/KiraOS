@@ -7,38 +7,38 @@ extern "C" void usermode_switch_asm(kira::system::u32 user_ss, kira::system::u32
 
 namespace kira::system {
 
-void UserMode::switch_to_user_mode(void* function, u32 user_stack) {
-    // Set up TSS with proper kernel stack for system call returns
-    u32 kernel_stack = get_current_kernel_stack();
-    TSSManager::set_kernel_stack(kernel_stack);
+void UserMode::switch_to_user_mode(void* function, u32 userStack) {
+    // Set up user mode segments
+    u16 userDs = USER_DATA_SELECTOR;
+    u16 userCs = USER_CODE_SELECTOR;
+    u16 userSs = USER_DATA_SELECTOR;
+    u32 userEflags = 0x202;  // Enable interrupts in user mode
     
-    // Prepare true user mode transition via IRET
-    // Stack frame that IRET expects (pushed in reverse order):
-    // [SS]     <- User stack segment (Ring 3)
-    // [ESP]    <- User stack pointer  
-    // [EFLAGS] <- Processor flags with interrupts enabled
-    // [CS]     <- User code segment (Ring 3)
-    // [EIP]    <- User function address
+    // Load user data segments
+    asm volatile (
+        "mov %0, %%ax\n\t"
+        "mov %%ax, %%ds\n\t"
+        "mov %%ax, %%es\n\t"
+        "mov %%ax, %%fs\n\t"
+        "mov %%ax, %%gs\n\t"
+        :
+        : "m"(userDs)
+        : "eax"
+    );
     
-    u32 user_cs = 0x1B;      // User code selector (0x18 | 3 = Ring 3)
-    u32 user_ss = 0x23;      // User data selector (0x20 | 3 = Ring 3)
-    u32 user_eflags = 0x202; // Interrupts enabled, IOPL=0
+    // Call assembly function to switch to user mode
+    // This will perform an IRET to enter Ring 3
+    usermode_switch_asm(userSs, userStack, userEflags, userCs, (u32)function);
     
-    // Call the assembly function to perform the switch
-    usermode_switch_asm(user_ss, user_stack, user_eflags, user_cs, (u32)function);
-    
-    // This code should NEVER be reached!
-    // The user program will return to kernel via system calls (INT 0x80)
-    // If we get here, something went very wrong
-    volatile u16* vga = (volatile u16*)0xB8000;
-    vga[22 * 80 + 6] = 0x4F00 | 'E';  // White on red 'E' for ERROR
-    vga[22 * 80 + 7] = 0x4F00 | 'R';  // White on red 'R'
-    vga[22 * 80 + 8] = 0x4F00 | 'R';  // White on red 'R'
+    // Should never reach here
+    for(;;) {
+        asm volatile("hlt");
+    }
 }
 
-u32 UserMode::setup_user_stack(u32 stack_base, u32 stack_size) {
-    // User stack grows downward, so return top of stack
-    return stack_base + stack_size - 16;  // Leave some space for alignment
+u32 UserMode::setup_user_stack(u32 stackBase, u32 stackSize) {
+    // Return stack top (stack grows downward)
+    return stackBase + stackSize - 16;  // Leave some space for alignment
 }
 
 bool UserMode::is_user_mode() {

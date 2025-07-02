@@ -42,8 +42,8 @@ bool ElfValidator::is_valid_elf32(const void* data, u32 size) {
     
     // Validate program header table is within file
     if (header->e_phoff != 0) {
-        u32 ph_table_end = header->e_phoff + (header->e_phnum * header->e_phentsize);
-        if (ph_table_end > size) {
+        u32 phTableEnd = header->e_phoff + (header->e_phnum * header->e_phentsize);
+        if (phTableEnd > size) {
             return false;
         }
     }
@@ -74,12 +74,12 @@ bool ElfValidator::is_executable_i386(const Elf32_Ehdr* header) {
     return true;
 }
 
-const Elf32_Phdr* ElfValidator::get_program_header(const void* elf_data, u32 index) {
-    if (!elf_data) {
+const Elf32_Phdr* ElfValidator::get_program_header(const void* elfData, u32 index) {
+    if (!elfData) {
         return nullptr;
     }
     
-    const Elf32_Ehdr* header = static_cast<const Elf32_Ehdr*>(elf_data);
+    const Elf32_Ehdr* header = static_cast<const Elf32_Ehdr*>(elfData);
     
     if (index >= header->e_phnum) {
         return nullptr;
@@ -89,24 +89,24 @@ const Elf32_Phdr* ElfValidator::get_program_header(const void* elf_data, u32 ind
         return nullptr;
     }
     
-    const u8* ph_table = static_cast<const u8*>(elf_data) + header->e_phoff;
+    const u8* phTable = static_cast<const u8*>(elfData) + header->e_phoff;
     const Elf32_Phdr* ph = reinterpret_cast<const Elf32_Phdr*>(
-        ph_table + (index * header->e_phentsize)
+        phTable + (index * header->e_phentsize)
     );
     
     return ph;
 }
 
-u32 ElfValidator::count_loadable_segments(const void* elf_data) {
-    if (!elf_data) {
+u32 ElfValidator::count_loadable_segments(const void* elfData) {
+    if (!elfData) {
         return 0;
     }
     
-    const Elf32_Ehdr* header = static_cast<const Elf32_Ehdr*>(elf_data);
+    const Elf32_Ehdr* header = static_cast<const Elf32_Ehdr*>(elfData);
     u32 count = 0;
     
     for (u32 i = 0; i < header->e_phnum; i++) {
-        const Elf32_Phdr* ph = get_program_header(elf_data, i);
+        const Elf32_Phdr* ph = get_program_header(elfData, i);
         if (ph && ph->p_type == PT_LOAD) {
             count++;
         }

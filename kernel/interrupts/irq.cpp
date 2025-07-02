@@ -69,104 +69,82 @@ void initialize() {
     sti();
 }
 
-bool register_handler(u8 irq_number, IRQHandler handler) {
-    if (irq_number >= 16 || !handler) {
+bool register_handler(u8 irqNumber, IRQHandler handler) {
+    if (irqNumber >= 16 || !handler) {
         return false;
     }
     
-    irq_handlers[irq_number] = handler;
+    irq_handlers[irqNumber] = handler;
     return true;
 }
 
-bool unregister_handler(u8 irq_number) {
-    if (irq_number >= 16) {
+bool unregister_handler(u8 irqNumber) {
+    if (irqNumber >= 16) {
         return false;
     }
     
-    irq_handlers[irq_number] = handlers::unhandled_irq;
+    irq_handlers[irqNumber] = nullptr;
     return true;
 }
 
-bool enable_irq(u8 irq_number) {
-    if (irq_number >= 16) {
+bool enable_irq(u8 irqNumber) {
+    if (irqNumber >= 16) {
         return false;
     }
     
-    PIC::enable_irq(irq_number);
+    PIC::enable_irq(irqNumber);
     return true;
 }
 
-bool disable_irq(u8 irq_number) {
-    if (irq_number >= 16) {
+bool disable_irq(u8 irqNumber) {
+    if (irqNumber >= 16) {
         return false;
     }
     
-    PIC::disable_irq(irq_number);
+    PIC::disable_irq(irqNumber);
     return true;
 }
 
-bool is_irq_enabled(u8 irq_number) {
-    if (irq_number >= 16) {
+bool is_irq_enabled(u8 irqNumber) {
+    if (irqNumber >= 16) {
         return false;
     }
     
     u16 mask = PIC::get_irq_mask();
-    return !(mask & (1 << irq_number));
+    return (mask & (1 << irqNumber)) == 0;  // 0 = enabled, 1 = disabled
 }
 
-u32 get_irq_count(u8 irq_number) {
-    if (irq_number >= 16) {
+u32 get_irq_count(u8 irqNumber) {
+    if (irqNumber >= 16) {
         return 0;
     }
     
-    return irq_counts[irq_number];
+    return irq_counts[irqNumber];
 }
 
 void default_handler(IRQFrame* frame) {
-    // Extract IRQ number from interrupt number
-    u8 irq_number = PIC::interrupt_to_irq(frame->interrupt_number);
+    // Convert interrupt number to IRQ number
+    u8 irqNumber = PIC::interrupt_to_irq(frame->interruptNumber);
     
-    if (irq_number != 0xFF) {
-        // Valid hardware interrupt
-        irq_counts[irq_number]++;
-        
-        // Show interrupt activity on line 14 using direct VGA memory writes
-        // BUT skip timer (IRQ 0) since timer_handler writes to line 14
-        // COMMENTED OUT - IRQ display not needed for now
-        /*
-        if (irq_number != 0) {  // Don't overwrite timer display
-            volatile u16* vga_mem = (volatile u16*)0xB8000;
-            int line14_offset = 14 * 80;  // Line 14 start
-            
-            // Write "IRQ" in green at position 15 (after timer display)
-            vga_mem[line14_offset + 15] = 0x2049;  // 'I' green on black
-            vga_mem[line14_offset + 16] = 0x2052;  // 'R' green on black
-            vga_mem[line14_offset + 17] = 0x2051;  // 'Q' green on black
-            
-            // Write IRQ number in white
-            vga_mem[line14_offset + 18] = 0x0F30 + irq_number;  // IRQ number in white
-            
-            // Write ":" in green
-            vga_mem[line14_offset + 19] = 0x203A;  // ':' green on black
-            
-            // Write count (simple approach - just show last digit for now)
-            u32 count = irq_counts[irq_number];
-            vga_mem[line14_offset + 20] = 0x0F30 + (count % 10);  // Last digit in white
-            vga_mem[line14_offset + 21] = 0x0F30 + ((count / 10) % 10);  // Second to last digit
-            vga_mem[line14_offset + 22] = 0x0F30 + ((count / 100) % 10);  // Third to last digit
-        }
-        */
-        
-        // Call registered handler
-        if (irq_handlers[irq_number]) {
-            irq_handlers[irq_number](frame);
-        }
-        
-        // Send EOI to PIC
-        PIC::send_eoi(irq_number);
-    } else {
-        // Not a hardware interrupt - no VGA output to avoid console conflicts
+    // Validate IRQ number
+    if (irqNumber >= 16) {
+        // Invalid IRQ number - shouldn't happen
+        PIC::send_eoi(0);  // Send EOI anyway to be safe
+        return;
     }
+    
+    // Update statistics
+    irq_counts[irqNumber]++;
+    
+    // Call registered handler or default
+    if (irq_handlers[irqNumber]) {
+        irq_handlers[irqNumber](frame);
+    } else {
+        handlers::unhandled_irq(frame);
+    }
+    
+    // Send End of Interrupt signal
+    PIC::send_eoi(irqNumber);
 }
 
 void print_statistics() {
@@ -188,8 +166,8 @@ namespace handlers {
 
 void timer_handler(IRQFrame* frame) {
     // Timer tick - used for process scheduling
-    static u32 timer_ticks = 0;
-    timer_ticks++;
+    static u32 timerTicks = 0;
+    timerTicks++;
     
     // Call process scheduler every timer tick
     auto& pm = ProcessManager::get_instance();
@@ -200,25 +178,24 @@ void timer_handler(IRQFrame* frame) {
 
 void keyboard_handler(IRQFrame* frame) {
     // Read scan code from keyboard
-    u8 scan_code = inb(0x60);
+    u8 scanCode = inb(0x60);
     
     // Update keyboard state using the existing Keyboard class
-    Keyboard::handle_key_press(scan_code);
+    Keyboard::handle_key_press(scanCode);
     
     // Forward keyboard input to console (declared in kernel namespace in kernel.cpp)
-    if (kira::kernel::console.handle_keyboard_input(scan_code)) {
+    if (kira::kernel::console.handle_keyboard_input(scanCode)) {
         // Console handled the key, refresh display
         kira::kernel::console.refresh_display();
     }
 }
 
 void unhandled_irq(IRQFrame* frame) {
-    // Default handler for unregistered IRQs (Line 19)
-    u8 irq_number = PIC::interrupt_to_irq(frame->interrupt_number);
+    u8 irqNumber = PIC::interrupt_to_irq(frame->interruptNumber);
     
     if (vga_display) {
         vga_display->print_string(19, 0, "Unhandled IRQ ", display::VGA_RED_ON_BLUE);
-        vga_display->print_decimal(19, 14, irq_number, display::VGA_RED_ON_BLUE);
+        vga_display->print_decimal(19, 14, irqNumber, display::VGA_RED_ON_BLUE);
     }
 }
 

@@ -36,10 +36,10 @@ void Exceptions::initialize() {
 void Exceptions::default_handler(ExceptionFrame* frame) {
     // Log exception to console
     char msg[80];
-    const char* exc_name = get_exception_name(frame->interrupt_number);
+    const char* exc_name = get_exception_name(frame->interruptNumber);
     
     // Format: "EXCEPTION: [name] (INT xx) at EIP 0xXXXXXXXX"
-    format_exception_message(msg, exc_name, frame->interrupt_number, frame->eip);
+    format_exception_message(msg, exc_name, frame->interruptNumber, frame->eip);
     
     kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
     kira::kernel::console.refresh_display();
@@ -49,7 +49,7 @@ void Exceptions::default_handler(ExceptionFrame* frame) {
 }
 
 void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
-    switch (frame->interrupt_number) {
+    switch (frame->interruptNumber) {
         // ========== RECOVERABLE EXCEPTIONS ==========
         case INT_BREAKPOINT:  // Interrupt 3 - Debugging breakpoint
             kira::kernel::console.add_message("Breakpoint hit - continuing", VGA_GREEN_ON_BLUE);
@@ -164,7 +164,7 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
             
         // ========== RESERVED/UNKNOWN EXCEPTIONS ==========
         default:
-            if (frame->interrupt_number <= 31) {
+            if (frame->interruptNumber <= 31) {
                 // Reserved CPU exception
                 kira::kernel::console.add_message("CRITICAL: Reserved Exception!", VGA_RED_ON_BLUE);
                 halt_system("Reserved Exception - Unknown CPU exception");
@@ -204,85 +204,86 @@ void Exceptions::divide_error_handler(ExceptionFrame* frame) {
 }
 
 void Exceptions::general_protection_handler(ExceptionFrame* frame) {
-    char msg[80];
-    format_gpf_message(msg, frame->error_code);
+    char msg[256];
+    format_gpf_message(msg, frame->errorCode);
     kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
-    kira::kernel::console.add_message("Memory/privilege violation detected", VGA_RED_ON_BLUE);
+    halt_system("General Protection Fault");
 }
 
 void Exceptions::page_fault_handler(ExceptionFrame* frame) {
-    // Get the faulting address from CR2 register
-    u32 fault_addr;
-    asm volatile("mov %%cr2, %0" : "=r"(fault_addr));
+    u32 faultAddr;
+    asm volatile("mov %%cr2, %0" : "=r"(faultAddr));
     
-    char msg[80];
-    format_eip_message(msg, frame->eip);
+    char msg[512];
+    format_page_fault_message(msg, faultAddr, frame->errorCode);
     kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
     
-    format_page_fault_message(msg, fault_addr, frame->error_code);
-    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+    // Decode error code for additional info
+    const char* accessType = (frame->errorCode & 0x2) ? "write" : "read";
+    const char* privilege = (frame->errorCode & 0x4) ? "user" : "kernel";
+    const char* present = (frame->errorCode & 0x1) ? "protection" : "not present";
     
-    // Decode error code
-    const char* access_type = (frame->error_code & 0x2) ? "write" : "read";
-    const char* privilege = (frame->error_code & 0x4) ? "user" : "kernel";
-    const char* present = (frame->error_code & 0x1) ? "protection" : "not present";
+    char detail[256];
+    strcpy(detail, "Page fault details: ");
+    strcat(detail, accessType);
+    strcat(detail, " access, ");
+    strcat(detail, privilege);
+    strcat(detail, " mode, ");
+    strcat(detail, present);
+    kira::kernel::console.add_message(detail, VGA_YELLOW_ON_BLUE);
     
-    strcpy(msg, "Type: ");
-    strcat(msg, privilege);
-    strcat(msg, " ");
-    strcat(msg, access_type);
-    strcat(msg, " (");
-    strcat(msg, present);
-    strcat(msg, ")");
-    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
+    halt_system("Page Fault");
 }
 
 // Helper function implementations - now using common utils
 void Exceptions::format_exception_message(char* buffer, const char* name, u32 number, u32 eip) {
     strcpy(buffer, "EXCEPTION: ");
     strcat(buffer, name);
-    strcat(buffer, " (INT ");
+    strcat(buffer, " (");
     
-    char num_buf[16];
-    number_to_decimal(num_buf, number);
-    strcat(buffer, num_buf);
+    char numBuf[16];
+    number_to_decimal(numBuf, number);
+    strcat(buffer, numBuf);
+    strcat(buffer, ") at EIP=0x");
     
-    strcat(buffer, ") at EIP 0x");
-    
-    char hex_buf[16];
-    number_to_hex(hex_buf, eip);
-    strcat(buffer, hex_buf);
+    char hexBuf[16];
+    number_to_hex(hexBuf, eip);
+    strcat(buffer, hexBuf);
 }
 
 void Exceptions::format_eip_message(char* buffer, u32 eip) {
-    strcpy(buffer, "EIP: 0x");
-    char hex_buf[16];
-    number_to_hex(hex_buf, eip);
-    strcat(buffer, hex_buf);
+    strcpy(buffer, "Instruction pointer: 0x");
+    char hexBuf[16];
+    number_to_hex(hexBuf, eip);
+    strcat(buffer, hexBuf);
 }
 
-void Exceptions::format_gpf_message(char* buffer, u32 error_code) {
-    strcpy(buffer, "GPF Error: 0x");
-    char hex_buf[16];
-    number_to_hex(hex_buf, error_code);
-    strcat(buffer, hex_buf);
+void Exceptions::format_gpf_message(char* buffer, u32 errorCode) {
+    strcpy(buffer, "General Protection Fault - Error Code: 0x");
+    char hexBuf[16];
+    number_to_hex(hexBuf, errorCode);
+    strcat(buffer, hexBuf);
 }
 
-void Exceptions::format_page_fault_message(char* buffer, u32 fault_addr, u32 error_code) {
-    strcpy(buffer, "Fault address: 0x");
-    char hex_buf[16];
-    number_to_hex(hex_buf, fault_addr);
-    strcat(buffer, hex_buf);
+void Exceptions::format_page_fault_message(char* buffer, u32 faultAddr, u32 errorCode) {
+    strcpy(buffer, "Page Fault at address: 0x");
+    char hexBuf[16];
+    number_to_hex(hexBuf, faultAddr);
+    strcat(buffer, hexBuf);
+    strcat(buffer, " (Error: 0x");
+    number_to_hex(hexBuf, errorCode);
+    strcat(buffer, hexBuf);
+    strcat(buffer, ")");
 }
 
-const char* Exceptions::get_exception_name(u32 exception_number) {
-    switch (exception_number) {
-        case 0: return "Division Error";
-        case 1: return "Debug";
-        case 2: return "Non-Maskable Interrupt";
+const char* Exceptions::get_exception_name(u32 exceptionNumber) {
+    switch (exceptionNumber) {
+        case 0: return "Divide Error";
+        case 1: return "Debug Exception";
+        case 2: return "NMI Interrupt";
         case 3: return "Breakpoint";
         case 4: return "Overflow";
-        case 5: return "Bound Range Exceeded";
+        case 5: return "BOUND Range Exceeded";
         case 6: return "Invalid Opcode";
         case 7: return "Device Not Available";
         case 8: return "Double Fault";
@@ -290,20 +291,15 @@ const char* Exceptions::get_exception_name(u32 exception_number) {
         case 10: return "Invalid TSS";
         case 11: return "Segment Not Present";
         case 12: return "Stack Fault";
-        case 13: return "General Protection Fault";
+        case 13: return "General Protection";
         case 14: return "Page Fault";
-        case 16: return "x87 FPU Error";
+        case 16: return "x87 FPU Floating-Point Error";
         case 17: return "Alignment Check";
         case 18: return "Machine Check";
-        case 19: return "SIMD FPU Error";
-        case 20: return "Virtualization Error";
-        case 21: return "Control Protection Error";
-        default: 
-            if (exception_number <= 31) {
-                return "Reserved Exception";
-            } else {
-                return "Hardware/Software Interrupt";
-            }
+        case 19: return "SIMD Floating-Point Exception";
+        case 20: return "Virtualization Exception";
+        case 21: return "Control Protection Exception";
+        default: return "Unknown Exception";
     }
 }
 

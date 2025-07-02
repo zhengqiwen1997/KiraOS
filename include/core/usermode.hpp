@@ -12,17 +12,17 @@ public:
     /**
      * @brief Switch to user mode and execute function
      * @param function Function to execute in user mode
-     * @param user_stack User mode stack pointer
+     * @param userStack User mode stack pointer
      */
-    static void switch_to_user_mode(void* function, u32 user_stack);
+    static void switch_to_user_mode(void* function, u32 userStack);
     
     /**
      * @brief Set up user mode stack for a process
-     * @param stack_base Base address of stack
-     * @param stack_size Size of stack
+     * @param stackBase Base address of stack
+     * @param stackSize Size of stack
      * @return User mode stack pointer (top of stack)
      */
-    static u32 setup_user_stack(u32 stack_base, u32 stack_size);
+    static u32 setup_user_stack(u32 stackBase, u32 stackSize);
     
     /**
      * @brief Check if currently in user mode
