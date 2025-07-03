@@ -49,13 +49,13 @@ public:
 private:
     /**
      * @brief Make system call
-     * @param syscall_num System call number
+     * @param syscallNum System call number
      * @param arg1 First argument
      * @param arg2 Second argument
      * @param arg3 Third argument
      * @return System call result
      */
-    static i32 syscall(u32 syscall_num, u32 arg1 = 0, u32 arg2 = 0, u32 arg3 = 0);
+    static i32 syscall(u32 syscallNum, u32 arg1 = 0, u32 arg2 = 0, u32 arg3 = 0);
 };
 
 } // namespace kira::usermode 

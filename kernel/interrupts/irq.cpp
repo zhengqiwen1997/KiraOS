@@ -13,7 +13,7 @@ namespace kira::kernel {
     extern kira::display::ScrollableConsole console;
 }
 
-namespace kira::system::irq {
+namespace kira::system {
 
 // IRQ handler table
 static IRQHandler irq_handlers[16];
@@ -22,21 +22,21 @@ static IRQHandler irq_handlers[16];
 static u32 irq_counts[16] = {0};
 
 // VGA display for output
-static display::VGADisplay* vga_display = nullptr;
-static display::VGADisplay global_vga_display;
+static kira::display::VGADisplay* vga_display = nullptr;
+static kira::display::VGADisplay global_vga_display;
 
-void initialize() {
+void initialize_irq() {
     // Initialize PIC first
     PIC::initialize();
     
     // Initialize all handlers to default unhandled handler
     for (int i = 0; i < 16; i++) {
-        irq_handlers[i] = handlers::unhandled_irq;
+        irq_handlers[i] = unhandled_irq;
     }
     
     // Register specific handlers
-    register_handler(PIC::IRQ_TIMER, handlers::timer_handler);
-    register_handler(PIC::IRQ_KEYBOARD, handlers::keyboard_handler);
+    register_handler(PIC::IRQ_TIMER, timer_handler);
+    register_handler(PIC::IRQ_KEYBOARD, keyboard_handler);
     
     // Explicitly enable keyboard IRQ (IRQ1)
     enable_irq(PIC::IRQ_KEYBOARD);
@@ -111,7 +111,7 @@ bool is_irq_enabled(u8 irqNumber) {
     }
     
     u16 mask = PIC::get_irq_mask();
-    return (mask & (1 << irqNumber)) == 0;  // 0 = enabled, 1 = disabled
+    return !(mask & (1 << irqNumber));
 }
 
 u32 get_irq_count(u8 irqNumber) {
@@ -140,7 +140,7 @@ void default_handler(IRQFrame* frame) {
     if (irq_handlers[irqNumber]) {
         irq_handlers[irqNumber](frame);
     } else {
-        handlers::unhandled_irq(frame);
+        unhandled_irq(frame);
     }
     
     // Send End of Interrupt signal
@@ -150,19 +150,17 @@ void default_handler(IRQFrame* frame) {
 void print_statistics() {
     if (!vga_display) return;
     
-    vga_display->print_string(0, 0, "IRQ Statistics:", display::VGA_WHITE_ON_BLUE);
+    vga_display->print_string(0, 0, "IRQ Statistics:", kira::display::VGA_WHITE_ON_BLUE);
     
     for (int i = 0; i < 16; i++) {
         if (irq_counts[i] > 0) {
-            vga_display->print_string(i + 1, 0, "IRQ ", display::VGA_CYAN_ON_BLUE);
-            vga_display->print_decimal(i + 1, 4, i, display::VGA_CYAN_ON_BLUE);
-            vga_display->print_string(i + 1, 6, ": ", display::VGA_CYAN_ON_BLUE);
-            vga_display->print_decimal(i + 1, 8, irq_counts[i], display::VGA_WHITE_ON_BLUE);
+            vga_display->print_string(i + 1, 0, "IRQ ", kira::display::VGA_CYAN_ON_BLUE);
+            vga_display->print_decimal(i + 1, 4, i, kira::display::VGA_CYAN_ON_BLUE);
+            vga_display->print_string(i + 1, 6, ": ", kira::display::VGA_CYAN_ON_BLUE);
+            vga_display->print_decimal(i + 1, 8, irq_counts[i], kira::display::VGA_WHITE_ON_BLUE);
         }
     }
 }
-
-namespace handlers {
 
 void timer_handler(IRQFrame* frame) {
     // Timer tick - used for process scheduling
@@ -194,16 +192,14 @@ void unhandled_irq(IRQFrame* frame) {
     u8 irqNumber = PIC::interrupt_to_irq(frame->interruptNumber);
     
     if (vga_display) {
-        vga_display->print_string(19, 0, "Unhandled IRQ ", display::VGA_RED_ON_BLUE);
-        vga_display->print_decimal(19, 14, irqNumber, display::VGA_RED_ON_BLUE);
+        vga_display->print_string(19, 0, "Unhandled IRQ ", kira::display::VGA_RED_ON_BLUE);
+        vga_display->print_decimal(19, 14, irqNumber, kira::display::VGA_RED_ON_BLUE);
     }
 }
 
-} // namespace handlers
-
-} // namespace kira::system::irq
+} // namespace kira::system
 
 // C-style wrapper for assembly to call our C++ default handler
 extern "C" void irq_default_handler_wrapper(kira::system::IRQFrame* frame) {
-    kira::system::irq::default_handler(frame);
+    kira::system::default_handler(frame);
 } 

@@ -5,7 +5,7 @@ namespace kira::usermode {
 // Simple test user program that doesn't access kernel memory
 void user_test_simple() {
     // Use only stack variables - no static variables that would be in kernel memory
-    u32 local_count = 1;
+    u32 count = 1;
     
     // Test 1: Check current privilege level
     u16 cs_register;
@@ -14,7 +14,7 @@ void user_test_simple() {
     
     // Simple loop that doesn't access memory outside user space
     for (u32 i = 0; i < 1000; i++) {
-        local_count++;
+        count++;
         asm volatile("nop");
     }
     
@@ -23,7 +23,7 @@ void user_test_simple() {
         for (u32 i = 0; i < 100000; i++) {
             asm volatile("nop");
         }
-        local_count++;
+        count++;
     }
 }
 

@@ -19,45 +19,45 @@ struct IDTDescriptor {
     u32 base;           // Base address of IDT
 } __attribute__((packed));
 
-// IDT constants
-const u32 IDT_SIZE = 256;           // 256 interrupt vectors
-const u32 IDT_ENTRY_SIZE = 8;       // Each entry is 8 bytes
+// IDT Configuration Constants
+constexpr u32 IDT_SIZE = 256;           // 256 interrupt vectors
+constexpr u32 IDT_ENTRY_SIZE = 8;       // Each entry is 8 bytes
 
-// IDT entry type attributes
-const u8 IDT_PRESENT = 0x80;        // Present bit
-const u8 IDT_RING0 = 0x00;          // Ring 0 (kernel)
-const u8 IDT_RING3 = 0x60;          // Ring 3 (user)
-const u8 IDT_INTERRUPT_GATE = 0x0E; // 32-bit interrupt gate
-const u8 IDT_TRAP_GATE = 0x0F;      // 32-bit trap gate
+// IDT Entry Flags
+constexpr u8 IDT_PRESENT = 0x80;        // Present bit
+constexpr u8 IDT_RING0 = 0x00;          // Ring 0 (kernel)
+constexpr u8 IDT_RING3 = 0x60;          // Ring 3 (user)
+constexpr u8 IDT_INTERRUPT_GATE = 0x0E; // 32-bit interrupt gate
+constexpr u8 IDT_TRAP_GATE = 0x0F;      // 32-bit trap gate
 
-// Standard interrupt/exception numbers
-const u8 INT_DIVIDE_ERROR = 0;
-const u8 INT_DEBUG = 1;
-const u8 INT_NMI = 2;
-const u8 INT_BREAKPOINT = 3;
-const u8 INT_OVERFLOW = 4;
-const u8 INT_BOUND_RANGE = 5;
-const u8 INT_INVALID_OPCODE = 6;
-const u8 INT_DEVICE_NOT_AVAILABLE = 7;
-const u8 INT_DOUBLE_FAULT = 8;
-const u8 INT_COPROCESSOR_SEGMENT_OVERRUN = 9;  // Legacy, not used on modern CPUs
-const u8 INT_INVALID_TSS = 10;
-const u8 INT_SEGMENT_NOT_PRESENT = 11;
-const u8 INT_STACK_FAULT = 12;
-const u8 INT_GENERAL_PROTECTION = 13;
-const u8 INT_PAGE_FAULT = 14;
+// CPU Exception Numbers (0-31)
+constexpr u8 INT_DIVIDE_ERROR = 0;
+constexpr u8 INT_DEBUG = 1;
+constexpr u8 INT_NMI = 2;
+constexpr u8 INT_BREAKPOINT = 3;
+constexpr u8 INT_OVERFLOW = 4;
+constexpr u8 INT_BOUND_RANGE = 5;
+constexpr u8 INT_INVALID_OPCODE = 6;
+constexpr u8 INT_DEVICE_NOT_AVAILABLE = 7;
+constexpr u8 INT_DOUBLE_FAULT = 8;
+constexpr u8 INT_COPROCESSOR_SEGMENT_OVERRUN = 9;  // Legacy, not used on modern CPUs
+constexpr u8 INT_INVALID_TSS = 10;
+constexpr u8 INT_SEGMENT_NOT_PRESENT = 11;
+constexpr u8 INT_STACK_FAULT = 12;
+constexpr u8 INT_GENERAL_PROTECTION = 13;
+constexpr u8 INT_PAGE_FAULT = 14;
 // 15 is reserved
-const u8 INT_X87_FPU_ERROR = 16;
-const u8 INT_ALIGNMENT_CHECK = 17;
-const u8 INT_MACHINE_CHECK = 18;
-const u8 INT_SIMD_FPU_ERROR = 19;
-const u8 INT_VIRTUALIZATION_ERROR = 20;
-const u8 INT_CONTROL_PROTECTION_ERROR = 21;
+constexpr u8 INT_X87_FPU_ERROR = 16;
+constexpr u8 INT_ALIGNMENT_CHECK = 17;
+constexpr u8 INT_MACHINE_CHECK = 18;
+constexpr u8 INT_SIMD_FPU_ERROR = 19;
+constexpr u8 INT_VIRTUALIZATION_ERROR = 20;
+constexpr u8 INT_CONTROL_PROTECTION_ERROR = 21;
 // 22-31 are reserved
 
-// Hardware interrupts (after PIC remapping)
-const u8 IRQ0_TIMER = 32;
-const u8 IRQ1_KEYBOARD = 33;
+// Hardware Interrupt Numbers (32-47)
+constexpr u8 IRQ0_TIMER = 32;
+constexpr u8 IRQ1_KEYBOARD = 33;
 
 /**
  * @brief IDT (Interrupt Descriptor Table) Manager

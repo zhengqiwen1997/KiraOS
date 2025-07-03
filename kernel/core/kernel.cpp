@@ -19,8 +19,6 @@
 namespace kira::kernel {
 
 using namespace kira::system;
-using namespace kira::display;
-using namespace kira::system::utils;
 
 // Test configuration - uncomment to enable interrupt testing
 // #define ENABLE_INTERRUPT_TESTING
@@ -37,7 +35,7 @@ using namespace kira::system::utils;
 #endif
 
 // Global console instance
-ScrollableConsole console;
+kira::display::ScrollableConsole console;
 bool consoleInitialized = false;
 
 // Kernel main function
@@ -55,7 +53,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     Exceptions::initialize();
     
     // Initialize IRQ system
-    irq::initialize();
+    initialize_irq();
     
     // Initialize system calls
     initialize_syscalls();
@@ -67,31 +65,31 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     }
     
     // Add system initialization messages to console
-    console.add_message("KiraOS Kernel Started", VGA_GREEN_ON_BLUE);
-    console.add_message("GDT initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("TSS initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("IDT initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("Exception handlers initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("IRQ system initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("System calls initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("Console initialized", VGA_CYAN_ON_BLUE);
-    console.add_message("System ready!", VGA_YELLOW_ON_BLUE);
-    console.add_message("Press F1 to enter scroll mode", VGA_GREEN_ON_BLUE);
-    console.add_message("Arrow Keys = scroll, F1 = exit scroll mode", VGA_CYAN_ON_BLUE);
+    console.add_message("KiraOS Kernel Started", kira::display::VGA_GREEN_ON_BLUE);
+    console.add_message("GDT initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("TSS initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("IDT initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("Exception handlers initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("IRQ system initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("System calls initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("Console initialized", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("System ready!", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("Press F1 to enter scroll mode", kira::display::VGA_GREEN_ON_BLUE);
+    console.add_message("Arrow Keys = scroll, F1 = exit scroll mode", kira::display::VGA_CYAN_ON_BLUE);
     
     // Force display refresh
     console.refresh_display();
     
     // Main kernel loop
-    console.add_message("Entering main loop...", VGA_YELLOW_ON_BLUE);
+    console.add_message("Entering main loop...", kira::display::VGA_YELLOW_ON_BLUE);
     
     // auto& process_manager = ProcessManager::get_instance();
     
     // u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
     // if (pid1) {
-    //     console.add_message("User mode process: SUCCESS", VGA_GREEN_ON_BLUE);
+    //     console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
     // } else {
-    //     console.add_message("User mode process: FAILED", VGA_RED_ON_BLUE);
+    //     console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
     // }
     
     // Test memory manager quickly (silent)
@@ -122,7 +120,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         // Periodic console update (less frequent)
         if ((counter % 1000000) == 0) {
             // Add a heartbeat message occasionally
-            console.add_message("System running...", VGA_WHITE_ON_BLUE);
+            console.add_message("System running...", kira::display::VGA_WHITE_ON_BLUE);
         }
         
         // Delay to prevent overwhelming the system

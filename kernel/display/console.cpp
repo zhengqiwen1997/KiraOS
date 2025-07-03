@@ -6,7 +6,7 @@ namespace kira::display {
 using namespace kira::system;
 
 void ScrollableConsole::initialize() {
-    // Clear all buffer lines
+    // Initialize all buffer lines
     for (u32 i = 0; i < BUFFER_LINES; i++) {
         clear_buffer_line(i);
         colors[i] = VGA_WHITE_ON_BLUE;
@@ -21,35 +21,37 @@ void ScrollableConsole::initialize() {
 void ScrollableConsole::add_message(const char* message, u16 color) {
     if (!message) return;
     
-    // Add to circular buffer
+    // Copy message to current buffer line
     copy_to_buffer_line(currentLine, message, color);
     
-    // Move to next line (circular)
     currentLine = (currentLine + 1) % BUFFER_LINES;
     totalLines++;
     
-    // Auto-refresh display if not in active scroll mode
+    // If not in active scroll mode, automatically refresh display
     if (!active) {
         refresh_display();
     }
 }
 
 void ScrollableConsole::add_formatted_message(u32 line, u32 col, const char* message, u16 color) {
-    // For now, just add as regular message - formatting could be enhanced later
+    // For now, just add as regular message
+    // TODO: Implement proper formatting if needed
     add_message(message, color);
 }
 
 bool ScrollableConsole::handle_keyboard_input(u8 scanCode) {
+    // Handle F1 key to toggle active mode
+    if (scanCode == KEY_F1) {
+        toggle_active_mode();
+        return true;
+    }
+    
+    // Only handle other keys if in active mode
     if (!active) {
-        if (scanCode == KEY_F1) {
-            active = true;
-            refresh_display();
-            return true;
-        }
         return false;
     }
     
-    // Handle scroll mode keys
+    // Handle scrolling keys
     switch (scanCode) {
         case KEY_UP:
             scroll_down(1);  // UP arrow should show older messages (scroll down in buffer)
@@ -87,66 +89,66 @@ bool ScrollableConsole::handle_keyboard_input(u8 scanCode) {
 
 void ScrollableConsole::refresh_display() {
     // Use direct VGA buffer access instead of vga class
-    volatile u16* vga_buffer = (volatile u16*)0xB8000;
+    volatile u16* vgaBuffer = (volatile u16*)0xB8000;
     
     // Clear the entire console area (lines 0-23) using direct buffer access
     for (int line = 0; line <= 23; line++) {
         for (int col = 0; col < 80; col++) {
-            vga_buffer[line * 80 + col] = VGA_WHITE_ON_BLUE | ' ';
+            vgaBuffer[line * 80 + col] = VGA_WHITE_ON_BLUE | ' ';
         }
     }
     
     // Calculate which messages to display
-    int display_start = 0;
-    int max_display_lines = 24;  // Lines 0-23 = 24 lines
+    int displayStart = 0;
+    int maxDisplayLines = 24;  // Lines 0-23 = 24 lines
     
-    if (totalLines > max_display_lines) {
+    if (totalLines > maxDisplayLines) {
         // We have more messages than can fit, so calculate the start position
         if (active) {
-            // In scroll mode, use scroll_offset
-            display_start = totalLines - max_display_lines - scrollOffset;
+            // In scroll mode, use scrollOffset
+            displayStart = totalLines - maxDisplayLines - scrollOffset;
         } else {
             // In normal mode, always show the latest messages
-            display_start = totalLines - max_display_lines;
+            displayStart = totalLines - maxDisplayLines;
         }
         
         // Ensure display_start is within bounds
-        if (display_start < 0) display_start = 0;
-        if (display_start + max_display_lines > totalLines) {
-            display_start = totalLines - max_display_lines;
+        if (displayStart < 0) displayStart = 0;
+        if (displayStart + maxDisplayLines > totalLines) {
+            displayStart = totalLines - maxDisplayLines;
         }
     }
     
     // Display the messages using direct buffer access
-    int lines_shown = 0;
-    for (int i = 0; i < totalLines && lines_shown < max_display_lines; i++) {
-        int message_index = display_start + i;
-        if (message_index >= totalLines) break;
+    int linesShown = 0;
+    for (int i = 0; i < totalLines && linesShown < maxDisplayLines; i++) {
+        int messageIndex = displayStart + i;
+        if (messageIndex >= totalLines) break;
         
-        int buffer_index = message_index % BUFFER_LINES;
-        int display_line = 0 + lines_shown;  // Start from line 0
+        int bufferIndex = messageIndex % BUFFER_LINES;
+        int displayLine = 0 + linesShown;  // Start from line 0
         
         // Copy message to VGA buffer directly
-        for (int col = 0; col < 80 && buffer[buffer_index][col] != '\0'; col++) {
-            vga_buffer[display_line * 80 + col] = colors[buffer_index] | buffer[buffer_index][col];
+        for (int col = 0; col < 80 && buffer[bufferIndex][col] != '\0'; col++) {
+            vgaBuffer[displayLine * 80 + col] = colors[bufferIndex] | buffer[bufferIndex][col];
         }
-        lines_shown++;
+        linesShown++;
     }
     
     // Draw status line at line 24 using direct buffer access
     if (active) {
-        const char* status_msg = " SCROLL MODE - Use Arrow Keys, Page Up/Down, Home/End, F1 to Exit ";
-        for (int i = 0; status_msg[i] != '\0' && i < 80; i++) {
-            vga_buffer[24 * 80 + i] = VGA_BLACK_ON_CYAN | status_msg[i];
+        const char* statusMsg = " SCROLL MODE - Use Arrow Keys, Page Up/Down, Home/End, F1 to Exit ";
+        for (int i = 0; statusMsg[i] != '\0' && i < 80; i++) {
+            vgaBuffer[24 * 80 + i] = VGA_BLACK_ON_CYAN | statusMsg[i];
         }
     } else {
-        const char* status_msg = " NORMAL MODE - F1 to Enter Scroll Mode ";
-        for (int i = 0; status_msg[i] != '\0' && i < 80; i++) {
-            vga_buffer[24 * 80 + i] = VGA_WHITE_ON_BLUE | status_msg[i];
+        const char* statusMsg = " NORMAL MODE - F1 to Enter Scroll Mode ";
+        for (int i = 0; statusMsg[i] != '\0' && i < 80; i++) {
+            vgaBuffer[24 * 80 + i] = VGA_WHITE_ON_BLUE | statusMsg[i];
         }
         // Clear rest of status line
         for (int i = 39; i < 80; i++) {
-            vga_buffer[24 * 80 + i] = VGA_WHITE_ON_BLUE | ' ';
+            vgaBuffer[24 * 80 + i] = VGA_WHITE_ON_BLUE | ' ';
         }
     }
 }
@@ -167,7 +169,6 @@ void ScrollableConsole::toggle_active_mode() {
 }
 
 void ScrollableConsole::scroll_up(u32 lines) {
-    u32 old_offset = scrollOffset;
     if (scrollOffset >= lines) {
         scrollOffset -= lines;
     } else {
@@ -176,13 +177,12 @@ void ScrollableConsole::scroll_up(u32 lines) {
 }
 
 void ScrollableConsole::scroll_down(u32 lines) {
-    u32 max_offset = (totalLines > DISPLAY_LINES) ? totalLines - DISPLAY_LINES : 0;
-    u32 old_offset = scrollOffset;
+    u32 maxOffset = (totalLines > DISPLAY_LINES) ? totalLines - DISPLAY_LINES : 0;
     
-    if (scrollOffset + lines <= max_offset) {
+    if (scrollOffset + lines <= maxOffset) {
         scrollOffset += lines;
     } else {
-        scrollOffset = max_offset;
+        scrollOffset = maxOffset;
     }
 }
 

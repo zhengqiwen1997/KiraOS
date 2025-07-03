@@ -9,7 +9,7 @@ VirtualMemoryManager* VirtualMemoryManager::instance = nullptr;
 
 // Assembly functions for low-level paging operations
 extern "C" {
-    void load_page_directory(kira::system::u32 page_dir_phys);
+    void load_page_directory(kira::system::u32 pageDirPhys);
     void enable_paging_asm();
     kira::system::u32 get_cr0();
     void flush_tlb_asm();
@@ -20,7 +20,7 @@ extern "C" {
 // AddressSpace Implementation
 //=============================================================================
 
-AddressSpace::AddressSpace(bool kernel_space) : isKernelSpace(kernel_space) {
+AddressSpace::AddressSpace(bool kernelSpace) : isKernelSpace(kernelSpace) {
     auto& memoryManager = MemoryManager::get_instance();
     void* pageDirMem = memoryManager.allocate_physical_page();
     
@@ -38,7 +38,7 @@ AddressSpace::AddressSpace(bool kernel_space) : isKernelSpace(kernel_space) {
         pageDirectory[i] = 0;
     }
     
-    if (kernel_space) {
+    if (kernelSpace) {
         setup_kernel_mappings();
     }
 }
@@ -235,8 +235,8 @@ void AddressSpace::setup_kernel_mappings() {
 
 VirtualMemoryManager& VirtualMemoryManager::get_instance() {
     if (!instance) {
-        static VirtualMemoryManager vm_manager;
-        instance = &vm_manager;
+        static VirtualMemoryManager vmManager;
+        instance = &vmManager;
     }
     return *instance;
 }
@@ -288,11 +288,11 @@ bool VirtualMemoryManager::is_paging_enabled() {
 
 extern "C" {
 
-void load_page_directory(kira::system::u32 page_dir_phys) {
+void load_page_directory(kira::system::u32 pageDirPhys) {
     asm volatile(
         "mov %0, %%cr3"
         :
-        : "r" (page_dir_phys)
+        : "r" (pageDirPhys)
         : "memory"
     );
 }

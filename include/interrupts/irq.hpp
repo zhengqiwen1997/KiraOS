@@ -31,20 +31,12 @@ struct IRQFrame {
 using IRQHandler = void(*)(IRQFrame* frame);
 
 /**
- * @brief IRQ Management System
- * 
- * Provides a framework for handling hardware interrupts and
- * registering device-specific interrupt handlers.
- */
-namespace irq {
-
-/**
  * @brief Initialize the IRQ system
  * 
  * Sets up the PIC, installs default handlers, and prepares
  * the system for hardware interrupts.
  */
-void initialize();
+void initialize_irq();
 
 /**
  * @brief Register a custom IRQ handler
@@ -105,9 +97,6 @@ void default_handler(IRQFrame* frame);
  */
 void print_statistics();
 
-// Specific IRQ handlers
-namespace handlers {
-
 /**
  * @brief Timer interrupt handler (IRQ 0)
  * @param frame IRQ frame
@@ -126,9 +115,6 @@ void keyboard_handler(IRQFrame* frame);
  */
 void unhandled_irq(IRQFrame* frame);
 
-} // namespace handlers
-
-} // namespace irq
 } // namespace kira::system
 
 // Assembly stub declarations

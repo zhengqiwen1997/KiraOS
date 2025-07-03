@@ -6,7 +6,7 @@
 
 namespace kira::loaders {
 
-using namespace kira::system::utils;
+using namespace kira::utils;
 
 //=============================================================================
 // ElfLoader Implementation

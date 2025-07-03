@@ -13,7 +13,7 @@ using namespace kira::system;
  * It uses the 8253/8254 timer chip to generate IRQ 0 (timer interrupt).
  */
 class Timer {
-public:
+private:
     // PIT I/O ports
     static constexpr u16 PIT_CHANNEL_0 = 0x40;  // Channel 0 data port (IRQ 0)
     static constexpr u16 PIT_CHANNEL_1 = 0x41;  // Channel 1 data port (RAM refresh)

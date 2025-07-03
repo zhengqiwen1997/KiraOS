@@ -1,6 +1,5 @@
 #include "interrupts/exceptions.hpp"
 #include "arch/x86/idt.hpp"
-#include "display/vga.hpp"
 #include "display/console.hpp"
 #include "core/io.hpp"
 #include "core/utils.hpp"
@@ -13,7 +12,7 @@ namespace kira::kernel {
 namespace kira::system {
 
 using namespace kira::display;
-using namespace kira::system::utils;
+using namespace kira::utils;
 
 void Exceptions::initialize() {
     // Set up basic exception handlers

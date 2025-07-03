@@ -2,26 +2,25 @@
 
 #include "core/types.hpp"
 
-namespace kira {
-namespace display {
+namespace kira::display {
 
 using namespace kira::system;
 
 // VGA Color Constants
-const u16 VGA_WHITE_ON_BLUE = 0x1F00;
-const u16 VGA_YELLOW_ON_BLUE = 0x1E00;
-const u16 VGA_GREEN_ON_BLUE = 0x1A00;
-const u16 VGA_RED_ON_BLUE = 0x1C00;
-const u16 VGA_CYAN_ON_BLUE = 0x1B00;
-const u16 VGA_MAGENTA_ON_BLUE = 0x1D00;
-const u16 VGA_LIGHT_GRAY_ON_BLUE = 0x1700;
-const u16 VGA_BLACK_ON_CYAN = 0x3000;
+constexpr u16 VGA_WHITE_ON_BLUE = 0x1F00;
+constexpr u16 VGA_YELLOW_ON_BLUE = 0x1E00;
+constexpr u16 VGA_GREEN_ON_BLUE = 0x1A00;
+constexpr u16 VGA_RED_ON_BLUE = 0x1C00;
+constexpr u16 VGA_CYAN_ON_BLUE = 0x1B00;
+constexpr u16 VGA_MAGENTA_ON_BLUE = 0x1D00;
+constexpr u16 VGA_LIGHT_GRAY_ON_BLUE = 0x1700;
+constexpr u16 VGA_BLACK_ON_CYAN = 0x3000;
 
 // VGA Layout Constants
-const u32 VGA_BUFFER = 0xB8000;
-const u32 VGA_WIDTH = 80;
-const u32 VGA_HEIGHT = 25;
-const u32 VGA_SIZE = VGA_WIDTH * VGA_HEIGHT;
+constexpr u32 VGA_BUFFER = 0xB8000;
+constexpr u32 VGA_WIDTH = 80;
+constexpr u32 VGA_HEIGHT = 25;
+constexpr u32 VGA_SIZE = VGA_WIDTH * VGA_HEIGHT;
 
 
 
@@ -186,10 +185,7 @@ public:
         volatile u16* pos = buffer + (line * VGA_WIDTH) + col;
         return static_cast<char>(pos[0] & 0xFF);
     }
-    
-
 
 };
 
-} // namespace display
-} // namespace kira 
+} // namespace kira::display 

@@ -8,7 +8,7 @@ using namespace kira::display;
 
 // Forward declaration of main kernel function
 namespace kira::kernel {
-    void main(volatile unsigned short* vga_buffer) noexcept;
+    void main(volatile unsigned short* vgaBuffer) noexcept;
 }
 
 // Helper function to set cursor position
@@ -39,13 +39,13 @@ void set_cursor_position(u8 row, u8 col) {
 // This is called from the custom bootloader (stage2.asm)
 extern "C" __attribute__((section(".text._start"))) void _start() {
     // Get memory map from bootloader (but don't display the table)
-    u32 memory_map_addr = 0;
-    u32 memory_map_count = 0;
+    u32 memoryMapAddr = 0;
+    u32 memoryMapCount = 0;
     
     asm volatile(
         "mov %%ebx, %0\n"
         "mov %%edi, %1"
-        : "=r"(memory_map_addr), "=r"(memory_map_count)
+        : "=r"(memoryMapAddr), "=r"(memoryMapCount)
         :
         : "ebx", "edi"
     );
@@ -53,8 +53,8 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
     // Store memory map info in global variables for MemoryManager to access later
     extern u32 gMemoryMapAddr;
     extern u32 gMemoryMapCount;
-    gMemoryMapAddr = memory_map_addr;
-    gMemoryMapCount = memory_map_count;
+    gMemoryMapAddr = memoryMapAddr;
+    gMemoryMapCount = memoryMapCount;
     
     // Call the main kernel function with VGA buffer for compatibility
     kira::kernel::main((volatile unsigned short*)VGA_BUFFER);

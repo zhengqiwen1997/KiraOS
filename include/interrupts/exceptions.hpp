@@ -2,11 +2,6 @@
 
 #include "core/types.hpp"
 
-// Forward declarations
-namespace kira::display {
-    class VGADisplay;
-}
-
 namespace kira::system {
 
 // Exception frame structure (pushed by CPU and our handler)

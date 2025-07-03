@@ -4,10 +4,10 @@ namespace kira::usermode {
 
 // System call test program
 void user_test_syscall() {
-    static bool first_call = true;
+    static bool firstCall = true;
     
-    if (first_call) {
-        first_call = false;
+    if (firstCall) {
+        firstCall = false;
         
         // Test system call
         UserAPI::write(20, 0, "Single syscall test");

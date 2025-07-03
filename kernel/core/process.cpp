@@ -7,11 +7,11 @@
 
 namespace kira::system {
 
-using namespace kira::system::utils;
+using namespace kira::utils;
 
 // Static member definitions
-u8 ProcessManager::kernel_stacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
-u8 ProcessManager::user_stacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
+u8 ProcessManager::kernelStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
+u8 ProcessManager::userStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
 static ProcessManager* gProcessManager = nullptr;
 
 void ProcessManager::initialize() {
@@ -31,12 +31,12 @@ ProcessManager& ProcessManager::get_instance() {
 
 ProcessManager::ProcessManager() {
     // Initialize basic fields
-    ready_queue = nullptr;
-    current_process = nullptr;
-    next_pid = 1;
-    process_count = 0;
-    scheduler_ticks = 0;
-    next_stack_index = 0;
+    readyQueue = nullptr;
+    currentProcess = nullptr;
+    nextPid = 1;
+    processCount = 0;
+    schedulerTicks = 0;
+    nextStackIndex = 0;
     
     // Initialize all processes to TERMINATED state
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
@@ -47,7 +47,7 @@ ProcessManager::ProcessManager() {
 }
 
 u32 ProcessManager::create_user_process(ProcessFunction function, const char* name, u32 priority) {
-    if (process_count >= MAX_PROCESSES || !function) {
+    if (processCount >= MAX_PROCESSES || !function) {
         return 0;
     }
     
@@ -65,7 +65,7 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     }
     
     // Initialize process
-    process->pid = next_pid++;
+    process->pid = nextPid++;
     strcpy_s(process->name, name ? name : "unnamed", sizeof(process->name) - 1);
     process->state = ProcessState::READY;
     process->priority = priority;
@@ -89,7 +89,7 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     
     // Add to ready queue
     add_to_ready_queue(process);
-    process_count++;
+    processCount++;
     
     return process->pid;
 }
@@ -110,11 +110,11 @@ bool ProcessManager::terminate_process(u32 pid) {
     
     // Mark as terminated
     process->state = ProcessState::TERMINATED;
-    process_count--;
+    processCount--;
     
     // If this was the current process, switch to another
-    if (current_process == process) {
-        current_process = nullptr;
+    if (currentProcess == process) {
+        currentProcess = nullptr;
         switch_process();
     }
     
@@ -122,37 +122,37 @@ bool ProcessManager::terminate_process(u32 pid) {
 }
 
 void ProcessManager::schedule() {
-    scheduler_ticks++;
+    schedulerTicks++;
     
-    if (current_process) {
-        current_process->timeUsed++;
-        current_process->totalCpuTime++;
+    if (currentProcess) {
+        currentProcess->timeUsed++;
+        currentProcess->totalCpuTime++;
         
         // For user mode processes, check if time slice expired
-        if (current_process->isUserMode) {
-            if (current_process->timeUsed >= current_process->timeSlice) {
+        if (currentProcess->isUserMode) {
+            if (currentProcess->timeUsed >= currentProcess->timeSlice) {
                 // Time slice expired - yield to next process
-                current_process->timeUsed = 0;
-                current_process->state = ProcessState::READY;
-                add_to_ready_queue(current_process);
-                current_process = nullptr;
+                currentProcess->timeUsed = 0;
+                currentProcess->state = ProcessState::READY;
+                add_to_ready_queue(currentProcess);
+                currentProcess = nullptr;
                 switch_process();
             }
             // User mode processes are already running - no need to call them again
             // They will return to kernel via system calls or continue running
         } else {
             // Legacy kernel mode process execution
-            ProcessFunction func = (ProcessFunction)current_process->context.eip;
+            ProcessFunction func = (ProcessFunction)currentProcess->context.eip;
             if (func) {
                 func(); // Call the process function
             }
             
             // Check if time slice expired
-            if (current_process->timeUsed >= current_process->timeSlice) {
-                current_process->timeUsed = 0;
-                current_process->state = ProcessState::READY;
-                add_to_ready_queue(current_process);
-                current_process = nullptr;
+            if (currentProcess->timeUsed >= currentProcess->timeSlice) {
+                currentProcess->timeUsed = 0;
+                currentProcess->state = ProcessState::READY;
+                add_to_ready_queue(currentProcess);
+                currentProcess = nullptr;
                 switch_process();
             }
         }
@@ -192,7 +192,7 @@ void ProcessManager::display_stats() {
     }
     
     // Show active processes
-    vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + process_count); // White
+    vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + processCount); // White
     const char* activeText = " active, ";
     for (int i = 0; activeText[i] != '\0'; i++) {
         vgaMem[line24Offset + pos++] = 0x0E00 + activeText[i]; // Yellow
@@ -204,7 +204,7 @@ void ProcessManager::display_stats() {
         vgaMem[line24Offset + pos++] = 0x0E00 + totalText[i]; // Yellow
     }
     
-    u32 totalHundreds = (scheduler_ticks / 100) % 1000;
+    u32 totalHundreds = (schedulerTicks / 100) % 1000;
     vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + ((totalHundreds / 100) % 10)); // White
     vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + ((totalHundreds / 10) % 10));  // White
     vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + (totalHundreds % 10));         // White
@@ -213,11 +213,11 @@ void ProcessManager::display_stats() {
 }
 
 void ProcessManager::yield() {
-    if (current_process) {
-        current_process->timeUsed = 0; // Reset time slice
-        current_process->state = ProcessState::READY;
-        add_to_ready_queue(current_process);
-        current_process = nullptr;
+    if (currentProcess) {
+        currentProcess->timeUsed = 0; // Reset time slice
+        currentProcess->state = ProcessState::READY;
+        add_to_ready_queue(currentProcess);
+        currentProcess = nullptr;
         switch_process();
     }
 }
@@ -227,11 +227,11 @@ void ProcessManager::add_to_ready_queue(Process* process) {
     
     process->next = nullptr;
     
-    if (!ready_queue) {
-        ready_queue = process;
+    if (!readyQueue) {
+        readyQueue = process;
     } else {
         // Add to end of queue (simple FIFO for now)
-        Process* current = ready_queue;
+        Process* current = readyQueue;
         while (current->next) {
             current = current->next;
         }
@@ -240,60 +240,60 @@ void ProcessManager::add_to_ready_queue(Process* process) {
 }
 
 void ProcessManager::remove_from_ready_queue(Process* process) {
-    if (!process || !ready_queue) return;
+    if (!process || !readyQueue) return;
     
-    if (ready_queue == process) {
-        ready_queue = process->next;
+    if (readyQueue == process) {
+        readyQueue = process->next;
     } else {
-        Process* current = ready_queue;
+        Process* current = readyQueue;
         while (current->next && current->next != process) {
             current = current->next;
         }
-        if (current->next == process) {
-            current->next = process->next;
+        if (current->next) {
+            current->next = current->next->next;
         }
     }
     process->next = nullptr;
 }
 
 void ProcessManager::switch_process() {
-    if (ready_queue) {
+    if (readyQueue) {
         // Get next process from ready queue
-        current_process = ready_queue;
-        ready_queue = ready_queue->next;
-        current_process->next = nullptr;
-        current_process->state = ProcessState::RUNNING;
-        current_process->timeUsed = 0;
+        currentProcess = readyQueue;
+        readyQueue = readyQueue->next;
+        currentProcess->next = nullptr;
+        currentProcess->state = ProcessState::RUNNING;
+        currentProcess->timeUsed = 0;
         
         // Immediately update the display to show the new current process
         display_current_process_only();
         
         // If this is a user mode process, switch to user mode
-        if (current_process->isUserMode) {
+        if (currentProcess->isUserMode) {
             // Check if this is the first time running this user process
-            if (!current_process->hasStarted) {
-                current_process->hasStarted = true;
+            if (!currentProcess->hasStarted) {
+                currentProcess->hasStarted = true;
                 
                 // Update TSS with this process's kernel stack
-                TSSManager::set_kernel_stack(current_process->context.kernelEsp);
+                TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
                 // Switch to user mode and execute the user function
                 // This should NEVER return - user program returns via system calls
                 UserMode::switch_to_user_mode(
-                    current_process->userFunction,
-                    current_process->context.userEsp
+                    currentProcess->userFunction,
+                    currentProcess->context.userEsp
                 );
                 
                 // If we get here, something went wrong
                 kira::display::VGADisplay vga;
                 vga.print_string(19, 0, "ERROR: User mode returned!", kira::display::VGA_RED_ON_BLUE);
-                current_process->state = ProcessState::TERMINATED;
+                currentProcess->state = ProcessState::TERMINATED;
             } else {
                 // Process has already started - this means it yielded and is resuming
                 // For now, just call the function again (this is a simplified approach)
                 // In a real OS, we would restore the saved context
                 typedef void (*UserFunction)();
-                UserFunction userFunc = (UserFunction)current_process->userFunction;
+                UserFunction userFunc = (UserFunction)currentProcess->userFunction;
                 userFunc();
             }
         }
@@ -318,10 +318,10 @@ void ProcessManager::display_current_process_only() {
         vgaMem[line23Offset + pos++] = 0x0B00 + currentText[i]; // Cyan
     }
     
-    if (current_process) {
+    if (currentProcess) {
         // Display current process name
-        for (int i = 0; current_process->name[i] != '\0' && i < 15; i++) {
-            vgaMem[line23Offset + pos++] = 0x0A00 + current_process->name[i]; // Bright green
+        for (int i = 0; currentProcess->name[i] != '\0' && i < 15; i++) {
+            vgaMem[line23Offset + pos++] = 0x0A00 + currentProcess->name[i]; // Bright green
         }
         
         // Display PID
@@ -331,7 +331,7 @@ void ProcessManager::display_current_process_only() {
         }
         
         // Display PID (handle up to 2 digits)
-        u32 pid = current_process->pid;
+        u32 pid = currentProcess->pid;
         if (pid >= 10) {
             vgaMem[line23Offset + pos++] = 0x0F00 + ('0' + (pid / 10)); // Tens digit
             vgaMem[line23Offset + pos++] = 0x0F00 + ('0' + (pid % 10)); // Ones digit
@@ -340,7 +340,7 @@ void ProcessManager::display_current_process_only() {
         }
         
         // Show user mode indicator
-        if (current_process->isUserMode) {
+        if (currentProcess->isUserMode) {
             vgaMem[line23Offset + pos++] = 0x0B00 + ','; // Cyan
             vgaMem[line23Offset + pos++] = 0x0B00 + ' '; // Cyan
             const char* userText = "U3";
@@ -418,38 +418,38 @@ void ProcessManager::init_process_context(Process* process, ProcessFunction func
 }
 
 bool ProcessManager::allocate_process_stacks(Process* process) {
-    if (next_stack_index >= MAX_PROCESSES) {
+    if (nextStackIndex >= MAX_PROCESSES) {
         return false; // Out of stack space
     }
     
     // Allocate kernel stack
-    process->kernelStackBase = (u32)&kernel_stacks[next_stack_index][0];
+    process->kernelStackBase = (u32)&kernelStacks[nextStackIndex][0];
     process->kernelStackSize = STACK_SIZE;
     
     // Allocate user stack
-    process->userStackBase = (u32)&user_stacks[next_stack_index][0];
+    process->userStackBase = (u32)&userStacks[nextStackIndex][0];
     process->userStackSize = STACK_SIZE;
     
-    next_stack_index++;
+    nextStackIndex++;
     return true;
 }
 
 u32 ProcessManager::get_current_pid() const {
-    return current_process ? current_process->pid : 0;
+    return currentProcess ? currentProcess->pid : 0;
 }
 
 void ProcessManager::terminate_current_process() {
-    if (current_process) {
-        current_process->state = ProcessState::TERMINATED;
-        process_count--;
-        current_process = nullptr;
+    if (currentProcess) {
+        currentProcess->state = ProcessState::TERMINATED;
+        processCount--;
+        currentProcess = nullptr;
         switch_process();
     }
 }
 
 void ProcessManager::sleep_current_process(u32 ticks) {
-    if (current_process) {
-        current_process->state = ProcessState::BLOCKED;
+    if (currentProcess) {
+        currentProcess->state = ProcessState::BLOCKED;
         // For now, just yield - we'd need a proper sleep queue for real implementation
         yield();
     }

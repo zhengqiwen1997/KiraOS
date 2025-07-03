@@ -2,15 +2,23 @@
 
 #include "core/types.hpp"
 
-namespace kira::system {
-
 /**
  * @brief Utility functions for kernel use
  * 
  * Common utility functions that don't depend on external libraries
  * and can be used throughout the kernel.
  */
-namespace utils {
+namespace kira::utils {
+
+// Bring types from kira::system into scope
+using kira::system::u8;
+using kira::system::u16;
+using kira::system::u32;
+using kira::system::u64;
+using kira::system::i8;
+using kira::system::i16;
+using kira::system::i32;
+using kira::system::i64;
 
 /**
  * @brief Calculate the length of a null-terminated string
@@ -228,5 +236,4 @@ inline void* memset(void* dest, i32 value, u32 count) {
     return dest;
 }
 
-} // namespace utils
-} // namespace kira::system 
+} // namespace kira::utils 

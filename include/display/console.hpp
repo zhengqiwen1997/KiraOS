@@ -19,9 +19,10 @@ using namespace kira::system;
  */
 class ScrollableConsole {
 private:
-    static const u32 BUFFER_LINES = 1000;  // Total lines to store
-    static const u32 DISPLAY_LINES = 24;   // Lines visible on screen (lines 0-23)
-    static const u32 LINE_WIDTH = 80;      // Characters per line
+    // Console configuration
+    static constexpr u32 BUFFER_LINES = 1000;  // Total lines to store
+    static constexpr u32 DISPLAY_LINES = 24;   // Lines visible on screen (lines 0-23)
+    static constexpr u32 LINE_WIDTH = 80;      // Characters per line
     
     // Console buffer
     char buffer[BUFFER_LINES][LINE_WIDTH];
@@ -56,7 +57,7 @@ public:
     
     /**
      * @brief Handle keyboard input for scrolling
-     * @param scan_code Keyboard scan code
+     * @param scanCode Keyboard scan code
      * @return true if key was handled
      */
     bool handle_keyboard_input(u8 scanCode);

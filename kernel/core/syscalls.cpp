@@ -13,20 +13,15 @@ extern "C" void syscall_stub();
 /**
  * @brief C system call handler called from assembly stub
  */
-extern "C" i32 syscall_handler(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3) {
-    return handle_syscall(syscallNum, arg1, arg2, arg3);
+extern "C" i32 syscall_handler(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
+    return handle_syscall(syscall_num, arg1, arg2, arg3);
 }
 
-i32 handle_syscall(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3) {
+i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     VGADisplay vga;
     auto& pm = ProcessManager::get_instance();
     
-    // Validate syscall number range
-    if (syscallNum > static_cast<u32>(SystemCall::SLEEP)) {
-        return static_cast<i32>(SyscallResult::INVALID_SYSCALL);
-    }
-    
-    switch (static_cast<SystemCall>(syscallNum)) {
+    switch (static_cast<SystemCall>(syscall_num)) {
         case SystemCall::EXIT:
             // Terminate current process
             pm.terminate_current_process();

@@ -72,16 +72,16 @@ private:
     static constexpr u32 STACK_SIZE = 4096;        // 4KB stack per process
     
     Process processes[MAX_PROCESSES];
-    Process* ready_queue;           // Ready processes queue
-    Process* current_process;       // Currently running process
-    u32 next_pid;                  // Next available PID
-    u32 process_count;             // Number of active processes
-    u32 scheduler_ticks;           // Ticks since last schedule
+    Process* readyQueue;           // Ready processes queue
+    Process* currentProcess;       // Currently running process
+    u32 nextPid;                  // Next available PID
+    u32 processCount;             // Number of active processes
+    u32 schedulerTicks;           // Ticks since last schedule
     
     // Static stack allocation - safer than dynamic addresses
-    static u8 kernel_stacks[MAX_PROCESSES][STACK_SIZE];  // Kernel mode stacks
-    static u8 user_stacks[MAX_PROCESSES][STACK_SIZE];    // User mode stacks
-    u32 next_stack_index;
+    static u8 kernelStacks[MAX_PROCESSES][STACK_SIZE];  // Kernel mode stacks
+    static u8 userStacks[MAX_PROCESSES][STACK_SIZE];    // User mode stacks
+    u32 nextStackIndex;
     
 public:
     /**
@@ -132,7 +132,7 @@ public:
     /**
      * @brief Get current running process
      */
-    Process* get_current_process() const { return current_process; }
+    Process* get_current_process() const { return currentProcess; }
     
     /**
      * @brief Get process by PID

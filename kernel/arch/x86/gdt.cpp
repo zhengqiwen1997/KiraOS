@@ -12,17 +12,17 @@ void GDTManager::initialize() {
     set_gdt_entry(0, 0, 0, 0, 0);  // Null segment
     
     // Kernel segments (Ring 0)
-    set_gdt_entry(1, 0, 0xFFFFFFFF, GDTAccess::KERNEL_CODE, GDTGranularity::STANDARD);
-    set_gdt_entry(2, 0, 0xFFFFFFFF, GDTAccess::KERNEL_DATA, GDTGranularity::STANDARD);
+    set_gdt_entry(1, 0, 0xFFFFFFFF, KERNEL_CODE, STANDARD);
+    set_gdt_entry(2, 0, 0xFFFFFFFF, KERNEL_DATA, STANDARD);
     
     // User segments (Ring 3)
-    set_gdt_entry(3, 0, 0xFFFFFFFF, GDTAccess::USER_CODE, GDTGranularity::STANDARD);
-    set_gdt_entry(4, 0, 0xFFFFFFFF, GDTAccess::USER_DATA, GDTGranularity::STANDARD);
+    set_gdt_entry(3, 0, 0xFFFFFFFF, USER_CODE, STANDARD);
+    set_gdt_entry(4, 0, 0xFFFFFFFF, USER_DATA, STANDARD);
     
     // TSS segment
     TSS& tss = TSSManager::get_tss();
     set_gdt_entry(5, reinterpret_cast<u32>(&tss), sizeof(TSS) - 1, 
-                  GDTAccess::TSS_ACCESS, 0x00);
+                  TSS_ACCESS, 0x00);
     
     // Load the new GDT
     load_gdt();

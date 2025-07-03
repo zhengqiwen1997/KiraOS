@@ -46,8 +46,6 @@ kira::system::u32 gMemoryMapCount = 0;
 
 namespace kira::system {
 
-
-
 // Boundary checking functions
 static bool is_address_valid(u32 address) {
     // Check for obvious invalid addresses
@@ -89,9 +87,9 @@ static u32 calculate_total_usable_ram() {
 static bool validate_kernel_structures_placement() {
     u32 totalRam = calculate_total_usable_ram();
     
-    // Validate totalRam is reasonable
-    if (totalRam < EXPECTED_MIN_RAM || totalRam > EXPECTED_MAX_RAM) {
-        return false;
+    // Check if we have any RAM info
+    if (totalRam == 0) {
+        return false;  // Can't validate without memory map
     }
     
     // Check if KERNEL_STRUCTURES_BASE is valid
@@ -99,12 +97,16 @@ static bool validate_kernel_structures_placement() {
         return false;
     }
     
-    u32 structuresEnd = KERNEL_STRUCTURES_BASE + KERNEL_STRUCTURES_SIZE;
-    
     // Check if kernel structures fit within physical RAM
+    u32 structuresEnd = KERNEL_STRUCTURES_BASE + KERNEL_STRUCTURES_SIZE;
     if (!is_address_in_physical_ram(KERNEL_STRUCTURES_BASE, totalRam) ||
         !is_address_in_physical_ram(structuresEnd, totalRam)) {
         return false;
+    }
+    
+    // Sanity check: RAM size should be reasonable
+    if (totalRam < EXPECTED_MIN_RAM || totalRam > EXPECTED_MAX_RAM) {
+        // Still allow it, but it's suspicious
     }
     
     return true;

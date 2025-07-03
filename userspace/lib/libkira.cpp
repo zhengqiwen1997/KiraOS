@@ -5,7 +5,7 @@ namespace kira::usermode {
 
 using namespace kira::system;
 
-i32 UserAPI::syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
+i32 UserAPI::syscall(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3) {
     i32 result;
     
     // Make real system call using INT 0x80 from Ring 3 to Ring 0
@@ -13,7 +13,7 @@ i32 UserAPI::syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     asm volatile(
         "int $0x80"
         : "=a" (result)                    // Output: result in EAX
-        : "a" (syscall_num),               // Input: syscall number in EAX
+        : "a" (syscallNum),               // Input: syscall number in EAX
           "b" (arg1),                      // Input: arg1 in EBX
           "c" (arg2),                      // Input: arg2 in ECX
           "d" (arg3)                       // Input: arg3 in EDX

@@ -77,7 +77,7 @@ char Keyboard::scan_code_to_ascii(u8 scanCode) {
     // Handle caps lock for letters
     if (capsLockOn && ch >= 'a' && ch <= 'z') {
         ch = ch - 'a' + 'A';
-    } else if (capsLockOn && ch >= 'A' && ch <= 'Z') {
+          } else if (capsLockOn && ch >= 'A' && ch <= 'Z') {
         ch = ch - 'A' + 'a';
     }
     
