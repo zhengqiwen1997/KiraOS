@@ -6,6 +6,13 @@
 using namespace kira::system;
 using namespace kira::display;
 
+// Global variables to store memory map info from bootloader
+
+namespace kira::system {
+    extern u32 gMemoryMapAddr;
+    extern u32 gMemoryMapCount;
+}
+
 // Forward declaration of main kernel function
 namespace kira::kernel {
     void main(volatile unsigned short* vgaBuffer) noexcept;
@@ -51,8 +58,6 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
     );
     
     // Store memory map info in global variables for MemoryManager to access later
-    extern u32 gMemoryMapAddr;
-    extern u32 gMemoryMapCount;
     gMemoryMapAddr = memoryMapAddr;
     gMemoryMapCount = memoryMapCount;
     

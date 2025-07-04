@@ -9,11 +9,11 @@ VirtualMemoryManager* VirtualMemoryManager::instance = nullptr;
 
 // Assembly functions for low-level paging operations
 extern "C" {
-    void load_page_directory(kira::system::u32 pageDirPhys);
+    void load_page_directory(u32 pageDirPhys);
     void enable_paging_asm();
-    kira::system::u32 get_cr0();
+    u32 get_cr0();
     void flush_tlb_asm();
-    void invlpg(kira::system::u32 virtualAddr);
+    void invlpg(u32 virtualAddr);
 }
 
 //=============================================================================

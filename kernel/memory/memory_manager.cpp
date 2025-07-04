@@ -2,11 +2,17 @@
 #include "memory/memory_manager.hpp"
 #include "core/utils.hpp"
 
+namespace kira::system {
+
+// Global variables to store memory map info from bootloader
+u32 gMemoryMapAddr = 0;
+u32 gMemoryMapCount = 0;
+
 // Kernel memory layout constants
-#define KERNEL_STRUCTURES_BASE  0x00200000  // 2MB - Base for kernel data structures (explicit 32-bit)
-#define KERNEL_STRUCTURES_SIZE  0x00100000  // 1MB - Reserved space for kernel structures
-#define MEMORY_MANAGER_ADDR     KERNEL_STRUCTURES_BASE
-#define FREE_PAGE_STACK_ADDR    (KERNEL_STRUCTURES_BASE + 0x1000)  // 2MB + 4KB
+constexpr u32 KERNEL_STRUCTURES_BASE = 0x00200000;  // 2MB - Base for kernel data structures (explicit 32-bit)
+constexpr u32 KERNEL_STRUCTURES_SIZE = 0x00100000;  // 1MB - Reserved space for kernel structures
+constexpr u32 MEMORY_MANAGER_ADDR = KERNEL_STRUCTURES_BASE;
+constexpr u32 FREE_PAGE_STACK_ADDR = (KERNEL_STRUCTURES_BASE + 0x1000);  // 2MB + 4KB
 
 // Compile-time validation of memory constants
 // These static assertions will cause compilation to fail if dangerous values are used
@@ -30,21 +36,15 @@ static_assert(KERNEL_STRUCTURES_BASE < 0x10000000,
 #endif
 
 // Safety constants for boundary checking
-#define MIN_SAFE_ADDRESS        0x00100000  // 1MB - Don't use low memory
-#define MAX_32BIT_ADDRESS       0xFFFFFFFF  // Maximum 32-bit address
-#define EXPECTED_MIN_RAM        0x01000000  // 16MB - Minimum expected RAM
-#define EXPECTED_MAX_RAM        0x40000000  // 1GB - Maximum reasonable RAM for this system
+constexpr u32 MIN_SAFE_ADDRESS = 0x00100000;  // 1MB - Don't use low memory
+constexpr u32 MAX_32BIT_ADDRESS = 0xFFFFFFFF;  // Maximum 32-bit address
+constexpr u32 EXPECTED_MIN_RAM = 0x01000000;  // 16MB - Minimum expected RAM
+constexpr u32 EXPECTED_MAX_RAM = 0x40000000;  // 1GB - Maximum reasonable RAM for this system
 
 // Page-based constants (calculated at compile time)
-#define LOW_MEMORY_PAGES        256       // 1MB / 4KB = 256 pages
-#define KERNEL_START_PAGE       (KERNEL_STRUCTURES_BASE / PAGE_SIZE)  // 2MB / 4KB = 512
-#define KERNEL_END_PAGE         ((KERNEL_STRUCTURES_BASE + KERNEL_STRUCTURES_SIZE) / PAGE_SIZE)  // 3MB / 4KB = 768
-
-// Global variables to store memory map info from bootloader
-kira::system::u32 gMemoryMapAddr = 0;
-kira::system::u32 gMemoryMapCount = 0;
-
-namespace kira::system {
+constexpr u32 LOW_MEMORY_PAGES = 256;  // 1MB / 4KB = 256 pages
+constexpr u32 KERNEL_START_PAGE = (KERNEL_STRUCTURES_BASE / PAGE_SIZE);  // 2MB / 4KB = 512
+constexpr u32 KERNEL_END_PAGE = ((KERNEL_STRUCTURES_BASE + KERNEL_STRUCTURES_SIZE) / PAGE_SIZE);  // 3MB / 4KB = 768
 
 // Boundary checking functions
 static bool is_address_valid(u32 address) {
