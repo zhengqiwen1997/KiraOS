@@ -52,13 +52,10 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
         // ========== RECOVERABLE EXCEPTIONS ==========
         case INT_BREAKPOINT:  // Interrupt 3 - Debugging breakpoint
             kira::kernel::console.add_message("Breakpoint hit - continuing", VGA_GREEN_ON_BLUE);
-            // For testing: increment EIP to skip the int $3 instruction
-            frame->eip += 2;  // Skip "int $3" instruction (2 bytes: CD 03)
             break;
             
         case INT_OVERFLOW:    // Interrupt 4 - Arithmetic overflow
             kira::kernel::console.add_message("Arithmetic overflow - continuing", VGA_YELLOW_ON_BLUE);
-            frame->eip += 2;  // Skip "int $4" instruction (2 bytes: CD 04)
             break;
             
         // ========== POTENTIALLY RECOVERABLE (SKIP INSTRUCTION) ==========
@@ -67,34 +64,32 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
             divide_error_handler(frame);
             break;
             
+        case INT_BOUND_RANGE:     // Interrupt 5 - Array bounds exceeded
+            kira::kernel::console.add_message("Array bounds exceeded - continuing", VGA_YELLOW_ON_BLUE);
+            break;
+            
+        case INT_DEVICE_NOT_AVAILABLE:  // Interrupt 7 - FPU not available
+            kira::kernel::console.add_message("FPU not available - continuing", VGA_YELLOW_ON_BLUE);
+            break;
+            
+        case INT_X87_FPU_ERROR:   // Interrupt 16 - x87 FPU error
+            kira::kernel::console.add_message("x87 FPU error - continuing", VGA_YELLOW_ON_BLUE);
+           // frame->eip += 2;  // Skip "int $16" instruction (2 bytes: CD 10)
+            break;
+            
+        case INT_SIMD_FPU_ERROR:  // Interrupt 19 - SIMD FPU error
+            kira::kernel::console.add_message("SIMD FPU error - continuing", VGA_YELLOW_ON_BLUE);
+            // frame->eip += 2;  // Skip "int $19" instruction (2 bytes: CD 13)
+            break;
+            
+        // ========== SERIOUS VIOLATIONS - MUST HALT ==========
         case INT_INVALID_OPCODE:  // Interrupt 6 - Invalid instruction
         {
             kira::kernel::console.add_message("Invalid opcode - system halted", VGA_RED_ON_BLUE);
             halt_system("Invalid Opcode");
             break;
         }
-            
-        case INT_BOUND_RANGE:     // Interrupt 5 - Array bounds exceeded
-            kira::kernel::console.add_message("Array bounds exceeded - continuing", VGA_YELLOW_ON_BLUE);
-            frame->eip += 2;  // Skip "int $5" instruction (2 bytes: CD 05)
-            break;
-            
-        case INT_DEVICE_NOT_AVAILABLE:  // Interrupt 7 - FPU not available
-            kira::kernel::console.add_message("FPU not available - continuing", VGA_YELLOW_ON_BLUE);
-            frame->eip += 2;  // Skip "int $7" instruction (2 bytes: CD 07)
-            break;
-            
-        case INT_X87_FPU_ERROR:   // Interrupt 16 - x87 FPU error
-            kira::kernel::console.add_message("x87 FPU error - continuing", VGA_YELLOW_ON_BLUE);
-            frame->eip += 2;  // Skip "int $16" instruction (2 bytes: CD 10)
-            break;
-            
-        case INT_SIMD_FPU_ERROR:  // Interrupt 19 - SIMD FPU error
-            kira::kernel::console.add_message("SIMD FPU error - continuing", VGA_YELLOW_ON_BLUE);
-            frame->eip += 2;  // Skip "int $19" instruction (2 bytes: CD 13)
-            break;
-            
-        // ========== SERIOUS VIOLATIONS - MUST HALT ==========
+
         case INT_GENERAL_PROTECTION:  // Interrupt 13 - Memory/privilege violation
         {
             kira::kernel::console.add_message("CRITICAL: General Protection Fault!", VGA_RED_ON_BLUE);
@@ -196,10 +191,39 @@ void Exceptions::divide_error_handler(ExceptionFrame* frame) {
     char msg[80];
     format_eip_message(msg, frame->eip);
     kira::kernel::console.add_message(msg, VGA_YELLOW_ON_BLUE);
-    kira::kernel::console.add_message("Attempting to continue...", VGA_YELLOW_ON_BLUE);
-    
-    // Skip the problematic instruction (this is a simple approach)
-    frame->eip += 2;  // Skip typical 2-byte instruction
+
+    // Check if we're in kernel mode (CPL = 0) or user mode (CPL = 3)
+    // We can check this from the CS register in the exception frame
+    bool is_kernel_mode = (frame->cs & 0x3) == 0;
+
+    if (is_kernel_mode) {
+        // Division by zero in kernel mode - this is a serious bug!
+        kira::kernel::console.add_message("CRITICAL: Division by zero in kernel mode!", VGA_RED_ON_BLUE);
+        kira::kernel::console.add_message("This indicates a kernel bug and must be fixed.", VGA_RED_ON_BLUE);
+        
+        // In debug builds, we might want to print more diagnostic info
+        char debug_info[256];
+        strcpy(debug_info, "Fault location: 0x");
+        char hexBuf[16];
+        number_to_hex(hexBuf, frame->eip);
+        strcat(debug_info, hexBuf);
+        kira::kernel::console.add_message(debug_info, VGA_RED_ON_BLUE);
+        
+        // Kernel mode division by zero should always halt the system
+        halt_system("Kernel Mode Division Error - System integrity cannot be guaranteed");
+    } else {
+        // User mode division by zero - we can handle this more gracefully
+        kira::kernel::console.add_message("Division by zero in user mode - terminating process", VGA_YELLOW_ON_BLUE);
+        
+        // TODO: Once we implement process management, we should:
+        // 1. Send SIGFPE to the process
+        // 2. If not handled, terminate the process
+        // 3. Clean up process resources
+        // 4. Schedule next process
+        
+        // For now, since we don't have full process management:
+        halt_system("User process terminated due to division by zero");
+    }
 }
 
 void Exceptions::general_protection_handler(ExceptionFrame* frame) {

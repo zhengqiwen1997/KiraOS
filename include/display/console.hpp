@@ -114,6 +114,21 @@ private:
      * @brief Copy string to buffer line (with bounds checking)
      */
     void copy_to_buffer_line(u32 lineIndex, const char* text, u16 color);
+    
+    /**
+     * @brief Internal refresh function (assumes interrupts disabled)
+     */
+    void refresh_display_internal();
+    
+    /**
+     * @brief Internal toggle active mode (assumes interrupts disabled)
+     */
+    void toggle_active_mode_internal();
+    
+    /**
+     * @brief Internal add message (assumes interrupts disabled)
+     */
+    void add_message_internal(const char* message, u16 color = VGA_WHITE_ON_BLUE);
 };
 
 } // namespace kira::display 

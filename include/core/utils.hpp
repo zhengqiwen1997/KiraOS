@@ -236,4 +236,33 @@ inline void* memset(void* dest, i32 value, u32 count) {
     return dest;
 }
 
+// Safe division functions for kernel code
+template<typename T>
+bool safe_divide(T dividend, T divisor, T& result) {
+    if (divisor == 0) {
+        return false;
+    }
+    result = dividend / divisor;
+    return true;
+}
+
+// Safe division with default value
+template<typename T>
+T safe_divide_or(T dividend, T divisor, T default_value) {
+    if (divisor == 0) {
+        return default_value;
+    }
+    return dividend / divisor;
+}
+
+// Safe modulo operation
+template<typename T>
+bool safe_modulo(T dividend, T divisor, T& result) {
+    if (divisor == 0) {
+        return false;
+    }
+    result = dividend % divisor;
+    return true;
+}
+
 } // namespace kira::utils 

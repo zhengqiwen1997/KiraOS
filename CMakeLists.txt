@@ -43,6 +43,8 @@ set(KERNEL_CXX_FLAGS
     "-m32"                           # Force 32-bit mode
     "-nostdlib"                      # No standard library
     "-nostdinc"                      # No standard includes
+    "-msse"                          # Enable SSE instructions
+    "-mfpmath=sse"                   # Use SSE for floating-point math
 )
 
 # Linker flags for kernel
@@ -61,6 +63,7 @@ add_library(kernel_core STATIC
     kernel/core/process.cpp
     kernel/core/syscalls.cpp
     kernel/core/usermode.cpp
+    kernel/test/exception_tester.cpp
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/lib/libkira.cpp

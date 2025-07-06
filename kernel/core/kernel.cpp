@@ -15,24 +15,15 @@
 #include "core/usermode.hpp"
 #include "user_programs.hpp"
 #include "display/console.hpp"
+#include "test/exception_tester.hpp"
 
 namespace kira::kernel {
 
+using namespace kira::display;
 using namespace kira::system;
 
-// Test configuration - uncomment to enable interrupt testing
-// #define ENABLE_INTERRUPT_TESTING
-
-#ifdef ENABLE_INTERRUPT_TESTING
-// Current test configuration (change these to test different interrupts)
-#define TEST_INTERRUPT_NUM 14
-#define TEST_INTERRUPT_NAME "Page Fault"
-
-// Available interrupts to test:
-// 0="Division Error", 1="Debug", 2="NMI", 3="Breakpoint", 4="Overflow"
-// 5="Bound Range", 6="Invalid Opcode", 7="Device Not Available", 8="Double Fault"
-// 10="Invalid TSS", 11="Segment Not Present", 12="Stack Fault", 13="General Protection Fault", 14="Page Fault"
-#endif
+//#define ENABLE_EXCEPTION_TESTING
+#define ENABLE_SINGLE_EXCEPTION_TEST
 
 // Global console instance
 kira::display::ScrollableConsole console;
@@ -42,7 +33,7 @@ bool consoleInitialized = false;
 void main(volatile unsigned short* vga_buffer) noexcept {
     // Initialize GDT first
     GDTManager::initialize();
-    
+
     // Initialize TSS
     TSSManager::initialize();
     
@@ -80,6 +71,16 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // Force display refresh
     console.refresh_display();
     
+#ifdef ENABLE_SINGLE_EXCEPTION_TEST
+    console.add_message("Starting single exception test...", kira::display::VGA_CYAN_ON_BLUE);
+    kira::test::ExceptionTester::run_single_test();
+#endif
+
+#ifdef ENABLE_EXCEPTION_TESTING
+    console.add_message("Starting all exception tests...", kira::display::VGA_GREEN_ON_BLUE);
+    kira::test::ExceptionTester::run_all_tests();
+#endif
+    
     // Main kernel loop
     console.add_message("Entering main loop...", kira::display::VGA_YELLOW_ON_BLUE);
     
@@ -99,20 +100,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     if (page1) memoryManager.free_physical_page(page1);
     if (page2) memoryManager.free_physical_page(page2);
     
-    // === DYNAMIC STATUS (Lines 15-25) ===
-    // Line 15: IRQ Activity counters
-    // Line 16: Real-time interrupt markers
-    // Line 17: User program 1 output (Hello World)
-    // Line 18: User program 2 output (Counter)  
-    // Line 19: User program 3 output (Animation)
-    // Line 20: Keyboard scan codes (hex)
-    // Line 21: Keyboard characters (ASCII)
-    // Line 22: Keyboard state (key names)
-    // Line 23: Current process info
-    // Line 24: Process manager statistics
-    // Line 25: Available for expansion
-    
-    // Kernel main loop with process scheduling
+    // Kernel main loop
     u32 counter = 0;
     while (true) {
         counter++;
@@ -130,4 +118,4 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     }
 }
 
-} // namespace kira::kernel 
+} // namespace kira::kernel
