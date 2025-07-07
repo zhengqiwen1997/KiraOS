@@ -30,6 +30,8 @@ void Exceptions::initialize() {
     IDT::set_interrupt_gate(INT_STACK_FAULT, (void*)exception_stub_12);
     IDT::set_interrupt_gate(INT_GENERAL_PROTECTION, (void*)exception_stub_13);
     IDT::set_interrupt_gate(INT_PAGE_FAULT, (void*)exception_stub_14);
+    IDT::set_interrupt_gate(INT_X87_FPU_ERROR, (void*)exception_stub_16);
+    IDT::set_interrupt_gate(INT_SIMD_FPU_ERROR, (void*)exception_stub_19);
 }
 
 void Exceptions::default_handler(ExceptionFrame* frame) {

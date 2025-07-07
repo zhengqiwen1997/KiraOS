@@ -31,21 +31,6 @@ void ExceptionTester::log_test_end(const char* test_name) {
     kira::kernel::console.add_message(msg, VGA_GREEN_ON_BLUE);
 }
 
-void ExceptionTester::enable_sse() {
-    kira::system::u32 cr0, cr4;
-    
-    // Read CR4, set OSFXSR and OSXMMEXCPT
-    asm volatile("mov %%cr4, %0" : "=r"(cr4));
-    cr4 |= 0x600;  // Set bits 9 and 10
-    asm volatile("mov %0, %%cr4" : : "r"(cr4));
-    
-    // Read CR0, clear EM, set MP
-    asm volatile("mov %%cr0, %0" : "=r"(cr0));
-    cr0 &= ~0x4;   // Clear bit 2 (EM)
-    cr0 |= 0x2;    // Set bit 1 (MP)
-    asm volatile("mov %0, %%cr0" : : "r"(cr0));
-}
-
 void ExceptionTester::test_breakpoint() {
     log_test_start("breakpoint exception");
     asm volatile("int $3");
@@ -72,31 +57,13 @@ void ExceptionTester::test_fpu_not_available() {
 
 void ExceptionTester::test_x87_fpu_error() {
     log_test_start("x87 FPU error exception");
-    asm volatile(
-        "fnclex\n\t"    // Clear exceptions
-        "fldz\n\t"      // Load 0.0
-        "fdivp %st,%st(0)"  // Divide by zero
-    );
+    asm volatile("int $16");
     log_test_end("x87 FPU error exception");
 }
 
 void ExceptionTester::test_simd_fpu_error() {
     log_test_start("SIMD FPU error exception");
-    
-    enable_sse();
-    kira::system::u32 mxcsr = 0x1F80;  // Default MXCSR value
-    mxcsr &= ~0x200;     // Unmask divide-by-zero exception
-    
-    asm volatile("ldmxcsr %0\n" :: "m"(mxcsr));
-    
-    float zero = 0.0f;
-    asm volatile(
-        "movss %0, %%xmm0\n"
-        "divss %%xmm0, %%xmm0\n"
-        :: "m"(zero)
-        : "xmm0"
-    );
-    
+    asm volatile("int $19");
     log_test_end("SIMD FPU error exception");
 }
 

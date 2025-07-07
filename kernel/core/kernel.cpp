@@ -22,8 +22,8 @@ namespace kira::kernel {
 using namespace kira::display;
 using namespace kira::system;
 
-//#define ENABLE_EXCEPTION_TESTING
-#define ENABLE_SINGLE_EXCEPTION_TEST
+#define ENABLE_EXCEPTION_TESTING
+//#define ENABLE_SINGLE_EXCEPTION_TEST
 
 // Global console instance
 kira::display::ScrollableConsole console;

@@ -131,6 +131,8 @@ extern "C" {
     void exception_stub_12();  // Stack fault
     void exception_stub_13();  // General protection
     void exception_stub_14();  // Page fault
+    void exception_stub_16();  // x87 FPU floating-point error
+    void exception_stub_19();  // SIMD floating-point exception
 }
 
 } // namespace kira::system 

@@ -117,6 +117,22 @@ exception_stub_14:
     pushl $14
     jmp exception_common
 
+# x87 FPU floating-point error exception stub (interrupt 16)
+.global exception_stub_16
+exception_stub_16:
+    cli
+    pushl $0                # Push dummy error code (no error code for INT 16)
+    pushl $16               # Push exception number
+    jmp exception_common
+
+# SIMD floating-point exception stub (interrupt 19)
+.global exception_stub_19
+exception_stub_19:
+    cli
+    pushl $0                # Push dummy error code (no error code for INT 19)
+    pushl $19               # Push exception number
+    jmp exception_common
+
 # Hardware interrupt stubs (IRQ 0-15 -> INT 32-47)
 
 # External C-style hardware interrupt handler wrapper

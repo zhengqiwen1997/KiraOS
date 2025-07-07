@@ -5,6 +5,22 @@ namespace kira::display {
 
 using namespace kira::system;
 
+// Helper functions for interrupt safety
+static inline void disable_interrupts() {
+    asm volatile("cli");
+}
+
+static inline void enable_interrupts() {
+    asm volatile("sti");
+}
+
+// Check if interrupts are currently enabled
+static inline bool interrupts_enabled() {
+    u32 flags;
+    asm volatile("pushfl; popl %0" : "=r"(flags));
+    return (flags & 0x200) != 0;
+}
+
 void ScrollableConsole::initialize() {
     // Initialize all buffer lines
     for (u32 i = 0; i < BUFFER_LINES; i++) {
@@ -21,6 +37,9 @@ void ScrollableConsole::initialize() {
 void ScrollableConsole::add_message(const char* message, u16 color) {
     if (!message) return;
     
+    // Check if we're in an exception context (interrupts disabled)
+    bool was_interrupts_enabled = interrupts_enabled();
+    
     // Copy message to current buffer line
     copy_to_buffer_line(currentLine, message, color);
     
@@ -29,8 +48,12 @@ void ScrollableConsole::add_message(const char* message, u16 color) {
     
     // If not in active scroll mode, automatically refresh display
     if (!active) {
+        // Use the safe refresh approach from original console.cpp
         refresh_display();
     }
+    
+    // Don't mess with interrupt state if we're in an exception handler
+    (void)was_interrupts_enabled;  // Suppress unused variable warning
 }
 
 void ScrollableConsole::add_formatted_message(u32 line, u32 col, const char* message, u16 color) {
@@ -40,51 +63,72 @@ void ScrollableConsole::add_formatted_message(u32 line, u32 col, const char* mes
 }
 
 bool ScrollableConsole::handle_keyboard_input(u8 scanCode) {
+    // Only disable interrupts if they're currently enabled
+    bool was_enabled = interrupts_enabled();
+    if (was_enabled) {
+        disable_interrupts();
+    }
+    
     // Handle F1 key to toggle active mode
     if (scanCode == KEY_F1) {
         toggle_active_mode();
+        if (was_enabled) {
+            enable_interrupts();
+        }
         return true;
     }
     
     // Only handle other keys if in active mode
     if (!active) {
+        if (was_enabled) {
+            enable_interrupts();
+        }
         return false;
     }
     
     // Handle scrolling keys
     switch (scanCode) {
         case KEY_UP:
-            scroll_down(1);  // UP arrow should show older messages (scroll down in buffer)
+            scroll_up(1);  // UP arrow should show older messages (scroll down in buffer)
             refresh_display();
-            return true;
+            break;
             
         case KEY_DOWN:
-            scroll_up(1);    // DOWN arrow should show newer messages (scroll up in buffer)
+            scroll_down(1);    // DOWN arrow should show newer messages (scroll up in buffer)
             refresh_display();
-            return true;
+            break;
             
         case KEY_PAGE_UP:
             scroll_up(DISPLAY_LINES);
             refresh_display();
-            return true;
+            break;
             
         case KEY_PAGE_DOWN:
             scroll_down(DISPLAY_LINES);
             refresh_display();
-            return true;
+            break;
             
         case KEY_HOME:
             scroll_to_top();
             refresh_display();
-            return true;
+            break;
             
         case KEY_END:
             scroll_to_bottom();
             refresh_display();
-            return true;
+            break;
+            
+        default:
+            if (was_enabled) {
+                enable_interrupts();
+            }
+            return false;  // Key not handled
     }
     
-    return false;  // Key not handled
+    if (was_enabled) {
+        enable_interrupts();
+    }
+    return true;
 }
 
 void ScrollableConsole::refresh_display() {
@@ -169,14 +213,6 @@ void ScrollableConsole::toggle_active_mode() {
 }
 
 void ScrollableConsole::scroll_up(u32 lines) {
-    if (scrollOffset >= lines) {
-        scrollOffset -= lines;
-    } else {
-        scrollOffset = 0;
-    }
-}
-
-void ScrollableConsole::scroll_down(u32 lines) {
     u32 maxOffset = (totalLines > DISPLAY_LINES) ? totalLines - DISPLAY_LINES : 0;
     
     if (scrollOffset + lines <= maxOffset) {
@@ -186,16 +222,24 @@ void ScrollableConsole::scroll_down(u32 lines) {
     }
 }
 
-void ScrollableConsole::scroll_to_top() {
-    scrollOffset = 0;
+void ScrollableConsole::scroll_down(u32 lines) {
+    if (scrollOffset >= lines) {
+        scrollOffset -= lines;
+    } else {
+        scrollOffset = 0;
+    }
 }
 
-void ScrollableConsole::scroll_to_bottom() {
+void ScrollableConsole::scroll_to_top() {
     if (totalLines > DISPLAY_LINES) {
         scrollOffset = totalLines - DISPLAY_LINES;
     } else {
         scrollOffset = 0;
     }
+}
+
+void ScrollableConsole::scroll_to_bottom() {
+    scrollOffset = 0;
 }
 
 void ScrollableConsole::get_scroll_info(u32& currentTop, u32& totalLinesAvailable) const {
