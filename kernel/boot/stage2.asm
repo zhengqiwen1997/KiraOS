@@ -109,6 +109,9 @@ start:
     call detect_memory_e820
     mov si, msg_memory
     call print_both
+    
+    ; Debug: Print memory map count
+    call print_memory_map_count
 
     ; Load kernel from disk
     call load_kernel
@@ -178,6 +181,12 @@ detect_memory_e820:
     xor ebx, ebx            ; Start with EBX = 0
     mov word [memory_map_entries], 0
     
+    ; Debug: Print E820 start message
+    push si
+    mov si, msg_e820_start
+    call print_both
+    pop si
+
 .loop:
     ; Set up E820h call
     mov eax, BIOS_MEMORY_E820
@@ -186,9 +195,9 @@ detect_memory_e820:
     int 0x15
     
     ; Check for errors or unsupported function
-    jc .done
+    jc .error
     cmp eax, E820_SIGNATURE
-    jne .done
+    jne .error
     
     ; Valid entry received, increment counter
     inc word [memory_map_entries]
@@ -204,7 +213,26 @@ detect_memory_e820:
     test ebx, ebx
     jnz .loop               ; If EBX != 0, continue with next entry
     
+    jmp .done
+
+.error:
+    ; Debug: Print error message
+    push si
+    mov si, msg_e820_error
+    call print_both
+    pop si
+    
 .done:
+    ; Debug: Print final count
+    push si
+    mov si, msg_e820_done
+    call print_both
+    mov ax, [memory_map_entries]
+    call print_hex_word
+    mov si, msg_newline
+    call print_both
+    pop si
+    
     pop es
     pop di
     pop dx
@@ -422,6 +450,108 @@ print_both:
     call print_serial
     ret
 
+; Debug function to print memory map count
+print_memory_map_count:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+    
+    ; Print debug message
+    mov si, msg_debug_count
+    call print_both
+    
+    ; Get the memory map count
+    mov ax, [memory_map_entries]
+    
+    ; Convert to hex and print
+    call print_hex_word
+    
+    ; Print newline
+    mov si, msg_newline
+    call print_both
+    
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; Print 16-bit value in AX as hex
+print_hex_word:
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov bx, ax          ; Save original value
+    
+    ; Print high byte
+    mov al, bh
+    call print_hex_byte
+    
+    ; Print low byte
+    mov al, bl
+    call print_hex_byte
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; Print 8-bit value in AL as hex
+print_hex_byte:
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov bl, al          ; Save original value
+    
+    ; Print high nibble
+    shr al, 4
+    call print_hex_nibble
+    
+    ; Print low nibble
+    mov al, bl
+    and al, 0x0F
+    call print_hex_nibble
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+; Print 4-bit value in AL as hex digit
+print_hex_nibble:
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    cmp al, 9
+    jle .digit
+    add al, 7           ; Convert A-F
+.digit:
+    add al, '0'
+    
+    ; Print via BIOS (VGA)
+    mov ah, BIOS_TELETYPE
+    int 0x10
+    
+    ; Also print to serial
+    call send_serial_char
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
 ; Enter protected mode
 enter_protected_mode:
     cli                     ; Disable interrupts
@@ -459,6 +589,41 @@ protected_mode_entry:
     ; Jump to kernel entry point
     jmp KERNEL_FINAL_ADDR
 
+; Write 32-bit value in ECX as hex to VGA at EAX
+write_hex32_to_vga:
+    push eax
+    push ebx
+    push ecx
+    push edx
+    
+    mov ebx, eax        ; Save VGA address
+    mov edx, 8          ; 8 hex digits
+    
+.loop:
+    rol ecx, 4          ; Rotate to get next nibble
+    mov eax, ecx
+    and eax, 0x0F       ; Get low nibble
+    
+    cmp eax, 9
+    jle .digit
+    add eax, 7          ; Convert A-F
+.digit:
+    add eax, '0'        ; Convert to ASCII
+    
+    ; Write to VGA (character + white on black attribute)
+    mov ah, 0x0F
+    mov [ebx], ax
+    add ebx, 2
+    
+    dec edx
+    jnz .loop
+    
+    pop edx
+    pop ecx
+    pop ebx
+    pop eax
+    ret
+
 ;=============================================================================
 ; Global Descriptor Table
 ;=============================================================================
@@ -495,8 +660,13 @@ gdt_descriptor:
 msg_start           db 'Stage2: Starting KiraOS bootloader', ASCII_CR, ASCII_LF, ASCII_NULL
 msg_a20             db 'Stage2: A20 line enabled', ASCII_CR, ASCII_LF, ASCII_NULL
 msg_memory          db 'Stage2: Memory map detected', ASCII_CR, ASCII_LF, ASCII_NULL
+msg_debug_count     db 'Stage2: Memory entries found: 0x', ASCII_NULL
+msg_newline         db ASCII_CR, ASCII_LF, ASCII_NULL
 msg_kernel_loaded   db 'Stage2: Kernel loaded', ASCII_CR, ASCII_LF, ASCII_NULL
 msg_gdt             db 'Stage2: GDT loaded', ASCII_CR, ASCII_LF, ASCII_NULL
+msg_e820_start      db 'Stage2: E820 memory detection started', ASCII_CR, ASCII_LF, ASCII_NULL
+msg_e820_error      db 'Stage2: E820 error or unsupported function', ASCII_CR, ASCII_LF, ASCII_NULL
+msg_e820_done       db 'Stage2: E820 memory detection complete. Entries found: 0x', ASCII_NULL
 
 ; Pad to sector boundary
 times 2048-($-$$) db 0

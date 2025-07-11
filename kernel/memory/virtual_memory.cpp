@@ -233,6 +233,11 @@ void AddressSpace::setup_kernel_mappings() {
 // VirtualMemoryManager Implementation  
 //=============================================================================
 
+// Pre-allocate memory for AddressSpace objects to avoid dynamic allocation
+static u8 kernelAddressSpaceMemory[sizeof(AddressSpace)] __attribute__((aligned(4)));
+static u8 userAddressSpaceMemory[16][sizeof(AddressSpace)] __attribute__((aligned(4))); // Support up to 16 user address spaces
+static u32 nextUserAddressSpaceIndex = 0;
+
 VirtualMemoryManager& VirtualMemoryManager::get_instance() {
     if (!instance) {
         static VirtualMemoryManager vmManager;
@@ -242,8 +247,8 @@ VirtualMemoryManager& VirtualMemoryManager::get_instance() {
 }
 
 void VirtualMemoryManager::initialize() {
-    // Create kernel address space
-    kernelAddressSpace = new AddressSpace(true);
+    // Create kernel address space using placement new
+    kernelAddressSpace = new(kernelAddressSpaceMemory) AddressSpace(true);
     currentAddressSpace = kernelAddressSpace;
     
     // Enable paging
@@ -254,7 +259,13 @@ void VirtualMemoryManager::initialize() {
 }
 
 AddressSpace* VirtualMemoryManager::create_user_address_space() {
-    return new AddressSpace(false);
+    if (nextUserAddressSpaceIndex >= 16) {
+        return nullptr; // No more user address spaces available
+    }
+    
+    AddressSpace* userSpace = new(&userAddressSpaceMemory[nextUserAddressSpaceIndex]) AddressSpace(false);
+    nextUserAddressSpaceIndex++;
+    return userSpace;
 }
 
 void VirtualMemoryManager::switch_address_space(AddressSpace* addressSpace) {

@@ -35,6 +35,107 @@ inline u32 strlen(const char* str) {
     return len;
 }
 
+// Simple string class for kernel use
+class String {
+private:
+    static constexpr u32 SMALL_STRING_SIZE = 32;
+    char buffer[SMALL_STRING_SIZE];
+    
+public:
+    String() {
+        buffer[0] = '\0';
+    }
+    
+    String(const char* str) {
+        if (!str) {
+            buffer[0] = '\0';
+            return;
+        }
+        // Use our kernel string copy with bounds checking
+        u32 i = 0;
+        while (i < SMALL_STRING_SIZE - 1 && str[i]) {
+            buffer[i] = str[i];
+            i++;
+        }
+        buffer[i] = '\0';
+    }
+    
+    operator const char*() const {
+        return buffer;
+    }
+    
+    const char* c_str() const {
+        return buffer;
+    }
+    
+    String& operator+=(const String& other) {
+        // Use our kernel string functions
+        u32 len = kira::utils::strlen(buffer);  // Explicitly use our strlen
+        u32 i = 0;
+        while (len + i < SMALL_STRING_SIZE - 1 && other.buffer[i]) {
+            buffer[len + i] = other.buffer[i];
+            i++;
+        }
+        buffer[len + i] = '\0';
+        return *this;
+    }
+    
+    String& operator+=(const char* str) {
+        if (!str) return *this;
+        // Use our kernel string functions
+        u32 len = kira::utils::strlen(buffer);  // Explicitly use our strlen
+        u32 i = 0;
+        while (len + i < SMALL_STRING_SIZE - 1 && str[i]) {
+            buffer[len + i] = str[i];
+            i++;
+        }
+        buffer[len + i] = '\0';
+        return *this;
+    }
+};
+
+inline String operator+(const String& a, const String& b) {
+    String result = a;
+    result += b;
+    return result;
+}
+
+inline String operator+(const String& a, const char* b) {
+    String result = a;
+    result += b;
+    return result;
+}
+
+inline String operator+(const char* a, const String& b) {
+    String result = a;
+    result += b;
+    return result;
+}
+
+/**
+ * @brief Convert number to hexadecimal string (8 characters, lowercase)
+ * @param buffer Output buffer (must be at least 9 characters)
+ * @param number Number to convert
+ */
+inline void number_to_hex(char* buffer, u32 number) {
+    if (!buffer) return;
+    
+    const char hex[] = "0123456789abcdef";
+    for (int i = 0; i < 8; i++) {
+        buffer[i] = hex[(number >> (28 - i * 4)) & 0xF];
+    }
+    buffer[8] = '\0';
+}
+
+// Convert number to hex string
+inline String to_hex_string(u32 value) {
+    char buffer[16];  // More than enough for 32-bit hex
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    number_to_hex(buffer + 2, value);  // Use our number_to_hex function
+    return String(buffer);
+}
+
 /**
  * @brief Compare two null-terminated strings
  * @param str1 First string
@@ -89,21 +190,6 @@ inline void strcat(char* dest, const char* src) {
         *dest++ = *src++;
     }
     *dest = '\0';
-}
-
-/**
- * @brief Convert number to hexadecimal string (8 characters, lowercase)
- * @param buffer Output buffer (must be at least 9 characters)
- * @param number Number to convert
- */
-inline void number_to_hex(char* buffer, u32 number) {
-    if (!buffer) return;
-    
-    const char hex[] = "0123456789abcdef";
-    for (int i = 0; i < 8; i++) {
-        buffer[i] = hex[(number >> (28 - i * 4)) & 0xF];
-    }
-    buffer[8] = '\0';
 }
 
 /**

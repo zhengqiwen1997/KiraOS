@@ -14,6 +14,7 @@ SECTIONS
 	.text ALIGN(4K) :
 	{
 		*(.multiboot)     /* Multiboot header at the very beginning */
+		*(.text.legacy_start)  /* Legacy entry point right after multiboot */
 		*(.text)
 	}
 

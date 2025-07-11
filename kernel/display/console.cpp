@@ -40,11 +40,24 @@ void ScrollableConsole::add_message(const char* message, u16 color) {
     // Check if we're in an exception context (interrupts disabled)
     bool was_interrupts_enabled = interrupts_enabled();
     
-    // Copy message to current buffer line
-    copy_to_buffer_line(currentLine, message, color);
+    // Check if message contains newlines
+    bool has_newlines = false;
+    for (u32 i = 0; message[i] != '\0'; i++) {
+        if (message[i] == '\n') {
+            has_newlines = true;
+            break;
+        }
+    }
     
-    currentLine = (currentLine + 1) % BUFFER_LINES;
-    totalLines++;
+    if (has_newlines) {
+        // Parse message and split on newlines
+        add_multiline_message(message, color);
+    } else {
+        // Single line message - use original logic
+        copy_to_buffer_line(currentLine, message, color);
+        currentLine = (currentLine + 1) % BUFFER_LINES;
+        totalLines++;
+    }
     
     // If not in active scroll mode, automatically refresh display
     if (!active) {
@@ -54,6 +67,59 @@ void ScrollableConsole::add_message(const char* message, u16 color) {
     
     // Don't mess with interrupt state if we're in an exception handler
     (void)was_interrupts_enabled;  // Suppress unused variable warning
+}
+
+void ScrollableConsole::add_multiline_message(const char* message, u16 color) {
+    if (!message) return;
+    
+    char line_buffer[LINE_WIDTH];
+    u32 line_pos = 0;
+    u32 message_len = 0;
+    
+    // Calculate message length
+    while (message[message_len] != '\0') {
+        message_len++;
+    }
+    
+    // Track if the message ends with a newline
+    bool ends_with_newline = (message_len > 0 && message[message_len - 1] == '\n');
+    
+    for (u32 i = 0; i < message_len; i++) {
+        if (message[i] == '\n') {
+            // End current line
+            line_buffer[line_pos] = '\0';
+            
+            // Add the line to console
+            copy_to_buffer_line(currentLine, line_buffer, color);
+            currentLine = (currentLine + 1) % BUFFER_LINES;
+            totalLines++;
+            
+            // Reset for next line
+            line_pos = 0;
+        } else if (line_pos < LINE_WIDTH - 1) {
+            // Add character to current line
+            line_buffer[line_pos++] = message[i];
+        } else {
+            // Line too long, force a break
+            line_buffer[line_pos] = '\0';
+            copy_to_buffer_line(currentLine, line_buffer, color);
+            currentLine = (currentLine + 1) % BUFFER_LINES;
+            totalLines++;
+            
+            // Start new line with current character
+            line_buffer[0] = message[i];
+            line_pos = 1;
+        }
+    }
+    
+    // Add any remaining content as final line
+    // If message ends with \n, this will be empty (which is what we want)
+    if (line_pos > 0 || ends_with_newline) {
+        line_buffer[line_pos] = '\0';
+        copy_to_buffer_line(currentLine, line_buffer, color);
+        currentLine = (currentLine + 1) % BUFFER_LINES;
+        totalLines++;
+    }
 }
 
 void ScrollableConsole::add_formatted_message(u32 line, u32 col, const char* message, u16 color) {

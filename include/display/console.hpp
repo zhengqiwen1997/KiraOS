@@ -3,10 +3,12 @@
 #include "display/vga.hpp"
 #include "drivers/keyboard.hpp"
 #include "core/types.hpp"
+#include "core/utils.hpp"  // For String class
 
 namespace kira::display {
 
 using namespace kira::system;
+using kira::utils::String;  // Add String to scope
 
 /**
  * @brief Scrollable Console with Keyboard Controls
@@ -45,6 +47,15 @@ public:
      * @param color Color for the text
      */
     void add_message(const char* message, u16 color = VGA_WHITE_ON_BLUE);
+    
+    /**
+     * @brief Add a message using a String object
+     * @param message String object containing the message
+     * @param color Color for the text
+     */
+    void add_message(const String& message, u16 color = VGA_WHITE_ON_BLUE) {
+        add_message(message.c_str(), color);
+    }
     
     /**
      * @brief Add a formatted message with line/column info
@@ -114,6 +125,11 @@ private:
      * @brief Copy string to buffer line (with bounds checking)
      */
     void copy_to_buffer_line(u32 lineIndex, const char* text, u16 color);
+    
+    /**
+     * @brief Handle multiline messages (parse \n characters)
+     */
+    void add_multiline_message(const char* message, u16 color);
     
     /**
      * @brief Internal refresh function (assumes interrupts disabled)

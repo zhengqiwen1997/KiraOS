@@ -5,6 +5,10 @@
 
 namespace kira::system {
 
+// Global variables to store memory map info from bootloader
+extern u32 gMemoryMapAddr;
+extern u32 gMemoryMapCount;
+
 class MemoryManager {
 public:
     static MemoryManager& get_instance();
@@ -15,6 +19,32 @@ public:
     // Physical memory allocation
     void* allocate_physical_page();
     void free_physical_page(void* page);
+
+    // Add getter methods for debugging
+    u32 get_free_page_count() const { return freePageCount; }
+    u32 get_max_free_pages() const { return maxFreePages; }
+    
+    // Calculate total usable RAM from memory map (static since it only uses global variables)
+    static u32 calculate_total_usable_ram() {
+        u32 total = 0;
+        
+        if (gMemoryMapAddr == 0 || gMemoryMapCount == 0) {
+            return 0;  // No memory map available
+        }
+        
+        MemoryMapEntry* entries = (MemoryMapEntry*)gMemoryMapAddr;
+        for (u32 i = 0; i < gMemoryMapCount; i++) {
+            if (entries[i].type == static_cast<u32>(MemoryType::USABLE)) {
+                // Find the highest usable address
+                u32 endAddr = (u32)(entries[i].baseAddress + entries[i].length);
+                if (endAddr > total) {
+                    total = endAddr;
+                }
+            }
+        }
+        
+        return total;
+    }
 
     // Virtual memory management
     bool map_page(void* virtualAddr, void* physicalAddr, bool writable = true, bool user = false);

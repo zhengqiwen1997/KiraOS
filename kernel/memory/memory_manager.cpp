@@ -121,7 +121,7 @@ MemoryManager& MemoryManager::get_instance() {
         if (!validate_kernel_structures_placement()) {
             // Fallback to a safe address if validation fails
             // Use a simple calculation based on available memory
-            u32 totalRam = calculate_total_usable_ram();
+            u32 totalRam = MemoryManager::calculate_total_usable_ram();
             u32 safeAddr = 0x00200000;  // Default to 2MB
             
             // If we have enough RAM, use 1/8 of total RAM as base address
@@ -167,7 +167,12 @@ void MemoryManager::initialize(const MemoryMapEntry* memoryMap, u32 memoryMapSiz
     
     // Validate stack address
     u32 totalRam = calculate_total_usable_ram();
-    if (totalRam > 0 && !is_address_in_physical_ram(stackAddr + 0x1000, totalRam)) {
+    if (totalRam == 0) {
+        // Critical error: No usable RAM detected
+        return;
+    }
+    
+    if (!is_address_in_physical_ram(stackAddr + 0x1000, totalRam)) {
         // Stack would be outside RAM, use a safer location
         stackAddr = managerAddr + sizeof(MemoryManager);
         // Align to 4-byte boundary
@@ -199,15 +204,14 @@ void MemoryManager::initialize(const MemoryMapEntry* memoryMap, u32 memoryMapSiz
             
             // Add pages to the free stack with boundary checking
             for (u32 page = startPage; page < endPage && freePageCount < maxFreePages; page++) {
-                u32 pageAddr = page * PAGE_SIZE;
-                
-                // Validate page address before adding to stack
-                if (is_address_valid(pageAddr) && 
-                    (totalRam == 0 || is_address_in_physical_ram(pageAddr, totalRam))) {
-                    freePageStack[freePageCount++] = pageAddr;
-                }
+                freePageStack[freePageCount++] = page * PAGE_SIZE;
             }
         }
+    }
+    
+    if (freePageCount == 0) {
+        // Critical error: No free pages available
+        return;
     }
 }
 
