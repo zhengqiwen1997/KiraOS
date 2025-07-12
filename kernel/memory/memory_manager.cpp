@@ -46,6 +46,17 @@ constexpr u32 LOW_MEMORY_PAGES = 256;  // 1MB / 4KB = 256 pages
 constexpr u32 KERNEL_START_PAGE = (KERNEL_STRUCTURES_BASE / PAGE_SIZE);  // 2MB / 4KB = 512
 constexpr u32 KERNEL_END_PAGE = ((KERNEL_STRUCTURES_BASE + KERNEL_STRUCTURES_SIZE) / PAGE_SIZE);  // 3MB / 4KB = 768
 
+// Memory allocation constants
+constexpr u32 DEFAULT_SAFE_ADDR = 0x00200000;      // 2MB - Default safe address for memory manager
+constexpr u32 RAM_THRESHOLD_8MB = 0x00800000;      // 8MB - Threshold for dynamic address calculation
+constexpr u32 MB_BOUNDARY_MASK = 0xFFF00000;       // 1MB boundary alignment mask
+constexpr u32 MB_BOUNDARY_ALIGN = 0x000FFFFF;      // 1MB boundary alignment value
+constexpr u32 STACK_OFFSET = 0x1000;               // 4KB - Offset for stack from manager address
+constexpr u32 BYTE_ALIGNMENT_MASK = ~3;            // 4-byte alignment mask
+constexpr u32 BYTE_ALIGNMENT_VALUE = 3;            // 4-byte alignment value
+constexpr u32 MAX_FREE_PAGES = 1024;               // Maximum pages we can track in free stack
+constexpr u32 RAM_DIVISOR = 8;                     // Divisor for dynamic address calculation (1/8 of total RAM)
+
 // Boundary checking functions
 static bool is_address_valid(u32 address) {
     // Check for obvious invalid addresses
@@ -63,7 +74,7 @@ static bool is_address_in_physical_ram(u32 address, u32 totalRamSize) {
     return true;
 }
 
-static u32 calculate_total_usable_ram() {
+u32 MemoryManager::calculate_total_usable_ram() {
     u32 total = 0;
     
     if (gMemoryMapAddr == 0 || gMemoryMapCount == 0) {
@@ -85,7 +96,7 @@ static u32 calculate_total_usable_ram() {
 }
 
 static bool validate_kernel_structures_placement() {
-    u32 totalRam = calculate_total_usable_ram();
+    u32 totalRam = MemoryManager::calculate_total_usable_ram();
     
     // Check if we have any RAM info
     if (totalRam == 0) {
@@ -122,15 +133,15 @@ MemoryManager& MemoryManager::get_instance() {
             // Fallback to a safe address if validation fails
             // Use a simple calculation based on available memory
             u32 totalRam = MemoryManager::calculate_total_usable_ram();
-            u32 safeAddr = 0x00200000;  // Default to 2MB
+            u32 safeAddr = DEFAULT_SAFE_ADDR;  // Default to 2MB
             
             // If we have enough RAM, use 1/8 of total RAM as base address
-            if (totalRam > 0x00800000) {  // If more than 8MB
-                safeAddr = totalRam / 8;
+            if (totalRam > RAM_THRESHOLD_8MB) {  // If more than 8MB
+                safeAddr = totalRam / RAM_DIVISOR;
                 // Align to 1MB boundary
-                safeAddr = (safeAddr + 0x000FFFFF) & 0xFFF00000;
+                safeAddr = (safeAddr + MB_BOUNDARY_ALIGN) & MB_BOUNDARY_MASK;
                 // Ensure it's at least 2MB
-                if (safeAddr < 0x00200000) safeAddr = 0x00200000;
+                if (safeAddr < DEFAULT_SAFE_ADDR) safeAddr = DEFAULT_SAFE_ADDR;
             }
             
             gMemoryManager = (MemoryManager*)safeAddr;
@@ -142,7 +153,6 @@ MemoryManager& MemoryManager::get_instance() {
         // Initialize only the essential fields for stack-based allocator
         gMemoryManager->memoryMap = nullptr;
         gMemoryManager->memoryMapSize = 0;
-        gMemoryManager->pageDirectory = nullptr;
         gMemoryManager->freePageStack = nullptr;
         gMemoryManager->freePageCount = 0;
         gMemoryManager->maxFreePages = 0;
@@ -163,26 +173,28 @@ void MemoryManager::initialize(const MemoryMapEntry* memoryMap, u32 memoryMapSiz
     
     // Calculate safe stack address based on manager address
     u32 managerAddr = (u32)this;
-    u32 stackAddr = managerAddr + 0x1000;  // Manager + 4KB
+    u32 stackAddr = managerAddr + STACK_OFFSET;  // Manager + 4KB
     
     // Validate stack address
-    u32 totalRam = calculate_total_usable_ram();
+    u32 totalRam = MemoryManager::calculate_total_usable_ram();
     if (totalRam == 0) {
         // Critical error: No usable RAM detected
         return;
     }
     
-    if (!is_address_in_physical_ram(stackAddr + 0x1000, totalRam)) {
+    // Check if stack end address is within RAM (stack needs 4KB space for MAX_FREE_PAGES entries)
+    u32 stackSize = MAX_FREE_PAGES * sizeof(u32);  // 1024 * 4 = 4KB
+    if (!is_address_in_physical_ram(stackAddr + stackSize, totalRam)) {
         // Stack would be outside RAM, use a safer location
         stackAddr = managerAddr + sizeof(MemoryManager);
         // Align to 4-byte boundary
-        stackAddr = (stackAddr + 3) & ~3;
+        stackAddr = (stackAddr + BYTE_ALIGNMENT_VALUE) & BYTE_ALIGNMENT_MASK;
     }
     
     // Initialize the free page stack
     freePageStack = (u32*)stackAddr;
     freePageCount = 0;
-    maxFreePages = 1024;  // Limit to 1024 pages (4KB stack size)
+    maxFreePages = MAX_FREE_PAGES;  // Limit to 1024 pages (4KB stack size)
     
     // Populate the stack with free pages from usable memory regions
     for (u32 i = 0; i < memoryMapSize && freePageCount < maxFreePages; i++) {

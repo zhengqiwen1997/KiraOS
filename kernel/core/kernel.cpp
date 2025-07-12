@@ -86,34 +86,34 @@ void main(volatile unsigned short* vga_buffer) noexcept {
 //     // Main kernel loop
 //     console.add_message("Entering main loop...\n", kira::display::VGA_YELLOW_ON_BLUE);
     
-//     // auto& process_manager = ProcessManager::get_instance();
+    // auto& process_manager = ProcessManager::get_instance();
     
-//     // u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestSysCall", 5);
-//     // if (pid1) {
-//     //     console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
-//     // } else {
-//     //     console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
-//     // }
+    // u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestSysCall", 5);
+    // if (pid1) {
+    //     console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+    // } else {
+    //     console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
+    // }
     
-//     // Test memory manager more thoroughly
-//     console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
+    // Test memory manager more thoroughly
+    console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
+    auto& memoryManager = MemoryManager::get_instance();
+    // Try to allocate a single page first
+    console.add_message("Attempting to allocate a single page...", kira::display::VGA_YELLOW_ON_BLUE);
+    void* page1 = memoryManager.allocate_physical_page();
     
-//     // Try to allocate a single page first
-//     console.add_message("Attempting to allocate a single page...", kira::display::VGA_YELLOW_ON_BLUE);
-//     void* page1 = memoryManager.allocate_physical_page();
-    
-//     if (page1) {
-//         console.add_message(kira::utils::String("Page allocated at: ") + kira::utils::to_hex_string((u32)page1), kira::display::VGA_GREEN_ON_BLUE);
+    if (page1) {
+        console.add_message(kira::utils::String("Page allocated at: ") + kira::utils::to_hex_string((u32)page1), kira::display::VGA_GREEN_ON_BLUE);
         
-//         // Free the page
-//         console.add_message("Attempting to free the page...", kira::display::VGA_YELLOW_ON_BLUE);
-//         memoryManager.free_physical_page(page1);
-//         console.add_message("Memory deallocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
-//     } else {
-//         console.add_message("Memory allocation FAILED - checking memory manager state...", kira::display::VGA_RED_ON_BLUE);
-//         console.add_message(kira::utils::String("Free page count: ") + kira::utils::to_hex_string(memoryManager.get_free_page_count()), kira::display::VGA_YELLOW_ON_BLUE);
-//         console.add_message(kira::utils::String("Max free pages: ") + kira::utils::to_hex_string(memoryManager.get_max_free_pages()), kira::display::VGA_YELLOW_ON_BLUE);
-//     }
+        // Free the page
+        console.add_message("Attempting to free the page...", kira::display::VGA_YELLOW_ON_BLUE);
+        memoryManager.free_physical_page(page1);
+        console.add_message("Memory deallocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("Memory allocation FAILED - checking memory manager state...", kira::display::VGA_RED_ON_BLUE);
+        console.add_message(kira::utils::String("Free page count: ") + kira::utils::to_hex_string(memoryManager.get_free_page_count()), kira::display::VGA_YELLOW_ON_BLUE);
+        console.add_message(kira::utils::String("Max free pages: ") + kira::utils::to_hex_string(memoryManager.get_max_free_pages()), kira::display::VGA_YELLOW_ON_BLUE);
+    }
     
     // Kernel main loop
     u32 counter = 0;
