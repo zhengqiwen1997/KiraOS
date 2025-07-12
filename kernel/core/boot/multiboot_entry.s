@@ -126,67 +126,59 @@ try_basic_memory:
     # Create memory map entry 1: Low memory (0x0000 - mem_lower*1024)
     mov %ebx, %edi          # EDI = buffer address
     
-    # Entry 1: Size field (20 bytes for entry data)
-    mov $20, %eax
-    mov %eax, (%edi)        # Size = 20
-    add $4, %edi
-    
-    # Entry 1: Base address (low 32 bits)
+    # Entry 1: Base address (u64) = 0x00000000
     mov $0x00000000, %eax
     mov %eax, (%edi)        # Base address low = 0
     add $4, %edi
-    
-    # Entry 1: Base address (high 32 bits)
     mov $0x00000000, %eax
     mov %eax, (%edi)        # Base address high = 0
     add $4, %edi
     
-    # Entry 1: Length (low 32 bits) = mem_lower * 1024
+    # Entry 1: Length (u64) = mem_lower * 1024
     mov 4(%esi), %eax       # Get mem_lower
     shl $10, %eax           # Multiply by 1024
     mov %eax, (%edi)        # Length low
     add $4, %edi
-    
-    # Entry 1: Length (high 32 bits)
     mov $0x00000000, %eax
     mov %eax, (%edi)        # Length high = 0
     add $4, %edi
     
-    # Entry 1: Type (1 = available RAM)
+    # Entry 1: Type (u32) = 1 (available RAM)
     mov $0x00000001, %eax
     mov %eax, (%edi)        # Type = available
     add $4, %edi
     
-    # Create memory map entry 2: High memory (0x100000 - mem_upper*1024)
-    # Entry 2: Size field (20 bytes for entry data)
-    mov $20, %eax
-    mov %eax, (%edi)        # Size = 20
+    # Entry 1: ACPI (u32) = 0 (not used)
+    mov $0x00000000, %eax
+    mov %eax, (%edi)        # ACPI = 0
     add $4, %edi
     
-    # Entry 2: Base address (low 32 bits) = 1MB
+    # Create memory map entry 2: High memory (0x100000 - mem_upper*1024)
+    # Entry 2: Base address (u64) = 0x00100000 (1MB)
     mov $0x00100000, %eax
     mov %eax, (%edi)        # Base address low = 1MB
     add $4, %edi
-    
-    # Entry 2: Base address (high 32 bits)
     mov $0x00000000, %eax
     mov %eax, (%edi)        # Base address high = 0
     add $4, %edi
     
-    # Entry 2: Length (low 32 bits) = mem_upper * 1024
+    # Entry 2: Length (u64) = mem_upper * 1024
     mov 8(%esi), %eax       # Get mem_upper
     shl $10, %eax           # Multiply by 1024
     mov %eax, (%edi)        # Length low
     add $4, %edi
-    
-    # Entry 2: Length (high 32 bits)
     mov $0x00000000, %eax
     mov %eax, (%edi)        # Length high = 0
     add $4, %edi
     
-    # Entry 2: Type (1 = available RAM)
+    # Entry 2: Type (u32) = 1 (available RAM)
     mov $0x00000001, %eax
     mov %eax, (%edi)        # Type = available
+    add $4, %edi
+    
+    # Entry 2: ACPI (u32) = 0 (not used)
+    mov $0x00000000, %eax
+    mov %eax, (%edi)        # ACPI = 0
     add $4, %edi
     
     # Set return values

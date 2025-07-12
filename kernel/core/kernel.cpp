@@ -73,15 +73,15 @@ void main(volatile unsigned short* vga_buffer) noexcept {
 //     // auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
 //     // virtualMemoryManager.initialize();
     
-#ifdef ENABLE_SINGLE_EXCEPTION_TEST
-    console.add_message("Starting single exception test...\n", kira::display::VGA_CYAN_ON_BLUE);
-    kira::test::ExceptionTester::run_single_test();
-#endif
+// #ifdef ENABLE_SINGLE_EXCEPTION_TEST
+//     console.add_message("Starting single exception test...\n", kira::display::VGA_CYAN_ON_BLUE);
+//     kira::test::ExceptionTester::run_single_test();
+// #endif
 
-#ifdef ENABLE_EXCEPTION_TESTING
-    console.add_message("Starting all exception tests...\n", kira::display::VGA_GREEN_ON_BLUE);
-    kira::test::ExceptionTester::run_all_tests();
-#endif
+// #ifdef ENABLE_EXCEPTION_TESTING
+//     console.add_message("Starting all exception tests...\n", kira::display::VGA_GREEN_ON_BLUE);
+//     kira::test::ExceptionTester::run_all_tests();
+// #endif
     
 //     // Main kernel loop
 //     console.add_message("Entering main loop...\n", kira::display::VGA_YELLOW_ON_BLUE);

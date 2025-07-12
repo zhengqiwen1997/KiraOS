@@ -36,7 +36,7 @@ QEMU_DISK_FLAGS = -drive file=$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk
 QEMU_ELF_FLAGS = -kernel kernel.elf \
                  -cpu max \
                  -smp 1 \
-                 -m 32M \
+                 -m 256M \
                  -no-reboot \
                  -no-shutdown \
                  -serial file:../$(SERIAL_LOG)
@@ -45,7 +45,7 @@ QEMU_ELF_FLAGS = -kernel kernel.elf \
 QEMU_ELF_SIMPLE_FLAGS = -kernel kernel.elf \
                         -cpu max \
                         -smp 1 \
-                        -m 32M \
+                        -m 256M \
                         -no-reboot \
                         -no-shutdown
 
