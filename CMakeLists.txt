@@ -80,6 +80,7 @@ add_library(kernel_core STATIC
     kernel/drivers/keyboard.cpp
     kernel/drivers/timer.cpp
     kernel/display/console.cpp
+    kernel/debug/serial_debugger.cpp
     kernel/arch/x86/exception_stubs.s
     kernel/arch/x86/syscall_stub.s
     kernel/arch/x86/usermode_switch.s

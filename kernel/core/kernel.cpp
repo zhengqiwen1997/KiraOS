@@ -70,8 +70,10 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     u32 totalRam = MemoryManager::calculate_total_usable_ram();
     console.add_message(kira::utils::String("Total Usable RAM: ") + kira::utils::to_hex_string(totalRam), kira::display::VGA_YELLOW_ON_BLUE);
     
-//     // auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
-//     // virtualMemoryManager.initialize();
+    auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
+    virtualMemoryManager.initialize();
+    console.add_message("VirtualMemoryManager initialized successfully", kira::display::VGA_GREEN_ON_BLUE);
+    console.add_message("Kernel continuing after paging enabled...", kira::display::VGA_CYAN_ON_BLUE);
     
 // #ifdef ENABLE_SINGLE_EXCEPTION_TEST
 //     console.add_message("Starting single exception test...\n", kira::display::VGA_CYAN_ON_BLUE);
@@ -101,13 +103,16 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // Try to allocate a single page first
     console.add_message("Attempting to allocate a single page...", kira::display::VGA_YELLOW_ON_BLUE);
     void* page1 = memoryManager.allocate_physical_page();
+    void* page2 = memoryManager.allocate_physical_page();
     
-    if (page1) {
+    if (page1 && page2) {
         console.add_message(kira::utils::String("Page allocated at: ") + kira::utils::to_hex_string((u32)page1), kira::display::VGA_GREEN_ON_BLUE);
+        console.add_message(kira::utils::String("And: ") + kira::utils::to_hex_string((u32)page2), kira::display::VGA_GREEN_ON_BLUE);
         
         // Free the page
         console.add_message("Attempting to free the page...", kira::display::VGA_YELLOW_ON_BLUE);
         memoryManager.free_physical_page(page1);
+        memoryManager.free_physical_page(page2);
         console.add_message("Memory deallocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("Memory allocation FAILED - checking memory manager state...", kira::display::VGA_RED_ON_BLUE);
