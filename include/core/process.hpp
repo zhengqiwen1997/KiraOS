@@ -2,6 +2,11 @@
 
 #include "core/types.hpp"
 
+// Forward declaration to avoid circular dependency
+namespace kira::system {
+    class AddressSpace;
+}
+
 namespace kira::system {
 
 // Process states
@@ -46,6 +51,7 @@ struct Process {
     u32 kernelStackSize;        // Size of kernel stack
     u32 userStackBase;          // Base of user stack  
     u32 userStackSize;          // Size of user stack
+    AddressSpace* addressSpace; // Virtual memory address space for this process
     
     // Process function (embedded user program)
     void* userFunction;         // User mode function to execute
@@ -199,6 +205,11 @@ private:
      * @brief Allocate stacks for process
      */
     bool allocate_process_stacks(Process* process);
+    
+    /**
+     * @brief Set up memory mapping for user program
+     */
+    bool setup_user_program_mapping(Process* process, ProcessFunction function);
 
 };
 

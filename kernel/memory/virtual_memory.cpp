@@ -8,7 +8,7 @@ namespace kira::system {
 using namespace kira::debug;
 
 //=============================================================================
-// Constants
+// Implementation-specific constants (internal use only)
 //=============================================================================
 
 // Bit manipulation constants
@@ -17,7 +17,7 @@ constexpr u32 PAGE_TABLE_INDEX_BITS = 22;               // 22 bits for page dire
 constexpr u32 PAGE_TABLE_INDEX_MASK = 0x3FF;            // 10 bits mask for page table index
 constexpr u32 PAGE_OFFSET_MASK = 0xFFF;                 // 12 bits mask for page offset
 
-// Memory layout constants
+// Kernel memory layout (implementation detail)
 constexpr u32 KERNEL_CODE_START = 0x100000;             // 1MB - Kernel code start
 constexpr u32 KERNEL_CODE_END = 0x400000;               // 4MB - Kernel code end
 constexpr u32 VGA_BUFFER_ADDR = 0xB8000;                // VGA text buffer address
@@ -25,7 +25,7 @@ constexpr u32 LOW_MEMORY_END = 0x100000;                // 1MB - End of low memo
 constexpr u32 MEMORY_MANAGER_START = 0x200000;          // 2MB - Memory manager structures start
 constexpr u32 MEMORY_MANAGER_END = 0x800000;            // 8MB - Memory manager structures end
 
-// CR0 register bits
+// Hardware register bits
 constexpr u32 CR0_PAGING_BIT = 0x80000000;              // CR0 PG bit (bit 31)
 
 // System limits

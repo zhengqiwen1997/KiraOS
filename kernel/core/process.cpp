@@ -4,6 +4,8 @@
 #include "core/usermode.hpp"
 #include "display/vga.hpp"
 #include "arch/x86/tss.hpp"
+#include "memory/virtual_memory.hpp"
+#include "memory/memory_manager.hpp"
 
 namespace kira::system {
 
@@ -43,6 +45,7 @@ ProcessManager::ProcessManager() {
         processes[i].state = ProcessState::TERMINATED;
         processes[i].pid = 0;
         processes[i].isUserMode = false;
+        processes[i].addressSpace = nullptr;
     }
 }
 
@@ -84,6 +87,23 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
         return 0;
     }
     
+    // Create user address space
+    auto& vmManager = VirtualMemoryManager::get_instance();
+    process->addressSpace = vmManager.create_user_address_space();
+    if (!process->addressSpace) {
+        process->pid = 0;  // Mark as free
+        return 0;
+    }
+    
+    // Map user program code into the address space
+    if (!setup_user_program_mapping(process, function)) {
+        // Manually call destructor since we used placement new
+        process->addressSpace->~AddressSpace();
+        process->addressSpace = nullptr;
+        process->pid = 0;  // Mark as free
+        return 0;
+    }
+    
     // Initialize context for user mode
     init_user_process_context(process, function);
     
@@ -107,6 +127,13 @@ bool ProcessManager::terminate_process(u32 pid) {
     
     // Remove from ready queue if present
     remove_from_ready_queue(process);
+    
+    // Clean up address space
+    if (process->addressSpace) {
+        // Manually call destructor since we used placement new
+        process->addressSpace->~AddressSpace();
+        process->addressSpace = nullptr;
+    }
     
     // Mark as terminated
     process->state = ProcessState::TERMINATED;
@@ -270,6 +297,12 @@ void ProcessManager::switch_process() {
         
         // If this is a user mode process, switch to user mode
         if (currentProcess->isUserMode) {
+            // Switch to the process's address space
+            if (currentProcess->addressSpace) {
+                auto& vmManager = VirtualMemoryManager::get_instance();
+                vmManager.switch_address_space(currentProcess->addressSpace);
+            }
+            
             // Check if this is the first time running this user process
             if (!currentProcess->hasStarted) {
                 currentProcess->hasStarted = true;
@@ -278,9 +311,9 @@ void ProcessManager::switch_process() {
                 TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
                 // Switch to user mode and execute the user function
-                // This should NEVER return - user program returns via system calls
+                // Use the virtual address from the process context
                 UserMode::switch_to_user_mode(
-                    currentProcess->userFunction,
+                    reinterpret_cast<void*>(currentProcess->context.eip),
                     currentProcess->context.userEsp
                 );
                 
@@ -431,6 +464,47 @@ bool ProcessManager::allocate_process_stacks(Process* process) {
     process->userStackSize = STACK_SIZE;
     
     nextStackIndex++;
+    return true;
+}
+
+bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunction function) {
+    if (!process->addressSpace) {
+        return false;
+    }
+    
+    auto& memoryManager = MemoryManager::get_instance();
+    
+    // Map user program code - for embedded functions, we need to map the kernel code page
+    // where the function resides into user space
+    u32 functionAddr = reinterpret_cast<u32>(function);
+    u32 functionPage = functionAddr & PAGE_MASK;
+    
+    // Map the page containing the user function to user space at standard text address
+    u32 userTextAddr = USER_TEXT_START;
+    if (!process->addressSpace->map_page(userTextAddr, functionPage, false, true)) {
+        return false;
+    }
+    
+    // Map user stack into user address space
+    u32 userStackPages = (process->userStackSize + PAGE_SIZE - 1) / PAGE_SIZE;
+    u32 userStackPhysBase = process->userStackBase & PAGE_MASK;
+    u32 userStackVirtTop = USER_STACK_TOP;
+    u32 userStackVirtBase = userStackVirtTop - (userStackPages * PAGE_SIZE);
+    
+    for (u32 i = 0; i < userStackPages; i++) {
+        u32 virtAddr = userStackVirtBase + (i * PAGE_SIZE);
+        u32 physAddr = userStackPhysBase + (i * PAGE_SIZE);
+        
+        if (!process->addressSpace->map_page(virtAddr, physAddr, true, true)) {
+            return false;
+        }
+    }
+    
+    // Update process context to use virtual addresses
+    u32 functionOffset = functionAddr - functionPage;
+    process->context.eip = userTextAddr + functionOffset;
+    process->context.userEsp = userStackVirtTop - 16; // Leave some space at top
+    
     return true;
 }
 

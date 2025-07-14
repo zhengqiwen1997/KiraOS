@@ -88,14 +88,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
 //     // Main kernel loop
 //     console.add_message("Entering main loop...\n", kira::display::VGA_YELLOW_ON_BLUE);
     
-    // auto& process_manager = ProcessManager::get_instance();
+    auto& process_manager = ProcessManager::get_instance();
     
-    // u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestSysCall", 5);
-    // if (pid1) {
-    //     console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
-    // } else {
-    //     console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
-    // }
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestSysCall", 5);
+    if (pid1) {
+        console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
+    }
     
     // Test memory manager more thoroughly
     console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);

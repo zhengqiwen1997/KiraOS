@@ -8,15 +8,13 @@ namespace kira::system {
 // Virtual memory constants
 constexpr u32 PAGE_TABLE_ENTRIES = 1024;        // 1024 entries per page table
 constexpr u32 PAGE_DIRECTORY_ENTRIES = 1024;    // 1024 entries per page directory
-constexpr u64 VIRTUAL_MEMORY_SIZE = 0x100000000ULL; // 4GB virtual address space
 
 // Standard virtual memory layout
 constexpr u32 USER_SPACE_START = 0x00000000;    // User space starts at 0
 constexpr u32 USER_SPACE_END = 0xBFFFFFFF;      // User space ends at 3GB
 constexpr u32 KERNEL_SPACE_START = 0xC0000000;  // Kernel space starts at 3GB
-constexpr u32 KERNEL_SPACE_END = 0xFFFFFFFF;    // Kernel space ends at 4GB
 
-// Common virtual addresses
+// User space layout (used by ELF loader, process manager)
 constexpr u32 USER_STACK_TOP = 0xC0000000;      // User stack grows down from 3GB
 constexpr u32 USER_HEAP_START = 0x40000000;     // User heap starts at 1GB
 constexpr u32 USER_TEXT_START = 0x08048000;     // Standard ELF text start
