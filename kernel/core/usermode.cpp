@@ -1,6 +1,4 @@
 #include "core/usermode.hpp"
-#include "core/io.hpp"
-#include "arch/x86/tss.hpp"
 
 // Declare external assembly function
 extern "C" void usermode_switch_asm(kira::system::u32 user_ss, kira::system::u32 user_esp, kira::system::u32 user_eflags, kira::system::u32 user_cs, kira::system::u32 user_eip);

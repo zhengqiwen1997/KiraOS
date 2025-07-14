@@ -1,5 +1,4 @@
 #include "drivers/keyboard.hpp"
-#include "core/io.hpp"
 
 namespace kira::system {
 

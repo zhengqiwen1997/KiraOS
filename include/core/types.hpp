@@ -1,7 +1,7 @@
 #pragma once
 
-// Standard size_t definition for placement new
-typedef unsigned long size_t;
+// Use compiler's built-in size_t for placement new
+typedef __SIZE_TYPE__ size_t;
 
 namespace kira::system {
 

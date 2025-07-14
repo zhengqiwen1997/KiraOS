@@ -1,6 +1,4 @@
 #include "core/types.hpp"
-#include "memory/memory.hpp"
-#include "memory/memory_manager.hpp"
 #include "display/vga.hpp"
 
 using namespace kira::system;

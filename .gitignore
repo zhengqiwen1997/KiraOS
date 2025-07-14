@@ -6,6 +6,9 @@ cmake-build-*/
 # IDE directories
 .idea/
 .vscode/
+.cache/
+.clangd
+compile_commands.json
 
 # Object files
 *.o

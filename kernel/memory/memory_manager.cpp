@@ -1,6 +1,5 @@
 #include "memory/memory.hpp"
 #include "memory/memory_manager.hpp"
-#include "core/utils.hpp"
 
 namespace kira::system {
 

@@ -1,9 +1,5 @@
 #pragma once
 
-#include "core/types.hpp"
-#include "display/console.hpp"
-#include "core/utils.hpp"
-
 // Test configuration - uncomment to enable interrupt testing
 #define ENABLE_EXCEPTION_TESTING  // DISABLED FOR DEBUGGING
 // #define ENABLE_SINGLE_EXCEPTION_TEST  // Enable single exception test only

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "display/vga.hpp"
-#include "drivers/keyboard.hpp"
 #include "core/types.hpp"
 #include "core/utils.hpp"  // For String class
 

@@ -1,5 +1,4 @@
 #include "formats/elf.hpp"
-#include "core/utils.hpp"
 
 namespace kira::formats {
 

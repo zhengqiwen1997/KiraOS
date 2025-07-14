@@ -1,7 +1,6 @@
 #include "interrupts/irq.hpp"
 #include "interrupts/pic.hpp"
 #include "arch/x86/idt.hpp"
-#include "core/utils.hpp"
 #include "core/io.hpp"
 #include "display/vga.hpp"
 #include "drivers/keyboard.hpp"

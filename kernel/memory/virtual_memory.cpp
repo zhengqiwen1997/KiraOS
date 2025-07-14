@@ -1,6 +1,5 @@
 #include "memory/virtual_memory.hpp"
 #include "memory/memory_manager.hpp"
-#include "core/utils.hpp"
 #include "debug/serial_debugger.hpp"
 
 namespace kira::system {

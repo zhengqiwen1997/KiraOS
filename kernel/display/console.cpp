@@ -1,5 +1,5 @@
 #include "display/console.hpp"
-#include "core/utils.hpp"
+#include "drivers/keyboard.hpp"
 
 namespace kira::display {
 

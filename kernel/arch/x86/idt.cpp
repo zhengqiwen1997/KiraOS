@@ -1,5 +1,4 @@
 #include "arch/x86/idt.hpp"
-#include "core/io.hpp"
 
 namespace kira::system {
 

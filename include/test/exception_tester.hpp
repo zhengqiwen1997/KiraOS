@@ -1,12 +1,6 @@
 #pragma once
 
-#include "core/types.hpp"
-#include "display/console.hpp"
-
 namespace kira::test {
-
-// // Forward declaration of console accessor
-// kira::display::ScrollableConsole& get_console();
 
 class ExceptionTester {
 public:
