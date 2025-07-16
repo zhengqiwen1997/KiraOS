@@ -58,7 +58,7 @@ void IDT::load() {
     asm volatile("lidt %0" : : "m"(idtDescriptor));
 }
 
-const IDTEntry* IDT::get_entry(u8 interruptNumber) {
+const IDTEntry* IDT::get_entry(u32 interruptNumber) {
     if (interruptNumber >= IDT_SIZE) {
         return nullptr;
     }

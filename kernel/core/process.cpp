@@ -3,9 +3,16 @@
 #include "core/utils.hpp"
 #include "core/usermode.hpp"
 #include "display/vga.hpp"
+#include "display/console.hpp"
 #include "arch/x86/tss.hpp"
 #include "memory/virtual_memory.hpp"
 #include "memory/memory_manager.hpp"
+#include "debug/serial_debugger.hpp"
+
+// Forward declaration to access global console from kernel namespace
+namespace kira::kernel {
+    extern kira::display::ScrollableConsole console;
+}
 
 namespace kira::system {
 
@@ -39,6 +46,7 @@ ProcessManager::ProcessManager() {
     processCount = 0;
     schedulerTicks = 0;
     nextStackIndex = 0;
+    isInIdleState = false;
     
     // Initialize all processes to TERMINATED state
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
@@ -78,6 +86,9 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     process->totalCpuTime = 0;
     process->isUserMode = true;
     process->hasStarted = false;
+    
+    // Debug: Show process creation state using console
+    kira::kernel::console.add_message("DEBUG: Process created with hasStarted=FALSE", kira::display::VGA_YELLOW_ON_BLUE);
     process->userFunction = reinterpret_cast<void*>(function);
     process->next = nullptr;
     
@@ -110,6 +121,9 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     // Add to ready queue
     add_to_ready_queue(process);
     processCount++;
+    
+    // Debug: Show that process was added to ready queue
+    kira::kernel::console.add_message("DEBUG: Process added to ready queue", kira::display::VGA_CYAN_ON_BLUE);
     
     return process->pid;
 }
@@ -151,6 +165,19 @@ bool ProcessManager::terminate_process(u32 pid) {
 void ProcessManager::schedule() {
     schedulerTicks++;
     
+    // Debug: Show scheduler state only when it changes
+    if (currentProcess) {
+        if (isInIdleState) {
+            kira::kernel::console.add_message("DEBUG: Scheduler has current process", kira::display::VGA_GREEN_ON_BLUE);
+            isInIdleState = false;
+        }
+    } else {
+        if (!isInIdleState) {
+            kira::kernel::console.add_message("DEBUG: Scheduler has no current process", kira::display::VGA_MAGENTA_ON_BLUE);
+            isInIdleState = true;
+        }
+    }
+    
     if (currentProcess) {
         currentProcess->timeUsed++;
         currentProcess->totalCpuTime++;
@@ -185,7 +212,11 @@ void ProcessManager::schedule() {
         }
     } else {
         // No current process, try to schedule one
-        switch_process();
+        // But only if we're not already in idle state
+        if (readyQueue) {
+            switch_process();
+        }
+        // If readyQueue is empty, we're already in idle state - don't call switch_process again
     }
 }
 
@@ -199,44 +230,32 @@ Process* ProcessManager::get_process(u32 pid) {
 }
 
 void ProcessManager::display_stats() {
-    volatile u16* vgaMem = (volatile u16*)0xB8000;
+    // Convert to console message instead of direct VGA access
+    char statsMsg[80];
+    u32 totalHundreds = (schedulerTicks / 100) % 1000;
     
-    // Only update line 24 - line 23 is updated immediately by switch_process()
-    // Line 24: Scheduler statistics and performance info
-    int line24Offset = 24 * 80;
-    
-    // Clear the line first
-    for (int i = 0; i < 80; i++) {
-        vgaMem[line24Offset + i] = 0x0720; // Clear with spaces
-    }
-    
+    // Format: "Scheduler: X active, total: YYY00"
     int pos = 0;
-    
-    // Show scheduler activity and performance
     const char* schedText = "Scheduler: ";
     for (int i = 0; schedText[i] != '\0'; i++) {
-        vgaMem[line24Offset + pos++] = 0x0E00 + schedText[i]; // Yellow
+        statsMsg[pos++] = schedText[i];
     }
     
-    // Show active processes
-    vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + processCount); // White
-    const char* activeText = " active, ";
+    statsMsg[pos++] = '0' + processCount;
+    
+    const char* activeText = " active, total: ";
     for (int i = 0; activeText[i] != '\0'; i++) {
-        vgaMem[line24Offset + pos++] = 0x0E00 + activeText[i]; // Yellow
+        statsMsg[pos++] = activeText[i];
     }
     
-    // Show total scheduler invocations (every 100 ticks for readability)
-    const char* totalText = "total: ";
-    for (int i = 0; totalText[i] != '\0'; i++) {
-        vgaMem[line24Offset + pos++] = 0x0E00 + totalText[i]; // Yellow
-    }
+    statsMsg[pos++] = '0' + ((totalHundreds / 100) % 10);
+    statsMsg[pos++] = '0' + ((totalHundreds / 10) % 10);
+    statsMsg[pos++] = '0' + (totalHundreds % 10);
+    statsMsg[pos++] = '0';
+    statsMsg[pos++] = '0';
+    statsMsg[pos] = '\0';
     
-    u32 totalHundreds = (schedulerTicks / 100) % 1000;
-    vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + ((totalHundreds / 100) % 10)); // White
-    vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + ((totalHundreds / 10) % 10));  // White
-    vgaMem[line24Offset + pos++] = 0x0F00 + ('0' + (totalHundreds % 10));         // White
-    vgaMem[line24Offset + pos++] = 0x0E00 + '0'; // Yellow (hundreds indicator)
-    vgaMem[line24Offset + pos++] = 0x0E00 + '0'; // Yellow
+    kira::kernel::console.add_message(statsMsg, kira::display::VGA_YELLOW_ON_BLUE);
 }
 
 void ProcessManager::yield() {
@@ -284,7 +303,13 @@ void ProcessManager::remove_from_ready_queue(Process* process) {
 }
 
 void ProcessManager::switch_process() {
+    // Debug: Show that switch_process was called
+    kira::kernel::console.add_message("DEBUG: SWITCH_PROCESS CALLED!", kira::display::VGA_WHITE_ON_BLUE);
+    
     if (readyQueue) {
+        // Debug: Show that we have a ready process
+        kira::kernel::console.add_message("DEBUG: READY QUEUE HAS PROCESS!", kira::display::VGA_GREEN_ON_BLUE);
+        
         // Get next process from ready queue
         currentProcess = readyQueue;
         readyQueue = readyQueue->next;
@@ -297,31 +322,68 @@ void ProcessManager::switch_process() {
         
         // If this is a user mode process, switch to user mode
         if (currentProcess->isUserMode) {
+            // Debug: Show that we're about to switch to user mode
+            kira::kernel::console.add_message("DEBUG: ABOUT TO SWITCH TO USER MODE!", kira::display::VGA_CYAN_ON_BLUE);
+            kira::kernel::console.add_message("DEBUG: Starting address space switch...", kira::display::VGA_CYAN_ON_BLUE);
             // Switch to the process's address space
             if (currentProcess->addressSpace) {
+                // Use serial debugging for all messages in this critical section
+                kira::debug::SerialDebugger::println("DEBUG: Address space exists, switching...");
+                kira::debug::SerialDebugger::println("DEBUG: About to get VM manager...");
                 auto& vmManager = VirtualMemoryManager::get_instance();
+                kira::debug::SerialDebugger::println("DEBUG: Got VM manager successfully");
+                
+                // Check if paging is enabled
+                kira::debug::SerialDebugger::println("DEBUG: Checking if paging is enabled...");
+                
+                // Use serial debug for critical address space switch messages to avoid console mapping issues
+                kira::debug::SerialDebugger::println("DEBUG: About to call switch_address_space...");
                 vmManager.switch_address_space(currentProcess->addressSpace);
+                kira::debug::SerialDebugger::println("DEBUG: switch_address_space returned successfully!");
+                
+                // Don't access console immediately after address space switch
+                // The console system might not be fully accessible in user address space context
+                kira::debug::SerialDebugger::println("DEBUG: Address space switch completed successfully!");
+            } else {
+                kira::debug::SerialDebugger::println("DEBUG: No address space for process!");
             }
             
             // Check if this is the first time running this user process
             if (!currentProcess->hasStarted) {
+                // Debug: Show that process hasn't started yet
+                kira::debug::SerialDebugger::println("DEBUG: Process starting for first time");
                 currentProcess->hasStarted = true;
+                
+                // Use serial debugging instead of console in user address space context
+                kira::debug::SerialDebugger::println("DEBUG: About to switch to user mode!");
                 
                 // Update TSS with this process's kernel stack
                 TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
                 // Switch to user mode and execute the user function
                 // Use the virtual address from the process context
+                kira::debug::SerialDebugger::println("DEBUG: About to call UserMode::switch_to_user_mode");
+                kira::debug::SerialDebugger::print("DEBUG: User EIP: ");
+                kira::debug::SerialDebugger::print_hex(currentProcess->context.eip);
+                kira::debug::SerialDebugger::println("");
+                kira::debug::SerialDebugger::print("DEBUG: User ESP: ");
+                kira::debug::SerialDebugger::print_hex(currentProcess->context.userEsp);
+                kira::debug::SerialDebugger::println("");
+                
                 UserMode::switch_to_user_mode(
                     reinterpret_cast<void*>(currentProcess->context.eip),
                     currentProcess->context.userEsp
                 );
                 
+                kira::debug::SerialDebugger::println("DEBUG: UserMode::switch_to_user_mode returned!");
+                
                 // If we get here, something went wrong
-                kira::display::VGADisplay vga;
-                vga.print_string(19, 0, "ERROR: User mode returned!", kira::display::VGA_RED_ON_BLUE);
+                kira::debug::SerialDebugger::println("ERROR: User mode returned!");
                 currentProcess->state = ProcessState::TERMINATED;
             } else {
+                // Debug: Show that process has already started
+                kira::debug::SerialDebugger::println("DEBUG: Process already started - skipping user mode switch");
+                
                 // Process has already started - this means it yielded and is resuming
                 // For now, just call the function again (this is a simplified approach)
                 // In a real OS, we would restore the saved context
@@ -329,67 +391,84 @@ void ProcessManager::switch_process() {
                 UserFunction userFunc = (UserFunction)currentProcess->userFunction;
                 userFunc();
             }
+        } else {
+            // Debug: Show that process is not user mode
+            kira::kernel::console.add_message("DEBUG: PROCESS IS NOT USER MODE!", kira::display::VGA_RED_ON_BLUE);
+        }
+    } else {
+        // Debug: Show that ready queue is empty
+        kira::kernel::console.add_message("DEBUG: READY QUEUE IS EMPTY!", kira::display::VGA_RED_ON_BLUE);
+        
+        // No more processes to run - enter kernel idle state
+        // This prevents the syscall handler from trying to return to a terminated process
+        kira::kernel::console.add_message("All processes terminated - entering kernel idle state", kira::display::VGA_YELLOW_ON_BLUE);
+        
+        // Clear current process
+        currentProcess = nullptr;
+        
+        // Enter kernel idle loop - this allows console scrolling to work
+        // In a real OS, we'd have a proper idle process or return to scheduler
+        while (true) {
+            // Enable interrupts so keyboard/timer still work
+            asm volatile("sti");
+            // Halt until next interrupt
+            asm volatile("hlt");
         }
     }
 }
 
 void ProcessManager::display_current_process_only() {
-    volatile u16* vgaMem = (volatile u16*)0xB8000;
-    
-    // Line 23: Current process info
-    int line23Offset = 23 * 80;
-    
-    // Clear the line first to prevent leftover characters
-    for (int i = 0; i < 80; i++) {
-        vgaMem[line23Offset + i] = 0x0720; // Clear with spaces
-    }
-    
-    const char* currentText = "Current: ";
+    // Convert to console message instead of direct VGA access
+    char processMsg[80];
     int pos = 0;
     
+    const char* currentText = "Current: ";
     for (int i = 0; currentText[i] != '\0'; i++) {
-        vgaMem[line23Offset + pos++] = 0x0B00 + currentText[i]; // Cyan
+        processMsg[pos++] = currentText[i];
     }
     
     if (currentProcess) {
         // Display current process name
         for (int i = 0; currentProcess->name[i] != '\0' && i < 15; i++) {
-            vgaMem[line23Offset + pos++] = 0x0A00 + currentProcess->name[i]; // Bright green
+            processMsg[pos++] = currentProcess->name[i];
         }
         
         // Display PID
         const char* pidText = " (PID:";
         for (int i = 0; pidText[i] != '\0'; i++) {
-            vgaMem[line23Offset + pos++] = 0x0B00 + pidText[i]; // Cyan
+            processMsg[pos++] = pidText[i];
         }
         
         // Display PID (handle up to 2 digits)
         u32 pid = currentProcess->pid;
         if (pid >= 10) {
-            vgaMem[line23Offset + pos++] = 0x0F00 + ('0' + (pid / 10)); // Tens digit
-            vgaMem[line23Offset + pos++] = 0x0F00 + ('0' + (pid % 10)); // Ones digit
+            processMsg[pos++] = '0' + (pid / 10); // Tens digit
+            processMsg[pos++] = '0' + (pid % 10); // Ones digit
         } else {
-            vgaMem[line23Offset + pos++] = 0x0F00 + ('0' + pid); // Single digit
+            processMsg[pos++] = '0' + pid; // Single digit
         }
         
         // Show user mode indicator
         if (currentProcess->isUserMode) {
-            vgaMem[line23Offset + pos++] = 0x0B00 + ','; // Cyan
-            vgaMem[line23Offset + pos++] = 0x0B00 + ' '; // Cyan
+            processMsg[pos++] = ',';
+            processMsg[pos++] = ' ';
             const char* userText = "U3";
             for (int i = 0; userText[i] != '\0'; i++) {
-                vgaMem[line23Offset + pos++] = 0x0E00 + userText[i]; // Yellow
+                processMsg[pos++] = userText[i];
             }
         }
         
         // Closing parenthesis
-        vgaMem[line23Offset + pos++] = 0x0B00 + ')'; // Cyan
+        processMsg[pos++] = ')';
     } else {
         const char* idleText = "IDLE";
         for (int i = 0; idleText[i] != '\0'; i++) {
-            vgaMem[line23Offset + pos++] = 0x0800 + idleText[i]; // Dark gray
+            processMsg[pos++] = idleText[i];
         }
     }
+    
+    processMsg[pos] = '\0';
+    kira::kernel::console.add_message(processMsg, kira::display::VGA_CYAN_ON_BLUE);
 }
 
 void ProcessManager::init_user_process_context(Process* process, ProcessFunction function) {
@@ -402,17 +481,17 @@ void ProcessManager::init_user_process_context(Process* process, ProcessFunction
     process->context.edi = 0;
     process->context.ebp = 0;
     
-    // Set up user mode stack pointer
-    process->context.userEsp = UserMode::setup_user_stack(
-        process->userStackBase, 
-        process->userStackSize
-    );
+    // Set up user mode stack pointer - NOTE: userEsp is already set correctly by setup_user_program_mapping
+    // process->context.userEsp = UserMode::setup_user_stack(
+    //     process->userStackBase, 
+    //     process->userStackSize
+    // );  // DON'T overwrite the user space virtual address!
     
     // Set up kernel mode stack pointer  
     process->context.kernelEsp = process->kernelStackBase + process->kernelStackSize - 4;
     
-    // Set entry point
-    process->context.eip = (u32)function;
+    // Set entry point - NOTE: EIP is already set correctly by setup_user_program_mapping
+    // process->context.eip = (u32)function;  // DON'T overwrite the user space address!
     
     // Set default flags (interrupts enabled)
     process->context.eflags = 0x202;
@@ -483,6 +562,40 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     u32 userTextAddr = USER_TEXT_START;
     if (!process->addressSpace->map_page(userTextAddr, functionPage, false, true)) {
         return false;
+    }
+    
+    // Map VGA buffer for user programs that need direct VGA access
+    u32 vgaBufferAddr = 0xB8000;
+    if (!process->addressSpace->map_page(vgaBufferAddr, vgaBufferAddr, true, true)) {
+        return false;
+    }
+    
+    // Map additional kernel pages that might contain string literals and data
+    // Map a range of kernel pages around the function to include data/rodata sections
+    u32 kernelStart = 0x100000; // 1MB - typical kernel start
+    u32 kernelEnd = 0x400000;   // 4MB - should cover most kernel data
+    
+    for (u32 addr = kernelStart; addr < kernelEnd; addr += PAGE_SIZE) {
+        // Map kernel pages to user space (writable for static variables)
+        // This allows user programs to access string literals and static data in kernel memory
+        process->addressSpace->map_page(addr, addr, true, true);
+    }
+    
+    // Map console object and its buffers (needed for console.add_message calls)
+    // The console is a global object in kernel memory, so we need to map it
+    u32 consoleAddr = reinterpret_cast<u32>(&kira::kernel::console);
+    u32 consolePage = consoleAddr & PAGE_MASK;
+    
+    // Map the page containing the console object
+    if (!process->addressSpace->map_page(consolePage, consolePage, true, true)) {
+        return false;
+    }
+    
+    // Map additional pages around console in case it spans multiple pages
+    // Console has large internal buffers that might span multiple pages
+    for (u32 offset = 0; offset < 0x10000; offset += PAGE_SIZE) { // Map 64KB around console
+        u32 addr = consolePage + offset;
+        process->addressSpace->map_page(addr, addr, true, true);
     }
     
     // Map user stack into user address space

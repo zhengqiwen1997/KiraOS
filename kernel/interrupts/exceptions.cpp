@@ -3,6 +3,7 @@
 #include "display/console.hpp"
 #include "core/io.hpp"
 #include "core/utils.hpp"
+#include "debug/serial_debugger.hpp"
 
 // Forward declaration to access global console from kernel namespace
 namespace kira::kernel {
@@ -238,6 +239,18 @@ void Exceptions::general_protection_handler(ExceptionFrame* frame) {
 void Exceptions::page_fault_handler(ExceptionFrame* frame) {
     u32 faultAddr;
     asm volatile("mov %%cr2, %0" : "=r"(faultAddr));
+    
+    // Add serial debugging for detailed fault information
+    kira::debug::SerialDebugger::println("=== PAGE FAULT DEBUG ===");
+    kira::debug::SerialDebugger::print("Fault Address (CR2): ");
+    kira::debug::SerialDebugger::print_hex(faultAddr);
+    kira::debug::SerialDebugger::println("");
+    kira::debug::SerialDebugger::print("EIP: ");
+    kira::debug::SerialDebugger::print_hex(frame->eip);
+    kira::debug::SerialDebugger::println("");
+    kira::debug::SerialDebugger::print("Error Code: ");
+    kira::debug::SerialDebugger::print_hex(frame->errorCode);
+    kira::debug::SerialDebugger::println("");
     
     char msg[512];
     format_page_fault_message(msg, faultAddr, frame->errorCode);

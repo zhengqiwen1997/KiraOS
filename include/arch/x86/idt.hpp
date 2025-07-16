@@ -117,7 +117,7 @@ public:
      * @param interruptNumber Interrupt number
      * @return Pointer to IDT entry or nullptr if invalid
      */
-    static const IDTEntry* get_entry(u8 interruptNumber);
+    static const IDTEntry* get_entry(u32 interruptNumber);
 };
 
 } // namespace kira::system 

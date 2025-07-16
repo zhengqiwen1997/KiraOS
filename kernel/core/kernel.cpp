@@ -62,18 +62,18 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     console.add_message("Press F1 to enter scroll mode", kira::display::VGA_GREEN_ON_BLUE);
     console.add_message("Arrow Keys = scroll, F1 = exit scroll mode", kira::display::VGA_CYAN_ON_BLUE);
     
-    // Debug memory map state
+//     // Debug memory map state
     console.add_message(kira::utils::String("\nMemory Map Address: ") + kira::utils::to_hex_string(gMemoryMapAddr), kira::display::VGA_YELLOW_ON_BLUE);
     console.add_message(kira::utils::String("Memory Map Count: ") + kira::utils::to_hex_string(gMemoryMapCount), kira::display::VGA_YELLOW_ON_BLUE);
     
-//     // Calculate total usable RAM
+// //     // Calculate total usable RAM
     u32 totalRam = MemoryManager::calculate_total_usable_ram();
     console.add_message(kira::utils::String("Total Usable RAM: ") + kira::utils::to_hex_string(totalRam), kira::display::VGA_YELLOW_ON_BLUE);
     
     auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
     virtualMemoryManager.initialize();
-    console.add_message("VirtualMemoryManager initialized successfully", kira::display::VGA_GREEN_ON_BLUE);
-    console.add_message("Kernel continuing after paging enabled...", kira::display::VGA_CYAN_ON_BLUE);
+//     console.add_message("VirtualMemoryManager initialized successfully", kira::display::VGA_GREEN_ON_BLUE);
+//     console.add_message("Kernel continuing after paging enabled...", kira::display::VGA_CYAN_ON_BLUE);
     
 // #ifdef ENABLE_SINGLE_EXCEPTION_TEST
 //     console.add_message("Starting single exception test...\n", kira::display::VGA_CYAN_ON_BLUE);
@@ -90,9 +90,12 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     
     auto& process_manager = ProcessManager::get_instance();
     
-    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_simple, "TestSysCall", 5);
+    console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
     if (pid1) {
         console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+       // console.add_message("Starting process scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+        process_manager.schedule(); // Manually trigger the first process switch
     } else {
         console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
     }

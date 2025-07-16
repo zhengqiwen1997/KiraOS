@@ -169,8 +169,16 @@ bool AddressSpace::is_mapped(u32 virtualAddr) const {
 }
 
 void AddressSpace::switch_to() const {
+    SerialDebugger::println("DEBUG: AddressSpace::switch_to() called");
     if (pageDirectoryPhys != 0) {
+        SerialDebugger::print("DEBUG: Page directory physical address: ");
+        SerialDebugger::print_hex(pageDirectoryPhys);
+        SerialDebugger::println("");
+        SerialDebugger::println("DEBUG: About to call load_page_directory()");
         load_page_directory(pageDirectoryPhys);
+        SerialDebugger::println("DEBUG: load_page_directory() completed");
+    } else {
+        SerialDebugger::println("DEBUG: pageDirectoryPhys is 0 - not switching");
     }
 }
 
@@ -259,14 +267,18 @@ u32 AddressSpace::create_page_table() {
 void AddressSpace::setup_kernel_mappings() {
     SerialDebugger::println("Setting up comprehensive kernel mappings...");
     
-    // 1. Map kernel code and data (1MB - 4MB to be safe)
+    // Debug: We'll add console mapping after we identify where it is
+    // For now, let's extend the kernel mapping range to be more comprehensive
+    
+    // 1. Map kernel code and data (1MB - 8MB to be more comprehensive)
+    u32 extendedKernelEnd = 0x800000; // 8MB instead of 4MB
     SerialDebugger::print("Mapping kernel code/data: ");
     SerialDebugger::print_hex(KERNEL_CODE_START);
     SerialDebugger::print(" to ");
-    SerialDebugger::print_hex(KERNEL_CODE_END);
+    SerialDebugger::print_hex(extendedKernelEnd);
     SerialDebugger::println("");
     
-    for (u32 addr = KERNEL_CODE_START; addr < KERNEL_CODE_END; addr += PAGE_SIZE) {
+    for (u32 addr = KERNEL_CODE_START; addr < extendedKernelEnd; addr += PAGE_SIZE) {
         if (!map_page(addr, addr, true, false)) {
             SerialDebugger::print("ERROR: Failed to map kernel page at ");
             SerialDebugger::print_hex(addr);
@@ -293,6 +305,17 @@ void AddressSpace::setup_kernel_mappings() {
     // 4. Map memory manager structures area (2MB - 8MB)
     SerialDebugger::println("Mapping memory manager area (2MB - 8MB)...");
     for (u32 addr = MEMORY_MANAGER_START; addr < MEMORY_MANAGER_END; addr += PAGE_SIZE) {
+        if (!map_page(addr, addr, true, false)) {
+            // Stop if we can't allocate more pages
+            break;
+        }
+    }
+    
+    // 5. Map additional high memory areas where global objects might be located
+    SerialDebugger::println("Mapping additional high memory areas...");
+    u32 highMemoryStart = 0x800000; // 8MB
+    u32 highMemoryEnd = 0x1000000;  // 16MB
+    for (u32 addr = highMemoryStart; addr < highMemoryEnd; addr += PAGE_SIZE) {
         if (!map_page(addr, addr, true, false)) {
             // Stop if we can't allocate more pages
             break;
@@ -370,8 +393,18 @@ AddressSpace* VirtualMemoryManager::create_user_address_space() {
 
 void VirtualMemoryManager::switch_address_space(AddressSpace* addressSpace) {
     if (addressSpace && addressSpace != currentAddressSpace) {
+        SerialDebugger::println("DEBUG: About to switch address space");
+        SerialDebugger::print("DEBUG: Current address space: ");
+        SerialDebugger::print_hex((u32)currentAddressSpace);
+        SerialDebugger::println("");
+        SerialDebugger::print("DEBUG: New address space: ");
+        SerialDebugger::print_hex((u32)addressSpace);
+        SerialDebugger::println("");
+        
         currentAddressSpace = addressSpace;
+        SerialDebugger::println("DEBUG: Calling addressSpace->switch_to()");
         addressSpace->switch_to();
+        SerialDebugger::println("DEBUG: switch_to() completed successfully");
     }
 }
 

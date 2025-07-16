@@ -88,6 +88,7 @@ private:
     static u8 kernelStacks[MAX_PROCESSES][STACK_SIZE];  // Kernel mode stacks
     static u8 userStacks[MAX_PROCESSES][STACK_SIZE];    // User mode stacks
     u32 nextStackIndex;
+    bool isInIdleState;           // Flag to track if we're in idle state
     
 public:
     /**
