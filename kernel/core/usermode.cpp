@@ -1,5 +1,4 @@
 #include "core/usermode.hpp"
-#include "debug/serial_debugger.hpp"
 
 // Declare external assembly function
 extern "C" void usermode_switch_asm(kira::system::u32 user_ss, kira::system::u32 user_esp, kira::system::u32 user_eflags, kira::system::u32 user_cs, kira::system::u32 user_eip);
@@ -7,26 +6,13 @@ extern "C" void usermode_switch_asm(kira::system::u32 user_ss, kira::system::u32
 namespace kira::system {
 
 void UserMode::switch_to_user_mode(void* function, u32 userStack) {
-    using namespace kira::debug;
-    
-    SerialDebugger::println("DEBUG: UserMode::switch_to_user_mode - Entry");
-    SerialDebugger::print("DEBUG: Function address: ");
-    SerialDebugger::print_hex((u32)function);
-    SerialDebugger::println("");
-    SerialDebugger::print("DEBUG: User stack: ");
-    SerialDebugger::print_hex(userStack);
-    SerialDebugger::println("");
-    
     // Set up user mode segments
     u16 userDs = USER_DATA_SELECTOR;
     u16 userCs = USER_CODE_SELECTOR;
     u16 userSs = USER_DATA_SELECTOR;
     u32 userEflags = 0x202;  // Enable interrupts in user mode
     
-    SerialDebugger::println("DEBUG: Setting up user mode segments...");
-    
     // Load user data segments
-    SerialDebugger::println("DEBUG: Loading user data segments...");
     asm volatile (
         "mov %0, %%ax\n\t"
         "mov %%ax, %%ds\n\t"
@@ -38,14 +24,9 @@ void UserMode::switch_to_user_mode(void* function, u32 userStack) {
         : "eax"
     );
     
-    SerialDebugger::println("DEBUG: User data segments loaded successfully");
-    
     // Call assembly function to switch to user mode
     // This will perform an IRET to enter Ring 3
-    SerialDebugger::println("DEBUG: About to call usermode_switch_asm");
     usermode_switch_asm(userSs, userStack, userEflags, userCs, (u32)function);
-    
-    SerialDebugger::println("DEBUG: usermode_switch_asm returned - THIS SHOULD NEVER HAPPEN!");
     
     // Should never reach here
     for(;;) {

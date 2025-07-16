@@ -7,7 +7,6 @@
 #include "arch/x86/tss.hpp"
 #include "memory/virtual_memory.hpp"
 #include "memory/memory_manager.hpp"
-#include "debug/serial_debugger.hpp"
 
 // Forward declaration to access global console from kernel namespace
 namespace kira::kernel {
@@ -322,67 +321,32 @@ void ProcessManager::switch_process() {
         
         // If this is a user mode process, switch to user mode
         if (currentProcess->isUserMode) {
-            // Debug: Show that we're about to switch to user mode
-            kira::kernel::console.add_message("DEBUG: ABOUT TO SWITCH TO USER MODE!", kira::display::VGA_CYAN_ON_BLUE);
-            kira::kernel::console.add_message("DEBUG: Starting address space switch...", kira::display::VGA_CYAN_ON_BLUE);
             // Switch to the process's address space
             if (currentProcess->addressSpace) {
-                // Use serial debugging for all messages in this critical section
-                kira::debug::SerialDebugger::println("DEBUG: Address space exists, switching...");
-                kira::debug::SerialDebugger::println("DEBUG: About to get VM manager...");
                 auto& vmManager = VirtualMemoryManager::get_instance();
-                kira::debug::SerialDebugger::println("DEBUG: Got VM manager successfully");
-                
-                // Check if paging is enabled
-                kira::debug::SerialDebugger::println("DEBUG: Checking if paging is enabled...");
-                
-                // Use serial debug for critical address space switch messages to avoid console mapping issues
-                kira::debug::SerialDebugger::println("DEBUG: About to call switch_address_space...");
                 vmManager.switch_address_space(currentProcess->addressSpace);
-                kira::debug::SerialDebugger::println("DEBUG: switch_address_space returned successfully!");
-                
-                // Don't access console immediately after address space switch
-                // The console system might not be fully accessible in user address space context
-                kira::debug::SerialDebugger::println("DEBUG: Address space switch completed successfully!");
             } else {
-                kira::debug::SerialDebugger::println("DEBUG: No address space for process!");
+                // No address space for process - this shouldn't happen
             }
             
             // Check if this is the first time running this user process
             if (!currentProcess->hasStarted) {
-                // Debug: Show that process hasn't started yet
-                kira::debug::SerialDebugger::println("DEBUG: Process starting for first time");
                 currentProcess->hasStarted = true;
-                
-                // Use serial debugging instead of console in user address space context
-                kira::debug::SerialDebugger::println("DEBUG: About to switch to user mode!");
                 
                 // Update TSS with this process's kernel stack
                 TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
                 // Switch to user mode and execute the user function
                 // Use the virtual address from the process context
-                kira::debug::SerialDebugger::println("DEBUG: About to call UserMode::switch_to_user_mode");
-                kira::debug::SerialDebugger::print("DEBUG: User EIP: ");
-                kira::debug::SerialDebugger::print_hex(currentProcess->context.eip);
-                kira::debug::SerialDebugger::println("");
-                kira::debug::SerialDebugger::print("DEBUG: User ESP: ");
-                kira::debug::SerialDebugger::print_hex(currentProcess->context.userEsp);
-                kira::debug::SerialDebugger::println("");
-                
                 UserMode::switch_to_user_mode(
                     reinterpret_cast<void*>(currentProcess->context.eip),
                     currentProcess->context.userEsp
                 );
                 
-                kira::debug::SerialDebugger::println("DEBUG: UserMode::switch_to_user_mode returned!");
-                
                 // If we get here, something went wrong
-                kira::debug::SerialDebugger::println("ERROR: User mode returned!");
                 currentProcess->state = ProcessState::TERMINATED;
             } else {
-                // Debug: Show that process has already started
-                kira::debug::SerialDebugger::println("DEBUG: Process already started - skipping user mode switch");
+                // Process has already started - this means it yielded and is resuming
                 
                 // Process has already started - this means it yielded and is resuming
                 // For now, just call the function again (this is a simplified approach)
@@ -392,12 +356,10 @@ void ProcessManager::switch_process() {
                 userFunc();
             }
         } else {
-            // Debug: Show that process is not user mode
-            kira::kernel::console.add_message("DEBUG: PROCESS IS NOT USER MODE!", kira::display::VGA_RED_ON_BLUE);
+            // Process is not user mode - shouldn't happen in current implementation
         }
     } else {
-        // Debug: Show that ready queue is empty
-        kira::kernel::console.add_message("DEBUG: READY QUEUE IS EMPTY!", kira::display::VGA_RED_ON_BLUE);
+        // Ready queue is empty - no more processes to run
         
         // No more processes to run - enter kernel idle state
         // This prevents the syscall handler from trying to return to a terminated process
@@ -553,15 +515,22 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     
     auto& memoryManager = MemoryManager::get_instance();
     
-    // Map user program code - for embedded functions, we need to map the kernel code page
+    // Map user program code - for embedded functions, we need to map the kernel code pages
     // where the function resides into user space
     u32 functionAddr = reinterpret_cast<u32>(function);
     u32 functionPage = functionAddr & PAGE_MASK;
     
-    // Map the page containing the user function to user space at standard text address
+    // Map multiple pages for the user program to handle code that spans page boundaries
     u32 userTextAddr = USER_TEXT_START;
-    if (!process->addressSpace->map_page(userTextAddr, functionPage, false, true)) {
-        return false;
+    u32 numPagesToMap = 4; // Map 4 pages (16KB) to handle typical user program size
+    
+    for (u32 i = 0; i < numPagesToMap; i++) {
+        u32 userVirtAddr = userTextAddr + (i * PAGE_SIZE);
+        u32 kernelPhysAddr = functionPage + (i * PAGE_SIZE);
+        
+        if (!process->addressSpace->map_page(userVirtAddr, kernelPhysAddr, false, true)) {
+            return false;
+        }
     }
     
     // Map VGA buffer for user programs that need direct VGA access
