@@ -4,12 +4,13 @@ KiraOS is a self-made operating system written in C++ for fun and study. It feat
 
 ## Key Features
 
-- ✅ **Ring 3 User Mode**: Hardware-enforced privilege separation (Ring 0 kernel, Ring 3 user)
-- ✅ **Process Management**: Round-robin scheduler with kernel and user processes
-- ✅ **Memory Protection**: User programs isolated from kernel memory
-- ✅ **Hardware Interrupts**: Timer (100 Hz) and keyboard handling
-- ✅ **Exception Handling**: Comprehensive CPU fault debugging
-- ✅ **Real-time Monitoring**: Live process status via VGA display
+- ✅ **Virtual Memory**: Full paging support with per-process address spaces
+- ✅ **System Calls**: INT 0x80 interface for user-kernel communication
+- ✅ **Ring 3 User Mode**: Hardware-enforced privilege separation with memory isolation
+- ✅ **Process Management**: Round-robin scheduler with complete user/kernel separation
+- ✅ **Memory Protection**: Page-level access control and address space isolation
+- ✅ **Hardware Interrupts**: Timer (100 Hz) and keyboard handling with proper IRQ routing
+- ✅ **Exception Handling**: Comprehensive CPU fault debugging with page fault analysis
 
 ## Quick Start
 
@@ -34,11 +35,11 @@ qemu-system-i386 -kernel kernel.elf -m 32M
 ```
 KiraOS/
 ├── kernel/                    # Kernel implementation
-│   ├── core/                  # Process management, user mode
+│   ├── core/                  # Process management, user mode, system calls
 │   ├── arch/x86/              # x86-specific code (GDT, TSS, assembly)
 │   ├── interrupts/            # Exception and IRQ handling
 │   ├── drivers/               # Timer, keyboard drivers
-│   └── memory/                # Memory management
+│   └── memory/                # Virtual memory, paging, physical allocation
 ├── userspace/                 # User mode programs and libraries
 │   ├── programs/              # User applications
 │   └── lib/                   # User mode libraries
@@ -70,24 +71,29 @@ qemu-system-i386 -kernel kernel.elf -m 32M -serial file:serial.log
 
 ## Architecture
 
-### Privilege Levels
-- **Ring 0**: Kernel mode with full system access
-- **Ring 3**: User mode with memory protection
-- **Transition**: IRET-based switching with proper segment selectors
+### Memory Management
+- **Virtual Memory**: Per-process 4GB address spaces with page tables
+- **Physical Allocator**: Stack-based page allocation with memory map parsing
+- **Address Translation**: Hardware paging with TLB management
+- **Protection**: Page-level read/write/user permissions
+
+### System Interface
+- **System Calls**: INT 0x80 with register-based parameter passing
+- **User API**: Clean C++ interface (`UserAPI::write()`, etc.)
+- **Privilege Transition**: IRET-based Ring 0 ↔ Ring 3 switching
 
 ### Core Components
-- **Process Scheduler**: Round-robin with 10-tick time slices
-- **Memory Management**: GDT, TSS, stack isolation
-- **Interrupt System**: IDT with 256 entries, PIC support
-- **User Mode**: Clean privilege separation with memory protection
+- **Process Scheduler**: Round-robin with address space switching
+- **Exception Handling**: Page faults, protection violations, debug info
+- **Interrupt System**: IDT with 256 entries, PIC support, timer-driven scheduling
 
 ## Contributing
 
 Areas of interest:
-- System calls implementation
-- Virtual memory and paging
-- Additional device drivers
-- File system support
+- File system implementation
+- Network stack and drivers
+- Multi-core SMP support
+- Advanced memory management (swap, CoW)
 
 ## References
 

@@ -2,6 +2,7 @@
 
 #include "core/types.hpp"
 #include "memory/memory.hpp"
+#include "display/vga.hpp"
 
 namespace kira::system {
 
@@ -18,6 +19,18 @@ constexpr u32 KERNEL_SPACE_START = 0xC0000000;  // Kernel space starts at 3GB
 constexpr u32 USER_STACK_TOP = 0xC0000000;      // User stack grows down from 3GB
 constexpr u32 USER_HEAP_START = 0x40000000;     // User heap starts at 1GB
 constexpr u32 USER_TEXT_START = 0x08048000;     // Standard ELF text start
+
+// Public kernel memory layout constants (used by other modules)
+constexpr u32 KERNEL_CODE_START = 0x00100000;   // 1MB - Kernel code start
+
+// Hardware memory addresses (used by other modules)
+constexpr u32 VGA_BUFFER_ADDR = display::VGA_BUFFER;     // VGA text buffer address (from vga.hpp)
+
+// Page table bit manipulation constants (used by exception handlers, etc.)
+constexpr u32 PAGE_OFFSET_BITS = 12;            // 12 bits for page offset
+constexpr u32 PAGE_TABLE_INDEX_BITS = 22;       // 22 bits for page directory index
+constexpr u32 PAGE_TABLE_INDEX_MASK = 0x3FF;    // 10 bits mask for page table index
+constexpr u32 PAGE_OFFSET_MASK = 0xFFF;         // 12 bits mask for page offset
 
 /**
  * @brief Address Space - represents a virtual memory address space

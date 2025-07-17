@@ -7,32 +7,23 @@ namespace kira::system {
 using namespace kira::debug;
 
 //=============================================================================
-// Implementation-specific constants (internal use only)
+// Internal implementation constants (not exposed in header)
 //=============================================================================
 
-// Bit manipulation constants
-constexpr u32 PAGE_OFFSET_BITS = 12;                    // 12 bits for page offset
-constexpr u32 PAGE_TABLE_INDEX_BITS = 22;               // 22 bits for page directory index
-constexpr u32 PAGE_TABLE_INDEX_MASK = 0x3FF;            // 10 bits mask for page table index
-constexpr u32 PAGE_OFFSET_MASK = 0xFFF;                 // 12 bits mask for page offset
+// Internal kernel memory layout (implementation details)
+constexpr u32 KERNEL_CODE_END = 0x00400000;     // 4MB - Kernel code end (original)
+constexpr u32 EXTENDED_KERNEL_END = 0x00800000; // 8MB - Extended kernel end
+constexpr u32 LOW_MEMORY_END = 0x00100000;      // 1MB - End of low memory
+constexpr u32 MEMORY_MANAGER_START = 0x00200000; // 2MB - Memory manager structures start
+constexpr u32 MEMORY_MANAGER_END = 0x00800000;  // 8MB - Memory manager structures end
+constexpr u32 HIGH_MEMORY_START = 0x00800000;   // 8MB - High memory start
+constexpr u32 HIGH_MEMORY_END = 0x01000000;     // 16MB - High memory end
 
-// Kernel memory layout (implementation detail)
-constexpr u32 KERNEL_CODE_START = 0x100000;             // 1MB - Kernel code start
-constexpr u32 KERNEL_CODE_END = 0x400000;               // 4MB - Kernel code end
-constexpr u32 VGA_BUFFER_ADDR = 0xB8000;                // VGA text buffer address
-constexpr u32 LOW_MEMORY_END = 0x100000;                // 1MB - End of low memory
-constexpr u32 MEMORY_MANAGER_START = 0x200000;          // 2MB - Memory manager structures start
-constexpr u32 MEMORY_MANAGER_END = 0x800000;            // 8MB - Memory manager structures end
-
-// Hardware register bits
-constexpr u32 CR0_PAGING_BIT = 0x80000000;              // CR0 PG bit (bit 31)
-
-// System limits
-constexpr u32 MAX_USER_ADDRESS_SPACES = 16;             // Maximum user address spaces
-constexpr u32 MEMORY_ALIGNMENT = 4;                     // Memory alignment for placement new
-
-// Test constants
-constexpr u32 TEST_MAGIC_VALUE = 0x12345678;            // Magic value for testing
+// Internal system constants
+constexpr u32 CR0_PAGING_BIT = 0x80000000;      // CR0 PG bit (bit 31)
+constexpr u32 MAX_USER_ADDRESS_SPACES = 16;     // Maximum user address spaces
+constexpr u32 MEMORY_ALIGNMENT = 4;             // Memory alignment for placement new
+constexpr u32 TEST_MAGIC_VALUE = 0x12345678;    // Magic value for testing
 
 // Static member definitions
 VirtualMemoryManager* VirtualMemoryManager::instance = nullptr;
@@ -51,8 +42,6 @@ extern "C" {
 //=============================================================================
 
 AddressSpace::AddressSpace(bool kernelSpace) : isKernelSpace(kernelSpace) {
-    SerialDebugger::println("AddressSpace constructor called");
-    
     auto& memoryManager = MemoryManager::get_instance();
     void* pageDirMem = memoryManager.allocate_physical_page();
     
@@ -66,17 +55,12 @@ AddressSpace::AddressSpace(bool kernelSpace) : isKernelSpace(kernelSpace) {
     pageDirectoryPhys = reinterpret_cast<u32>(pageDirMem);
     pageDirectory = reinterpret_cast<u32*>(pageDirMem);
     
-    SerialDebugger::print("Page directory allocated at: ");
-    SerialDebugger::print_hex(pageDirectoryPhys);
-    SerialDebugger::println("");
-    
     // Clear page directory
     for (u32 i = 0; i < PAGE_DIRECTORY_ENTRIES; i++) {
         pageDirectory[i] = 0;
     }
     
     if (kernelSpace) {
-        SerialDebugger::println("Setting up kernel mappings...");
         setup_kernel_mappings();
     }
 }
@@ -169,16 +153,8 @@ bool AddressSpace::is_mapped(u32 virtualAddr) const {
 }
 
 void AddressSpace::switch_to() const {
-    SerialDebugger::println("DEBUG: AddressSpace::switch_to() called");
     if (pageDirectoryPhys != 0) {
-        SerialDebugger::print("DEBUG: Page directory physical address: ");
-        SerialDebugger::print_hex(pageDirectoryPhys);
-        SerialDebugger::println("");
-        SerialDebugger::println("DEBUG: About to call load_page_directory()");
         load_page_directory(pageDirectoryPhys);
-        SerialDebugger::println("DEBUG: load_page_directory() completed");
-    } else {
-        SerialDebugger::println("DEBUG: pageDirectoryPhys is 0 - not switching");
     }
 }
 
@@ -265,20 +241,8 @@ u32 AddressSpace::create_page_table() {
 }
 
 void AddressSpace::setup_kernel_mappings() {
-    SerialDebugger::println("Setting up comprehensive kernel mappings...");
-    
-    // Debug: We'll add console mapping after we identify where it is
-    // For now, let's extend the kernel mapping range to be more comprehensive
-    
-    // 1. Map kernel code and data (1MB - 8MB to be more comprehensive)
-    u32 extendedKernelEnd = 0x800000; // 8MB instead of 4MB
-    SerialDebugger::print("Mapping kernel code/data: ");
-    SerialDebugger::print_hex(KERNEL_CODE_START);
-    SerialDebugger::print(" to ");
-    SerialDebugger::print_hex(extendedKernelEnd);
-    SerialDebugger::println("");
-    
-    for (u32 addr = KERNEL_CODE_START; addr < extendedKernelEnd; addr += PAGE_SIZE) {
+    // 1. Map kernel code and data (1MB - 8MB extended range)
+    for (u32 addr = KERNEL_CODE_START; addr < EXTENDED_KERNEL_END; addr += PAGE_SIZE) {
         if (!map_page(addr, addr, true, false)) {
             SerialDebugger::print("ERROR: Failed to map kernel page at ");
             SerialDebugger::print_hex(addr);
@@ -288,13 +252,11 @@ void AddressSpace::setup_kernel_mappings() {
     }
     
     // 2. Map VGA buffer
-    SerialDebugger::println("Mapping VGA buffer...");
     if (!map_page(VGA_BUFFER_ADDR, VGA_BUFFER_ADDR, true, false)) {
         SerialDebugger::println("ERROR: Failed to map VGA buffer!");
     }
     
     // 3. Map low memory (0x0 - 1MB) for compatibility
-    SerialDebugger::println("Mapping low memory (0x0 - 1MB)...");
     for (u32 addr = 0; addr < LOW_MEMORY_END; addr += PAGE_SIZE) {
         if (!map_page(addr, addr, true, false)) {
             // Don't spam errors for low memory, some pages might be reserved
@@ -302,8 +264,7 @@ void AddressSpace::setup_kernel_mappings() {
         }
     }
     
-    // 4. Map memory manager structures area (2MB - 8MB)
-    SerialDebugger::println("Mapping memory manager area (2MB - 8MB)...");
+    // 4. Map memory manager structures area
     for (u32 addr = MEMORY_MANAGER_START; addr < MEMORY_MANAGER_END; addr += PAGE_SIZE) {
         if (!map_page(addr, addr, true, false)) {
             // Stop if we can't allocate more pages
@@ -312,17 +273,12 @@ void AddressSpace::setup_kernel_mappings() {
     }
     
     // 5. Map additional high memory areas where global objects might be located
-    SerialDebugger::println("Mapping additional high memory areas...");
-    u32 highMemoryStart = 0x800000; // 8MB
-    u32 highMemoryEnd = 0x1000000;  // 16MB
-    for (u32 addr = highMemoryStart; addr < highMemoryEnd; addr += PAGE_SIZE) {
+    for (u32 addr = HIGH_MEMORY_START; addr < HIGH_MEMORY_END; addr += PAGE_SIZE) {
         if (!map_page(addr, addr, true, false)) {
             // Stop if we can't allocate more pages
             break;
         }
     }
-    
-    SerialDebugger::println("Kernel mappings setup complete");
 }
 
 //=============================================================================
@@ -348,7 +304,6 @@ void VirtualMemoryManager::initialize() {
     SerialDebugger::println("=== VirtualMemoryManager::initialize() ===");
     
     // Create kernel address space using placement new
-    SerialDebugger::println("Creating kernel address space...");
     kernelAddressSpace = new(kernelAddressSpaceMemory) AddressSpace(true);
     currentAddressSpace = kernelAddressSpace;
     
@@ -358,21 +313,13 @@ void VirtualMemoryManager::initialize() {
         return;
     }
     
-    SerialDebugger::print("Kernel address space created successfully at: ");
-    SerialDebugger::print_hex(kernelAddressSpace->get_page_directory_phys());
-    SerialDebugger::println("");
-    
-    // Now let's try to enable paging step by step
-    SerialDebugger::println("Loading page directory into CR3...");
+    // Enable paging
     load_page_directory(kernelAddressSpace->get_page_directory_phys());
-    
-    SerialDebugger::println("Enabling paging...");
     enable_paging();
     
     SerialDebugger::println("Paging enabled successfully!");
     
     // Test that we can still access memory after paging
-    SerialDebugger::println("Testing memory access after paging...");
     volatile u32 test_var = TEST_MAGIC_VALUE;
     SerialDebugger::print("Test variable value: ");
     SerialDebugger::print_hex(test_var);
@@ -393,18 +340,8 @@ AddressSpace* VirtualMemoryManager::create_user_address_space() {
 
 void VirtualMemoryManager::switch_address_space(AddressSpace* addressSpace) {
     if (addressSpace && addressSpace != currentAddressSpace) {
-        SerialDebugger::println("DEBUG: About to switch address space");
-        SerialDebugger::print("DEBUG: Current address space: ");
-        SerialDebugger::print_hex((u32)currentAddressSpace);
-        SerialDebugger::println("");
-        SerialDebugger::print("DEBUG: New address space: ");
-        SerialDebugger::print_hex((u32)addressSpace);
-        SerialDebugger::println("");
-        
         currentAddressSpace = addressSpace;
-        SerialDebugger::println("DEBUG: Calling addressSpace->switch_to()");
         addressSpace->switch_to();
-        SerialDebugger::println("DEBUG: switch_to() completed successfully");
     }
 }
 
