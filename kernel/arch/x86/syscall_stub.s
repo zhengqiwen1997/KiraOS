@@ -8,7 +8,7 @@ syscall_stub:
     # EAX = syscall number, EBX = arg1, ECX = arg2, EDX = arg3
     
     # Save all registers first
-    pusha                    # Save all general-purpose registers (EAX is now at ESP+28)
+    pusha                    # Save all general-purpose registers
     push %ds                 # Save data segment
     push %es                 # Save extra segment  
     push %fs                 # Save FS segment
@@ -32,10 +32,20 @@ syscall_stub:
     call syscall_handler     # Call C handler
     add $16, %esp            # Clean up arguments (4 args * 4 bytes)
     
+    # Let's test different offsets to find where EAX is actually saved
+    # Current stack: [GS] [FS] [ES] [DS] [pusha registers...]
+    # pusha saves: EDI, ESI, EBP, ESP, EBX, EDX, ECX, EAX (in that order, EAX is last)
+    # So after segments: [GS] [FS] [ES] [DS] [EDI] [ESI] [EBP] [ESP] [EBX] [EDX] [ECX] [EAX]
+    # EAX should be at offset: 4*4 (segments) + 7*4 (other registers) = 16 + 28 = 44 bytes
+    
+    # Let's try the correct offset
+    mov %eax, 44(%esp)       # Store return value in saved EAX location (corrected offset)
+    
     # Restore segments and registers
     pop %gs                  # Restore segments
     pop %fs
     pop %es
     pop %ds
     popa                     # Restore all general-purpose registers
+    
     iret                     # Return from interrupt

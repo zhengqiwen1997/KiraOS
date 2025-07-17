@@ -175,6 +175,13 @@ public:
      * @brief Sleep current process for specified ticks
      */
     void sleep_current_process(u32 ticks);
+    
+
+    
+    /**
+     * @brief Enable timer-driven scheduling
+     */
+    static void enable_timer_scheduling();
 
 private:
     /**

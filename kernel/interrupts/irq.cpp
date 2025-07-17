@@ -167,8 +167,12 @@ void timer_handler(IRQFrame* frame) {
     timerTicks++;
     
     // Call process scheduler every timer tick
-    auto& pm = ProcessManager::get_instance();
-    pm.schedule();
+    // Only call scheduler if timer scheduling is enabled
+    extern bool timerSchedulingEnabled;
+    if (timerSchedulingEnabled) {
+        auto& pm = ProcessManager::get_instance();
+        pm.schedule();
+    }
     
     // Timer functionality only - no VGA output to avoid conflicts with console
 }

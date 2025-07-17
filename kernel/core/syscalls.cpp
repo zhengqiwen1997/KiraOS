@@ -31,37 +31,46 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     VGADisplay vga;
     auto& pm = ProcessManager::get_instance();
     
-    // Debug: Show that ANY syscall was called
-    kira::kernel::console.add_message("DEBUG: SYSCALL HANDLER ENTERED!", VGA_RED_ON_BLUE);
-    
     switch (static_cast<SystemCall>(syscall_num)) {
         case SystemCall::EXIT:
             // Terminate current process
-            kira::kernel::console.add_message("DEBUG: EXIT syscall called - terminating process", VGA_RED_ON_BLUE);
             pm.terminate_current_process();
-            // EXIT syscall should never return - the process is terminated
-            // The terminate_current_process() call above should have switched to another process
-            // If we reach here, something went wrong
+            
+            // EXIT syscall should never return - either we switch to another process
+            // or the system terminates. If we reach here, something went wrong.
             kira::kernel::console.add_message("ERROR: EXIT syscall returned - this should not happen!", VGA_RED_ON_BLUE);
             for(;;) { asm volatile("hlt"); } // Halt the system
             
         case SystemCall::WRITE: {
-            // Write string to display at specified position
+            // Legacy write system call (for backward compatibility)
             // arg1 = line, arg2 = column, arg3 = string pointer
-            if (arg1 >= 25 || arg2 >= 80) {
-                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-            }
-            
             const char* str = reinterpret_cast<const char*>(arg3);
             if (!str) {
                 return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             }
             
-            // Debug: Show that we reached the syscall
-            kira::kernel::console.add_message("DEBUG: SYSCALL WRITE called!", VGA_YELLOW_ON_BLUE);
+            // Display the string via console system (ignore line/column for now)
+            kira::kernel::console.add_message(str, VGA_WHITE_ON_BLUE);
+            return static_cast<i32>(SyscallResult::SUCCESS);
+        }
+        
+        case SystemCall::WRITE_COLORED: {
+            // Enhanced write system call with color support
+            // arg1 = string pointer, arg2 = color, arg3 = unused
+            const char* str = reinterpret_cast<const char*>(arg1);
+            if (!str) {
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
             
-            // Try to display the string
-            vga.print_string(arg1, arg2, str, VGA_WHITE_ON_BLUE);
+            u16 color = static_cast<u16>(arg2);
+            
+            // Validate color (basic validation - ensure it's not 0)
+            if (color == 0) {
+                color = VGA_WHITE_ON_BLUE; // Default color
+            }
+            
+            // Display the string via console system with specified color
+            kira::kernel::console.add_message(str, color);
             return static_cast<i32>(SyscallResult::SUCCESS);
         }
         

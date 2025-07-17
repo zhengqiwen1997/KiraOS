@@ -17,6 +17,9 @@ namespace kira::system {
 
 using namespace kira::utils;
 
+// Global variable to control timer-driven scheduling
+bool timerSchedulingEnabled = false;
+
 // Static member definitions
 u8 ProcessManager::kernelStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
 u8 ProcessManager::userStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
@@ -86,8 +89,6 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     process->isUserMode = true;
     process->hasStarted = false;
     
-    // Debug: Show process creation state using console
-    kira::kernel::console.add_message("DEBUG: Process created with hasStarted=FALSE", kira::display::VGA_YELLOW_ON_BLUE);
     process->userFunction = reinterpret_cast<void*>(function);
     process->next = nullptr;
     
@@ -120,9 +121,6 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     // Add to ready queue
     add_to_ready_queue(process);
     processCount++;
-    
-    // Debug: Show that process was added to ready queue
-    kira::kernel::console.add_message("DEBUG: Process added to ready queue", kira::display::VGA_CYAN_ON_BLUE);
     
     return process->pid;
 }
@@ -211,11 +209,14 @@ void ProcessManager::schedule() {
         }
     } else {
         // No current process, try to schedule one
-        // But only if we're not already in idle state
+        // kira::kernel::console.add_message("DEBUG: NO CURRENT PROCESS, CHECKING READY QUEUE", kira::display::VGA_CYAN_ON_BLUE);
+        
         if (readyQueue) {
+            // kira::kernel::console.add_message("DEBUG: READY QUEUE EXISTS, CALLING SWITCH_PROCESS", kira::display::VGA_GREEN_ON_BLUE);
             switch_process();
+        } else {
+            // kira::kernel::console.add_message("DEBUG: READY QUEUE IS EMPTY!", kira::display::VGA_RED_ON_BLUE);
         }
-        // If readyQueue is empty, we're already in idle state - don't call switch_process again
     }
 }
 
@@ -285,10 +286,16 @@ void ProcessManager::add_to_ready_queue(Process* process) {
 }
 
 void ProcessManager::remove_from_ready_queue(Process* process) {
-    if (!process || !readyQueue) return;
+    if (!process || !readyQueue) {
+        kira::kernel::console.add_message("DEBUG: remove_from_ready_queue called with NULL process or empty queue", kira::display::VGA_YELLOW_ON_BLUE);
+        return;
+    }
+    
+    kira::kernel::console.add_message("DEBUG: REMOVING PROCESS FROM READY QUEUE!", kira::display::VGA_RED_ON_BLUE);
     
     if (readyQueue == process) {
         readyQueue = process->next;
+        kira::kernel::console.add_message("DEBUG: Removed first process from ready queue", kira::display::VGA_RED_ON_BLUE);
     } else {
         Process* current = readyQueue;
         while (current->next && current->next != process) {
@@ -296,19 +303,14 @@ void ProcessManager::remove_from_ready_queue(Process* process) {
         }
         if (current->next) {
             current->next = current->next->next;
+            kira::kernel::console.add_message("DEBUG: Removed process from middle/end of ready queue", kira::display::VGA_RED_ON_BLUE);
         }
     }
     process->next = nullptr;
 }
 
 void ProcessManager::switch_process() {
-    // Debug: Show that switch_process was called
-    kira::kernel::console.add_message("DEBUG: SWITCH_PROCESS CALLED!", kira::display::VGA_WHITE_ON_BLUE);
-    
     if (readyQueue) {
-        // Debug: Show that we have a ready process
-        kira::kernel::console.add_message("DEBUG: READY QUEUE HAS PROCESS!", kira::display::VGA_GREEN_ON_BLUE);
-        
         // Get next process from ready queue
         currentProcess = readyQueue;
         readyQueue = readyQueue->next;
@@ -325,13 +327,14 @@ void ProcessManager::switch_process() {
             if (currentProcess->addressSpace) {
                 auto& vmManager = VirtualMemoryManager::get_instance();
                 vmManager.switch_address_space(currentProcess->addressSpace);
-            } else {
-                // No address space for process - this shouldn't happen
             }
             
             // Check if this is the first time running this user process
             if (!currentProcess->hasStarted) {
                 currentProcess->hasStarted = true;
+                
+                // Debug: Use console system to show we're about to switch to user mode
+                kira::kernel::console.add_message("ABOUT TO SWITCH TO USER MODE", kira::display::VGA_YELLOW_ON_BLUE);
                 
                 // Update TSS with this process's kernel stack
                 TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
@@ -362,14 +365,12 @@ void ProcessManager::switch_process() {
         // Ready queue is empty - no more processes to run
         
         // No more processes to run - enter kernel idle state
-        // This prevents the syscall handler from trying to return to a terminated process
         kira::kernel::console.add_message("All processes terminated - entering kernel idle state", kira::display::VGA_YELLOW_ON_BLUE);
         
         // Clear current process
         currentProcess = nullptr;
         
         // Enter kernel idle loop - this allows console scrolling to work
-        // In a real OS, we'd have a proper idle process or return to scheduler
         while (true) {
             // Enable interrupts so keyboard/timer still work
             asm volatile("sti");
@@ -601,6 +602,12 @@ void ProcessManager::terminate_current_process() {
         currentProcess = nullptr;
         switch_process();
     }
+}
+
+
+
+void ProcessManager::enable_timer_scheduling() {
+    timerSchedulingEnabled = true;
 }
 
 void ProcessManager::sleep_current_process(u32 ticks) {

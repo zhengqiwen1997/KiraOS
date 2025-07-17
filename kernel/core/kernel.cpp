@@ -66,41 +66,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     console.add_message(kira::utils::String("\nMemory Map Address: ") + kira::utils::to_hex_string(gMemoryMapAddr), kira::display::VGA_YELLOW_ON_BLUE);
     console.add_message(kira::utils::String("Memory Map Count: ") + kira::utils::to_hex_string(gMemoryMapCount), kira::display::VGA_YELLOW_ON_BLUE);
     
-// //     // Calculate total usable RAM
+    // Calculate total usable RAM
     u32 totalRam = MemoryManager::calculate_total_usable_ram();
     console.add_message(kira::utils::String("Total Usable RAM: ") + kira::utils::to_hex_string(totalRam), kira::display::VGA_YELLOW_ON_BLUE);
     
     auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
     virtualMemoryManager.initialize();
-//     console.add_message("VirtualMemoryManager initialized successfully", kira::display::VGA_GREEN_ON_BLUE);
-//     console.add_message("Kernel continuing after paging enabled...", kira::display::VGA_CYAN_ON_BLUE);
-    
-// #ifdef ENABLE_SINGLE_EXCEPTION_TEST
-//     console.add_message("Starting single exception test...\n", kira::display::VGA_CYAN_ON_BLUE);
-//     kira::test::ExceptionTester::run_single_test();
-// #endif
 
-// #ifdef ENABLE_EXCEPTION_TESTING
-//     console.add_message("Starting all exception tests...\n", kira::display::VGA_GREEN_ON_BLUE);
-//     kira::test::ExceptionTester::run_all_tests();
-// #endif
-    
-//     // Main kernel loop
-//     console.add_message("Entering main loop...\n", kira::display::VGA_YELLOW_ON_BLUE);
-    
-    auto& process_manager = ProcessManager::get_instance();
-    
-    console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
-    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
-    if (pid1) {
-        console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
-       // console.add_message("Starting process scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
-        process_manager.schedule(); // Manually trigger the first process switch
-    } else {
-        console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
-    }
-    
-    // Test memory manager more thoroughly
+    // Test memory manager before running user processes
     console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
     auto& memoryManager = MemoryManager::get_instance();
     // Try to allocate a single page first
@@ -121,6 +94,30 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("Memory allocation FAILED - checking memory manager state...", kira::display::VGA_RED_ON_BLUE);
         console.add_message(kira::utils::String("Free page count: ") + kira::utils::to_hex_string(memoryManager.get_free_page_count()), kira::display::VGA_YELLOW_ON_BLUE);
         console.add_message(kira::utils::String("Max free pages: ") + kira::utils::to_hex_string(memoryManager.get_max_free_pages()), kira::display::VGA_YELLOW_ON_BLUE);
+    }
+    
+    auto& process_manager = ProcessManager::get_instance();
+    
+    console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
+    if (pid1) {
+        console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+        console.add_message("Starting process scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+        
+        // Debug: Check if ready queue still has processes before scheduling
+        console.add_message("DEBUG: About to call schedule() - checking ready queue...", kira::display::VGA_MAGENTA_ON_BLUE);
+        
+        // Enable timer-driven scheduling before starting the scheduler
+        ProcessManager::enable_timer_scheduling();
+        
+        // Start the process scheduler - this will run the user process and enter idle loop
+        process_manager.schedule();
+        
+        // The schedule() call above should not return in normal operation
+        // If we get here, something went wrong
+        console.add_message("ERROR: Scheduler returned unexpectedly", kira::display::VGA_RED_ON_BLUE);
+    } else {
+        console.add_message("User mode process: FAILED", kira::display::VGA_RED_ON_BLUE);
     }
     
     // Kernel main loop

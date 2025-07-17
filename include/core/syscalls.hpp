@@ -9,11 +9,12 @@ namespace kira::system {
  */
 enum class SystemCall : u32 {
     EXIT = 0,           // Exit process
-    WRITE = 1,          // Write to display
+    WRITE = 1,          // Write to display (legacy)
     READ = 2,           // Read from keyboard
     YIELD = 3,          // Yield CPU to scheduler
     GET_PID = 4,        // Get current process ID
     SLEEP = 5,          // Sleep for specified ticks
+    WRITE_COLORED = 6,  // Write to display with color
 };
 
 /**
