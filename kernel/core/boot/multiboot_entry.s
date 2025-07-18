@@ -3,13 +3,6 @@
 .set MULTIBOOT_FLAGS, 0x00000003
 .set MULTIBOOT_CHECKSUM, -(MULTIBOOT_MAGIC + MULTIBOOT_FLAGS)
 
-# Serial port constants
-.set COM1_BASE, 0x3F8
-.set COM1_DATA, 0x3F8
-.set COM1_IER, 0x3F9
-.set COM1_LCR, 0x3FB
-.set COM1_LSR, 0x3FD
-
 .section .multiboot
 .align 4
 multiboot_header:
@@ -17,7 +10,7 @@ multiboot_header:
     .long MULTIBOOT_FLAGS  
     .long MULTIBOOT_CHECKSUM
 
-.section .text
+.section .text.multiboot_start
 .global multiboot_start
 .type multiboot_start, @function
 
@@ -25,46 +18,107 @@ multiboot_start:
     # Set up stack
     mov $stack_top, %esp
     
-    # Initialize serial port for basic logging
-    call init_serial
-    
-    # Save multiboot info
-    # EAX contains multiboot magic number
-    # EBX contains pointer to multiboot info structure
+    # Save all registers that might contain important data
     push %eax
     push %ebx
+    push %ecx
+    push %edx
+    push %edi
+    push %esi
     
-    # Check if we have valid multiboot info
+    # Check if we have valid multiboot magic
     cmp $0x2BADB002, %eax
-    jne no_multiboot
+    jne no_multiboot_magic
     
-    # Extract memory map from multiboot info structure
-    call extract_multiboot_memory_map
-    jmp call_kernel
+    # Reliable detection logic:
+    # IMG method: Stage2 sets up specific register values
+    #   - EBX = 0x200000 (our known memory map buffer address)
+    #   - EDI = entry count (typically 6-8)
+    #   - ECX = 0xDEADBEEF (signature from Stage2)
+    # ELF method: QEMU/GRUB sets up multiboot info structure
+    #   - EBX = pointer to multiboot info structure (varies, but not 0x200000)
+    #   - EDI = undefined/random
+    #   - ECX = undefined/random
+    
+    # First check: Is EBX exactly our IMG buffer address?
+    cmp $0x200000, %ebx
+    jne elf_method
+    
+    # Second check: Is EDI in reasonable range for memory map entries?
+    cmp $50, %edi           # Too many entries
+    jg elf_method
+    cmp $2, %edi            # Too few entries
+    jl elf_method
+    
+    # Third check: Does ECX contain our Stage2 signature?
+    cmp $0xDEADBEEF, %ecx
+    jne elf_method
+    
+    # All checks passed - this is IMG method
+    jmp img_method
 
-no_multiboot:
-    # Send error message to serial
-    push $msg_no_multiboot
-    call print_serial_string
-    add $4, %esp
+elf_method:
+    # ELF method: Use standard multiboot info structure parsing
+    # EBX contains pointer to multiboot info structure
+    # We need to extract memory map from the structure
     
-    # No multiboot info, set default values
+    # Clean up stack and set up for multiboot parsing
+    pop %esi        # Restore ESI
+    pop %edi        # Restore EDI (will be overwritten by extract_multiboot_memory_map)
+    pop %edx        # Restore EDX
+    pop %ecx        # Restore ECX
+    pop %ebx        # Restore EBX (multiboot info pointer)
+    pop %eax        # Restore EAX (multiboot magic)
+    
+    # Call multiboot parsing function
+    # Input: EBX = multiboot info pointer
+    # Output: EBX = memory map buffer, EDI = entry count
+    call extract_multiboot_memory_map
+    
+    # Call C++ kernel entry point
+    call _start
+    jmp halt_loop
+
+img_method:
+    # IMG method: Memory map is already prepared by Stage2
+    # EBX = memory map buffer address (0x200000)
+    # EDI = entry count
+    
+    # Clean up stack but keep EBX and EDI
+    pop %esi        # Restore ESI (not needed)
+    add $4, %esp    # Skip EDI (keep current value)
+    pop %edx        # Restore EDX (not needed)
+    pop %ecx        # Restore ECX (not needed)
+    add $4, %esp    # Skip EBX (keep current value)
+    pop %eax        # Restore EAX (not needed)
+    
+    # EBX and EDI are already set correctly for _start
+    # Call C++ kernel entry point
+    call _start
+    jmp halt_loop
+
+no_multiboot_magic:
+    # No valid multiboot magic - this shouldn't happen
+    # Clean up stack
+    pop %esi
+    pop %edi
+    pop %edx
+    pop %ecx
+    pop %ebx
+    pop %eax
+    
+    # Set default values and continue
     mov $0, %ebx        # No memory map buffer
     mov $0, %edi        # No memory map entries
-
-call_kernel:
-    # Call C++ kernel entry point
-    # EBX and EDI are now set up with memory map info
     call _start
     
-    # Hang if kernel returns
 halt_loop:
     cli
     hlt
     jmp halt_loop
 
-# Extract memory map from multiboot info structure
-# Input: multiboot info pointer on stack
+# Extract memory map from multiboot info structure (ELF method only)
+# Input: EBX = multiboot info pointer
 # Output: EBX = memory map buffer address, EDI = entry count
 extract_multiboot_memory_map:
     push %eax
@@ -72,30 +126,24 @@ extract_multiboot_memory_map:
     push %edx
     push %esi
     
-    # Get multiboot info pointer from stack
-    mov 20(%esp), %esi      # multiboot info pointer (accounting for pushed registers + call)
+    mov %ebx, %esi          # ESI = multiboot info pointer
     
     # Check if memory map is available (bit 6 of flags)
     mov (%esi), %eax        # Load flags
     test $0x40, %eax        # Test bit 6 (memory map available)
-    jz use_defaults
+    jz try_basic_memory
     
     # Get memory map information from multiboot structure
     mov 44(%esi), %ebx      # mmap_addr (offset 44 in multiboot info)
     mov 40(%esi), %ecx      # mmap_length (offset 40 in multiboot info)
     
-    # If mmap_length is 0, try to create a basic memory map from mem_lower/mem_upper instead
-    test %ecx, %ecx
-    jz try_basic_memory
-    
     # Validate the buffer address and length
     test %ebx, %ebx         # Check if buffer address is valid
-    jz use_defaults
+    jz try_basic_memory
     test %ecx, %ecx         # Check if length is valid
-    jz use_defaults
+    jz try_basic_memory
     
-    # Simple calculation: assume each entry is 24 bytes (standard multiboot)
-    # Count = length / 24
+    # Calculate entry count: length / 24 (standard multiboot entry size)
     mov %ecx, %eax          # Length in EAX
     xor %edx, %edx          # Clear high part
     mov $24, %ecx           # Divisor
@@ -105,7 +153,7 @@ extract_multiboot_memory_map:
     # Sanity check: reasonable range for memory map entries
     cmp $50, %edi           # If more than 50, something's wrong
     jg use_defaults
-    cmp $2, %edi            # If less than 2, something's wrong
+    cmp $1, %edi            # If less than 1, something's wrong
     jl use_defaults
     
     # EBX already contains buffer address
@@ -198,143 +246,6 @@ extract_done:
     pop %ecx
     pop %eax
     ret
-
-# Initialize serial port (COM1) for debugging
-init_serial:
-    push %eax
-    push %edx
-    
-    # Disable all interrupts
-    mov $COM1_IER, %dx
-    mov $0x00, %al
-    out %al, %dx
-    
-    # Enable DLAB (set baud rate)
-    mov $COM1_LCR, %dx
-    mov $0x80, %al
-    out %al, %dx
-    
-    # Set baud rate to 38400 (divisor = 3)
-    mov $COM1_DATA, %dx
-    mov $0x03, %al
-    out %al, %dx
-    
-    mov $COM1_IER, %dx
-    mov $0x00, %al
-    out %al, %dx
-    
-    # 8 bits, no parity, 1 stop bit
-    mov $COM1_LCR, %dx
-    mov $0x03, %al
-    out %al, %dx
-    
-    pop %edx
-    pop %eax
-    ret
-
-# Print string to serial port
-# Input: string address on stack
-print_serial_string:
-    push %ebp
-    mov %esp, %ebp
-    push %eax
-    push %edx
-    push %esi
-    
-    mov 8(%ebp), %esi       # Get string address from stack
-    
-.print_loop:
-    lodsb                   # Load byte from [ESI] into AL
-    test %al, %al           # Check for null terminator
-    jz .print_done
-    
-    call send_serial_char
-    jmp .print_loop
-    
-.print_done:
-    pop %esi
-    pop %edx
-    pop %eax
-    pop %ebp
-    ret
-
-# Print 32-bit hex value to serial
-# Input: value on stack
-print_serial_hex32:
-    push %ebp
-    mov %esp, %ebp
-    push %eax
-    push %ecx
-    push %edx
-    
-    mov 8(%ebp), %ecx       # Get value from stack
-    
-    # Print "0x" prefix
-    mov $'0', %al
-    call send_serial_char
-    mov $'x', %al
-    call send_serial_char
-    
-    # Print 8 hex digits
-    mov $8, %edx
-    
-.hex_loop:
-    rol $4, %ecx            # Rotate to get next nibble
-    mov %ecx, %eax
-    and $0x0F, %eax         # Get low nibble
-    
-    cmp $9, %eax
-    jle .hex_digit
-    add $7, %eax            # Convert A-F
-.hex_digit:
-    add $'0', %eax          # Convert to ASCII
-    
-    call send_serial_char
-    
-    dec %edx
-    jnz .hex_loop
-    
-    pop %edx
-    pop %ecx
-    pop %eax
-    pop %ebp
-    ret
-
-# Send single character to serial port
-# Input: character in AL
-send_serial_char:
-    push %eax
-    push %edx
-    push %ecx
-    
-    mov %al, %ah            # Save character
-    
-    # Wait for transmitter ready
-    mov $COM1_LSR, %dx
-    mov $0x1000, %ecx       # Timeout counter
-    
-.wait_ready:
-    in %dx, %al
-    test $0x20, %al         # Check if transmitter ready
-    jnz .send_char
-    dec %ecx
-    jnz .wait_ready
-    jmp .send_done          # Timeout
-    
-.send_char:
-    mov $COM1_DATA, %dx
-    mov %ah, %al            # Get character back
-    out %al, %dx
-    
-.send_done:
-    pop %ecx
-    pop %edx
-    pop %eax
-    ret
-
-# Debug messages (minimal set)
-.section .rodata
-msg_no_multiboot:        .asciz "MULTIBOOT: No valid multiboot info\r\n"
 
 # Stack space
 .section .bss

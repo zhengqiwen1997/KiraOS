@@ -25,30 +25,20 @@ BOOTLOADER_STACK        equ 0x90000     ; Stack at 576KB
 ; Disk Configuration
 BOOT_DRIVE              equ 0x80        ; First hard disk
 KERNEL_START_SECTOR     equ 6           ; BIOS sector 6 (disk sector 5)
-KERNEL_SECTORS          equ 64          ; 32KB kernel size (64 * 512 bytes)
+KERNEL_SECTORS          equ 128         ; 64KB kernel size (128 * 512 bytes)
 KERNEL_TEMP_SEGMENT     equ 0x1000      ; Segment for temporary load (0x10000)
 
 ; Memory Detection
 MAX_MEMORY_ENTRIES      equ 32          ; Maximum E820 entries to process
 MEMORY_ENTRY_SIZE       equ 24          ; Size of each E820 entry
-E820_SIGNATURE          equ 0x534D4150  ; 'SMAP' signature
+E820_SIGNATURE          equ 0x534D4150  ; 'SMAP' signature (ASCII: 'PAMS' in little-endian)
+                                                ; Required by BIOS INT 15h, AX=E820h memory detection
 E820_MIN_ENTRY_SIZE     equ 20          ; Minimum valid entry size
 
 ; A20 Line Control
 A20_BIOS_ENABLE         equ 0x2401      ; BIOS A20 enable function
 A20_FAST_GATE_PORT      equ 0x92        ; Fast A20 gate port
 A20_FAST_GATE_BIT       equ 0x02        ; A20 enable bit
-
-; Serial Port (COM1) Configuration
-COM1_BASE               equ 0x3F8       ; COM1 base port address
-COM1_DATA               equ COM1_BASE + 0  ; Data register
-COM1_IER                equ COM1_BASE + 1  ; Interrupt Enable Register
-COM1_LCR                equ COM1_BASE + 3  ; Line Control Register
-COM1_LSR                equ COM1_BASE + 5  ; Line Status Register
-SERIAL_BAUD_DIVISOR     equ 3           ; Divisor for 38400 baud
-SERIAL_8N1_CONFIG       equ 0x03        ; 8 bits, no parity, 1 stop bit
-SERIAL_DLAB_ENABLE      equ 0x80        ; Enable Divisor Latch Access
-SERIAL_TX_READY         equ 0x20        ; Transmitter ready bit
 
 ; BIOS Interrupt Functions
 BIOS_TELETYPE           equ 0x0E        ; Teletype output function
@@ -93,59 +83,25 @@ memory_map_buffer times (MAX_MEMORY_ENTRIES * MEMORY_ENTRY_SIZE) db 0
 ; Entry Point
 ;=============================================================================
 start:
-    ; Initialize serial port for debugging
-    call init_serial
-
-    ; Print stage2 start message
-    mov si, msg_start
-    call print_both
-
     ; Enable A20 line
     call enable_a20
-    mov si, msg_a20
-    call print_both
 
     ; Detect memory map using E820h
     call detect_memory_e820
-    mov si, msg_memory
-    call print_both
     
-    ; Debug: Print memory map count
-    call print_memory_map_count
-
-    ; Load kernel from disk
-    call load_kernel
-    mov si, msg_kernel_loaded
-    call print_both
-
+    ; Load kernel from disk to temporary location
+    call load_kernel_to_temp
+    
     ; Load GDT
     lgdt [gdt_descriptor]
-    mov si, msg_gdt
-    call print_both
-
-    ; Switch to protected mode
+    
+    ; Switch to protected mode and copy kernel
     call enter_protected_mode
     ; Should never return
 
 ;=============================================================================
 ; Real Mode Functions
 ;=============================================================================
-
-; Print string function (SI = string pointer)
-print_string:
-    push ax
-    push si
-    mov ah, BIOS_TELETYPE   ; BIOS teletype function
-.loop:
-    lodsb                   ; Load byte from SI into AL
-    cmp al, ASCII_NULL      ; Check if end of string
-    je .done
-    int 0x10                ; Print character
-    jmp .loop
-.done:
-    pop si
-    pop ax
-    ret
 
 ; Simple A20 line enable
 enable_a20:
@@ -172,66 +128,71 @@ detect_memory_e820:
     push di
     push es
     
-    ; Set up ES:DI to point to memory map buffer
+    ; Set up buffer
+    mov ax, 0x7000
+    mov es, ax
+    mov di, 0x0000          ; ES:DI = 0x7000:0x0000 (buffer at 0x70000)
+    
+    xor ebx, ebx            ; EBX = 0 (start of list)
+    mov edx, E820_SIGNATURE ; EDX = 'SMAP'
+    mov word [memory_map_entries], 0
+    
+.loop:
+    mov eax, 0xE820         ; Function E820h
+    mov ecx, MEMORY_ENTRY_SIZE ; Buffer size (24 bytes)
+    int 0x15                ; Call BIOS
+    
+    ; Check for error
+    jc .done
+    
+    ; Check signature
+    cmp eax, E820_SIGNATURE
+    jne .done
+    
+    ; Check minimum entry size
+    cmp ecx, E820_MIN_ENTRY_SIZE
+    jb .skip_entry
+    
+    ; Copy entry to our buffer
+    push si
+    push di
+    push cx
+    
+    mov si, di              ; Source: ES:DI (BIOS buffer)
     mov ax, ds
     mov es, ax
     mov di, memory_map_buffer
+    mov ax, [memory_map_entries]
+    mov cx, MEMORY_ENTRY_SIZE
+    mul cx
+    add di, ax              ; DI = buffer + (entries * entry_size)
     
-    ; Initialize
-    xor ebx, ebx            ; Start with EBX = 0
-    mov word [memory_map_entries], 0
+    mov cx, MEMORY_ENTRY_SIZE
+    rep movsb               ; Copy entry
     
-    ; Debug: Print E820 start message
-    push si
-    mov si, msg_e820_start
-    call print_both
+    pop cx
+    pop di
     pop si
-
-.loop:
-    ; Set up E820h call
-    mov eax, BIOS_MEMORY_E820
-    mov ecx, MEMORY_ENTRY_SIZE
-    mov edx, E820_SIGNATURE
-    int 0x15
     
-    ; Check for errors or unsupported function
-    jc .error
-    cmp eax, E820_SIGNATURE
-    jne .error
-    
-    ; Valid entry received, increment counter
+    ; Increment entry count
     inc word [memory_map_entries]
     
-    ; Move to next buffer location
-    add di, MEMORY_ENTRY_SIZE
-    
-    ; Check if we've hit our maximum entries
+    ; Check if we've reached maximum entries
     cmp word [memory_map_entries], MAX_MEMORY_ENTRIES
-    jge .done
+    jae .done
     
-    ; Check if this was the last entry (EBX = 0 after the call means done)
+.skip_entry:
+    ; Check if this was the last entry
     test ebx, ebx
-    jnz .loop               ; If EBX != 0, continue with next entry
+    jz .done
     
-    jmp .done
-
-.error:
-    ; Debug: Print error message
-    push si
-    mov si, msg_e820_error
-    call print_both
-    pop si
+    ; Continue to next entry
+    jmp .loop
     
 .done:
-    ; Debug: Print final count
-    push si
-    mov si, msg_e820_done
-    call print_both
-    mov ax, [memory_map_entries]
-    call print_hex_word
-    mov si, msg_newline
-    call print_both
-    pop si
+    ; Restore ES to data segment
+    mov ax, ds
+    mov es, ax
     
     pop es
     pop di
@@ -241,8 +202,8 @@ detect_memory_e820:
     pop ax
     ret
 
-; Load kernel from disk
-load_kernel:
+; Load kernel from disk to temporary location
+load_kernel_to_temp:
     push ax
     push bx
     push cx
@@ -268,284 +229,9 @@ load_kernel:
     mov dl, BOOT_DRIVE      ; Drive
     int 0x13
     
-    ; Copy kernel to final location (1MB)
-    call copy_kernel_to_1mb
+    ; Don't copy yet - we'll do it in protected mode
     
     pop es
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-; Copy kernel from temporary location to 1MB
-copy_kernel_to_1mb:
-    push eax
-    push ecx
-    push esi
-    push edi
-    push ds
-    push es
-    
-    ; Disable interrupts during copy
-    cli
-    
-    ; Set up source (0x10000)
-    mov ax, KERNEL_TEMP_SEGMENT
-    mov ds, ax
-    xor esi, esi
-    
-    ; Set up destination (0x100000)
-    ; We need to use 32-bit addressing for 1MB
-    xor ax, ax
-    mov es, ax
-    
-    ; Calculate number of bytes to copy
-    mov ecx, KERNEL_SECTORS
-    shl ecx, 9              ; Multiply by 512 (2^9)
-    
-    ; Copy loop using 32-bit operations
-.copy_loop:
-    cmp ecx, 0
-    je .copy_done
-    
-    ; Load from source
-    mov al, [ds:esi]
-    
-    ; Store to destination using direct memory addressing
-    ; This is a simplified approach - in reality we'd need to
-    ; properly handle the 1MB boundary in real mode
-    mov [es:esi + KERNEL_FINAL_ADDR], al
-    
-    inc esi
-    dec ecx
-    jmp .copy_loop
-    
-.copy_done:
-    ; Re-enable interrupts
-    sti
-    
-    pop es
-    pop ds
-    pop edi
-    pop esi
-    pop ecx
-    pop eax
-    ret
-
-; Initialize serial port (COM1) for debugging
-init_serial:
-    push ax
-    push dx
-    
-    ; Disable all interrupts first
-    mov dx, COM1_IER
-    mov al, 0x00
-    out dx, al
-    
-    ; Enable DLAB (Divisor Latch Access Bit) to set baud rate
-    mov dx, COM1_LCR
-    mov al, 0x80                ; DLAB = 1
-    out dx, al
-    
-    ; Set baud rate to 9600 (divisor = 12)
-    ; Low byte of divisor
-    mov dx, COM1_DATA
-    mov al, 12                  ; 115200 / 9600 = 12
-    out dx, al
-    
-    ; High byte of divisor
-    mov dx, COM1_IER
-    mov al, 0x00
-    out dx, al
-    
-    ; Configure line: 8 bits, no parity, 1 stop bit, DLAB = 0
-    mov dx, COM1_LCR
-    mov al, 0x03                ; 8N1, DLAB = 0
-    out dx, al
-    
-    ; Enable FIFO, clear them, with 14-byte threshold
-    mov dx, COM1_BASE + 2       ; FCR (FIFO Control Register)
-    mov al, 0xC7
-    out dx, al
-    
-    ; Enable IRQs, set RTS/DSR
-    mov dx, COM1_BASE + 4       ; MCR (Modem Control Register)
-    mov al, 0x0B
-    out dx, al
-    
-    pop dx
-    pop ax
-    ret
-
-; Print string to serial port (SI = string pointer)
-print_serial:
-    push ax
-    push dx
-    push si
-    
-.loop:
-    lodsb                   ; Load byte from SI into AL
-    cmp al, ASCII_NULL      ; Check if end of string
-    je .send_newline
-    
-    call send_serial_char
-    jmp .loop
-    
-.send_newline:
-    ; Send carriage return
-    mov al, ASCII_CR
-    call send_serial_char
-    
-    ; Send line feed
-    mov al, ASCII_LF
-    call send_serial_char
-    
-    pop si
-    pop dx
-    pop ax
-    ret
-
-; Send single character to serial port (AL = character)
-send_serial_char:
-    push ax
-    push dx
-    push cx
-    
-    ; Save the character to send
-    mov ah, al
-    
-    ; Wait for transmitter to be ready
-    mov dx, COM1_LSR        ; Line Status Register
-    mov cx, 0x1000          ; Timeout counter
-.wait:
-    in al, dx
-    test al, 0x20           ; Test Transmitter Holding Register Empty
-    jnz .ready              ; Ready to send
-    dec cx
-    jnz .wait               ; Continue waiting if not timeout
-    jmp .done               ; Timeout, skip sending
-    
-.ready:
-    ; Send character
-    mov dx, COM1_DATA       ; Data register
-    mov al, ah              ; Get character back
-    out dx, al              ; Send character
-    
-    ; Small delay for character transmission
-    mov cx, 100
-.delay:
-    nop
-    loop .delay
-    
-.done:
-    pop cx
-    pop dx
-    pop ax
-    ret
-
-; Print string to both VGA and serial
-print_both:
-    call print_string
-    call print_serial
-    ret
-
-; Debug function to print memory map count
-print_memory_map_count:
-    push ax
-    push bx
-    push cx
-    push dx
-    push si
-    
-    ; Print debug message
-    mov si, msg_debug_count
-    call print_both
-    
-    ; Get the memory map count
-    mov ax, [memory_map_entries]
-    
-    ; Convert to hex and print
-    call print_hex_word
-    
-    ; Print newline
-    mov si, msg_newline
-    call print_both
-    
-    pop si
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-; Print 16-bit value in AX as hex
-print_hex_word:
-    push ax
-    push bx
-    push cx
-    push dx
-    
-    mov bx, ax          ; Save original value
-    
-    ; Print high byte
-    mov al, bh
-    call print_hex_byte
-    
-    ; Print low byte
-    mov al, bl
-    call print_hex_byte
-    
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-; Print 8-bit value in AL as hex
-print_hex_byte:
-    push ax
-    push bx
-    push cx
-    push dx
-    
-    mov bl, al          ; Save original value
-    
-    ; Print high nibble
-    shr al, 4
-    call print_hex_nibble
-    
-    ; Print low nibble
-    mov al, bl
-    and al, 0x0F
-    call print_hex_nibble
-    
-    pop dx
-    pop cx
-    pop bx
-    pop ax
-    ret
-
-; Print 4-bit value in AL as hex digit
-print_hex_nibble:
-    push ax
-    push bx
-    push cx
-    push dx
-    
-    cmp al, 9
-    jle .digit
-    add al, 7           ; Convert A-F
-.digit:
-    add al, '0'
-    
-    ; Print via BIOS (VGA)
-    mov ah, BIOS_TELETYPE
-    int 0x10
-    
-    ; Also print to serial
-    call send_serial_char
-    
     pop dx
     pop cx
     pop bx
@@ -558,19 +244,20 @@ enter_protected_mode:
     
     ; Enable protected mode
     mov eax, cr0
-    or eax, CR0_PROTECTED_MODE
+    or eax, 1
     mov cr0, eax
     
-    ; Far jump to flush prefetch queue and load CS
-    jmp CODE_SEG:protected_mode_entry
+    ; Jump to protected mode code
+    jmp 0x08:protected_mode_start
 
 ;=============================================================================
 ; Protected Mode Code
 ;=============================================================================
+
 [BITS 32]
-protected_mode_entry:
+protected_mode_start:
     ; Set up data segments
-    mov ax, DATA_SEG
+    mov ax, 0x10            ; Data segment selector
     mov ds, ax
     mov es, ax
     mov fs, ax
@@ -580,93 +267,137 @@ protected_mode_entry:
     ; Set up stack
     mov esp, BOOTLOADER_STACK
     
+    ; Copy kernel to final location
+    call copy_kernel_protected_mode
+    
+    ; Copy memory map to kernel-accessible location
+    call copy_memory_map_to_kernel
+    
     ; Pass memory map information to kernel
-    ; EBX = memory map buffer address
+    ; EBX = memory map buffer address (now in kernel space)
     ; EDI = number of entries
-    mov ebx, memory_map_buffer
+    ; ECX = signature to identify IMG method
+    mov ebx, 0x200000       ; Memory map copied to 2MB (kernel structures area)
     movzx edi, word [memory_map_entries]
+    mov ecx, 0xDEADBEEF     ; IMG method signature for reliable detection
+                            ; This unique value helps multiboot_entry.s distinguish
+                            ; between IMG method (custom bootloader) and ELF method (QEMU)
+    
+    ; Set up multiboot magic number for kernel compatibility
+    mov eax, 0x2BADB002     ; Multiboot magic number (required by multiboot specification)
+                            ; This tells the kernel it was loaded by a multiboot-compliant bootloader
     
     ; Jump to kernel entry point
     jmp KERNEL_FINAL_ADDR
 
-; Write 32-bit value in ECX as hex to VGA at EAX
-write_hex32_to_vga:
+; Copy kernel in protected mode (much simpler and more reliable)
+copy_kernel_protected_mode:
     push eax
-    push ebx
     push ecx
-    push edx
+    push esi
+    push edi
     
-    mov ebx, eax        ; Save VGA address
-    mov edx, 8          ; 8 hex digits
+    ; Set up source and destination
+    mov esi, KERNEL_TEMP_ADDR       ; Source: 0x10000
+    mov edi, KERNEL_FINAL_ADDR      ; Destination: 0x100000
     
-.loop:
-    rol ecx, 4          ; Rotate to get next nibble
-    mov eax, ecx
-    and eax, 0x0F       ; Get low nibble
+    ; Calculate number of bytes to copy
+    mov ecx, KERNEL_SECTORS
+    shl ecx, 9                      ; Multiply by 512 (2^9)
     
-    cmp eax, 9
-    jle .digit
-    add eax, 7          ; Convert A-F
-.digit:
-    add eax, '0'        ; Convert to ASCII
+    ; Copy using 32-bit operations (4 bytes at a time for efficiency)
+    shr ecx, 2                      ; Divide by 4 (copy DWORDs)
+    rep movsd                       ; Copy ECX DWORDs from ESI to EDI
     
-    ; Write to VGA (character + white on black attribute)
-    mov ah, 0x0F
-    mov [ebx], ax
-    add ebx, 2
+    ; Handle any remaining bytes (should be 0 since kernel size is sector-aligned)
+    mov ecx, KERNEL_SECTORS
+    shl ecx, 9                      ; Total bytes
+    and ecx, 3                      ; Remaining bytes (should be 0)
+    rep movsb                       ; Copy remaining bytes
     
-    dec edx
-    jnz .loop
-    
-    pop edx
+    pop edi
+    pop esi
     pop ecx
-    pop ebx
+    pop eax
+    ret
+
+; Copy memory map to kernel-accessible location
+copy_memory_map_to_kernel:
+    push eax
+    push ecx
+    push esi
+    push edi
+    
+    ; Source: memory_map_buffer (in Stage2 data)
+    mov esi, memory_map_buffer
+    
+    ; Destination: 2MB (kernel structures area)
+    mov edi, 0x200000
+    
+    ; Calculate bytes to copy
+    movzx eax, word [memory_map_entries]
+    mov ecx, MEMORY_ENTRY_SIZE
+    mul ecx                         ; EAX = entries * entry_size
+    mov ecx, eax                    ; ECX = total bytes
+    
+    ; Copy memory map
+    rep movsb
+    
+    pop edi
+    pop esi
+    pop ecx
     pop eax
     ret
 
 ;=============================================================================
 ; Global Descriptor Table
 ;=============================================================================
-[BITS 16]
+
 gdt_start:
-    ; Null descriptor
-    dd 0x0
-    dd 0x0
+    ; Null descriptor (required by x86 architecture)
+    dd 0x00000000
+    dd 0x00000000
     
-    ; Code segment descriptor
-    dw 0xFFFF               ; Limit (bits 0-15)
-    dw 0x0000               ; Base (bits 0-15)
-    db 0x00                 ; Base (bits 16-23)
-    db GDT_CODE_ACCESS      ; Access byte
-    db GDT_FLAGS            ; Granularity and limit (bits 16-19)
-    db 0x00                 ; Base (bits 24-31)
+    ; Code segment descriptor (Ring 0, 32-bit, 4GB limit)
+    dw 0xFFFF       ; Limit (low 16 bits) = 0xFFFF
+    dw 0x0000       ; Base (low 16 bits) = 0x0000
+    db 0x00         ; Base (middle 8 bits) = 0x00
+    db 10011010b    ; Access byte: Present(1) + DPL(00) + S(1) + Type(1010)
+                    ; Bit 7: Present = 1 (segment is present)
+                    ; Bit 6-5: DPL = 00 (Ring 0 privilege level)
+                    ; Bit 4: S = 1 (code/data segment, not system)
+                    ; Bit 3: Executable = 1 (code segment)
+                    ; Bit 2: Direction = 0 (grows up)
+                    ; Bit 1: Readable = 1 (code can be read)
+                    ; Bit 0: Accessed = 0 (not accessed yet)
+    db 11001111b    ; Granularity + Limit (high 4 bits)
+                    ; Bit 7: Granularity = 1 (4KB granularity)
+                    ; Bit 6: Size = 1 (32-bit segment)
+                    ; Bit 5: Long = 0 (not 64-bit)
+                    ; Bit 4: AVL = 0 (available for system use)
+                    ; Bit 3-0: Limit high = 1111 (makes limit 0xFFFFF)
+    db 0x00         ; Base (high 8 bits) = 0x00
     
-    ; Data segment descriptor
-    dw 0xFFFF               ; Limit (bits 0-15)
-    dw 0x0000               ; Base (bits 0-15)
-    db 0x00                 ; Base (bits 16-23)
-    db GDT_DATA_ACCESS      ; Access byte
-    db GDT_FLAGS            ; Granularity and limit (bits 16-19)
-    db 0x00                 ; Base (bits 24-31)
+    ; Data segment descriptor (Ring 0, 32-bit, 4GB limit)
+    dw 0xFFFF       ; Limit (low 16 bits) = 0xFFFF
+    dw 0x0000       ; Base (low 16 bits) = 0x0000
+    db 0x00         ; Base (middle 8 bits) = 0x00
+    db 10010010b    ; Access byte: Present(1) + DPL(00) + S(1) + Type(0010)
+                    ; Bit 7: Present = 1 (segment is present)
+                    ; Bit 6-5: DPL = 00 (Ring 0 privilege level)
+                    ; Bit 4: S = 1 (code/data segment, not system)
+                    ; Bit 3: Executable = 0 (data segment)
+                    ; Bit 2: Direction = 0 (grows up)
+                    ; Bit 1: Writable = 1 (data can be written)
+                    ; Bit 0: Accessed = 0 (not accessed yet)
+    db 11001111b    ; Granularity + Limit (high 4 bits) - same as code segment
+    db 0x00         ; Base (high 8 bits) = 0x00
+    
 gdt_end:
 
 gdt_descriptor:
     dw gdt_end - gdt_start - 1  ; GDT size
     dd gdt_start                ; GDT address
 
-;=============================================================================
-; String Messages
-;=============================================================================
-msg_start           db 'Stage2: Starting KiraOS bootloader', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_a20             db 'Stage2: A20 line enabled', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_memory          db 'Stage2: Memory map detected', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_debug_count     db 'Stage2: Memory entries found: 0x', ASCII_NULL
-msg_newline         db ASCII_CR, ASCII_LF, ASCII_NULL
-msg_kernel_loaded   db 'Stage2: Kernel loaded', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_gdt             db 'Stage2: GDT loaded', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_e820_start      db 'Stage2: E820 memory detection started', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_e820_error      db 'Stage2: E820 error or unsupported function', ASCII_CR, ASCII_LF, ASCII_NULL
-msg_e820_done       db 'Stage2: E820 memory detection complete. Entries found: 0x', ASCII_NULL
-
-; Pad to sector boundary
+; Fill remaining space with zeros
 times 2048-($-$$) db 0

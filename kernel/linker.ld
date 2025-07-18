@@ -13,8 +13,8 @@ SECTIONS
 	/* Multiboot header and text must be in the same segment */
 	.text ALIGN(4K) :
 	{
-		*(.multiboot)     /* Multiboot header at the very beginning */
-		*(.text.legacy_start)  /* Legacy entry point right after multiboot */
+		*(.text.multiboot_start)  /* Multiboot start function at the very beginning */
+		*(.multiboot)     /* Multiboot header after start function */
 		*(.text)
 	}
 

@@ -120,10 +120,11 @@ target_link_options(kernel.elf PRIVATE
 set_target_properties(kernel.elf PROPERTIES LINK_DEPENDS "${CMAKE_SOURCE_DIR}/kernel/linker.ld")
 
 # Convert the ELF executable to a flat binary (for custom bootloader)
+# We need to create a binary that includes all segments with proper spacing
 add_custom_command(TARGET kernel.elf POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O binary kernel.elf kernel.bin
+    COMMAND ${CMAKE_OBJCOPY} -O binary --gap-fill=0x00 kernel.elf kernel.bin
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Converting kernel.elf to flat binary format (kernel.bin)"
+    COMMENT "Converting kernel.elf to flat binary format with proper segment spacing (kernel.bin)"
 )
 
 # Create boot directory for kernel binary
