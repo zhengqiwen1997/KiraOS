@@ -11,17 +11,20 @@ KiraOS is a self-made operating system written in C++ for fun and study. It feat
 - ✅ **Memory Protection**: Page-level access control and address space isolation
 - ✅ **Hardware Interrupts**: Timer (100 Hz) and keyboard handling with proper IRQ routing
 - ✅ **Exception Handling**: Comprehensive CPU fault debugging with page fault analysis
+- ✅ **ATA/IDE Driver**: Hardware disk I/O with comprehensive testing framework
+- ✅ **Dual Boot Methods**: Both ELF kernel loading and custom bootloader support
 
 ## Quick Start
 
 ```bash
 # Build
-mkdir cmake-build && cd cmake-build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../i686-elf-toolchain.cmake
-make
+make clean && make
 
-# Run
-qemu-system-i386 -kernel kernel.elf -m 32M
+# Run (ELF method - recommended)
+make run
+
+# Run (IMG method - custom bootloader)
+make run-disk
 ```
 
 ## Prerequisites
@@ -35,39 +38,61 @@ qemu-system-i386 -kernel kernel.elf -m 32M
 ```
 KiraOS/
 ├── kernel/                    # Kernel implementation
+│   ├── boot/                  # Stage1 & Stage2 bootloaders (assembly)
 │   ├── core/                  # Process management, user mode, system calls
 │   ├── arch/x86/              # x86-specific code (GDT, TSS, assembly)
 │   ├── interrupts/            # Exception and IRQ handling
-│   ├── drivers/               # Timer, keyboard drivers
-│   └── memory/                # Virtual memory, paging, physical allocation
+│   ├── drivers/               # Timer, keyboard, ATA/IDE drivers
+│   ├── memory/                # Virtual memory, paging, physical allocation
+│   └── test/                  # Driver tests and validation
 ├── userspace/                 # User mode programs and libraries
 │   ├── programs/              # User applications
 │   └── lib/                   # User mode libraries
 ├── include/                   # Kernel headers
-└── CMakeLists.txt            # Build configuration
+│   ├── drivers/               # Driver interfaces
+│   └── test/                  # Test framework headers
+├── build/                     # Build output (disk images)
+├── cmake-build/               # CMake build directory
+├── Makefile                   # Main build system
+└── CMakeLists.txt            # CMake configuration
 ```
 
 ## Development
 
 ### Build Commands
 ```bash
+make clean && make            # Clean build everything
 make                          # Build everything
-make kernel.elf              # Build kernel only
-make clean                    # Clean build
+make clean                    # Clean build files
 ```
 
-### Running & Debugging
+### Running
 ```bash
-# Basic run
-qemu-system-i386 -kernel kernel.elf -m 32M
+# ELF method (recommended) - QEMU loads kernel directly
+make run                      # Basic run with console output
+make run-with-log            # Run with serial logging
 
-# With debugging
-qemu-system-i386 -kernel kernel.elf -m 32M -s -S
-gdb kernel.elf -ex "target remote localhost:1234"
-
-# With serial logging
-qemu-system-i386 -kernel kernel.elf -m 32M -serial file:serial.log
+# IMG method - Custom bootloader with disk image
+make run-disk                # Boot from disk image
 ```
+
+## Boot Methods
+
+KiraOS supports two boot methods for different use cases:
+
+### ELF Method (`make run`)
+- **Recommended for development** - faster boot, easier debugging
+- QEMU loads kernel directly using `-kernel` flag
+- Multiboot-compliant kernel with proper ELF sections
+- Ideal for testing and development
+
+### IMG Method (`make run-disk`)
+- **Real bootloader experience** - complete boot chain
+- Custom Stage1 (MBR) and Stage2 bootloaders written in assembly
+- Kernel loaded from disk sectors into memory
+- More realistic boot process, useful for understanding OS boot sequence
+
+Both methods support the same kernel features and run identical code after boot.
 
 ## Architecture
 
@@ -89,10 +114,14 @@ qemu-system-i386 -kernel kernel.elf -m 32M -serial file:serial.log
 
 ## Contributing
 
-Areas of interest:
-- File system implementation
+### Current Development Focus
+- **File System**: FAT32 implementation on top of ATA driver foundation
+- **Storage**: Enhanced disk I/O and partition support
+- **User Interface**: Shell and command-line utilities
+
+### Future Areas of Interest
 - Network stack and drivers
-- Multi-core SMP support
+- Multi-core SMP support  
 - Advanced memory management (swap, CoW)
 
 ## References

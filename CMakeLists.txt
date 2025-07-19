@@ -64,6 +64,7 @@ add_library(kernel_core STATIC
     kernel/core/syscalls.cpp
     kernel/core/usermode.cpp
     kernel/test/exception_tester.cpp
+    kernel/test/ata_driver_test.cpp
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/lib/libkira.cpp
@@ -79,6 +80,7 @@ add_library(kernel_core STATIC
     kernel/interrupts/irq.cpp
     kernel/drivers/keyboard.cpp
     kernel/drivers/timer.cpp
+    kernel/drivers/ata.cpp
     kernel/display/console.cpp
     kernel/debug/serial_debugger.cpp
     kernel/arch/x86/exception_stubs.s

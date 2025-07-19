@@ -39,7 +39,8 @@ QEMU_ELF_FLAGS = -kernel kernel.elf \
                  -m 256M \
                  -no-reboot \
                  -no-shutdown \
-                 -serial file:../$(SERIAL_LOG)
+                 -serial file:../$(SERIAL_LOG) \
+                 -drive file=../$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk
 
 # QEMU flags for simple ELF kernel boot (no serial logging)
 QEMU_ELF_SIMPLE_FLAGS = -kernel kernel.elf \
@@ -47,7 +48,8 @@ QEMU_ELF_SIMPLE_FLAGS = -kernel kernel.elf \
                         -smp 1 \
                         -m 256M \
                         -no-reboot \
-                        -no-shutdown
+                        -no-shutdown \
+                        -drive file=../$(DISK_IMAGE),format=raw,if=ide,index=0,media=disk
 
 #=============================================================================
 # Build Targets
