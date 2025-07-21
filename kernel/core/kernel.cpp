@@ -19,6 +19,7 @@
 #include "test/exception_tester.hpp"
 #include "drivers/ata.hpp"
 #include "test/ata_driver_test.hpp"
+#include "test/vfs_test.hpp"
 
 namespace kira::kernel {
 
@@ -91,6 +92,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("ATA driver ready for file system", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("ATA driver tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    
+    // Initialize and test VFS
+    console.add_message("Initializing Virtual File System...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::VFSTest::run_tests()) {
+        console.add_message("VFS ready for applications", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("VFS tests failed", kira::display::VGA_RED_ON_BLUE);
     }
     
     // Initialize process management
