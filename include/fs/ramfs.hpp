@@ -32,7 +32,7 @@ public:
     const char* get_name() const { return m_name; }
     void set_parent(RamFSNode* parent) { m_parent = parent; }
     RamFSNode* get_parent() const { return m_parent; }
-    void set_create_time(u32 time) { m_create_time = time; }
+    void set_create_time(u32 time) { m_createTime = time; }
 
 private:
     char m_name[256];                    // File/directory name
@@ -46,12 +46,12 @@ private:
     // Directory children
     static constexpr u32 MAX_CHILDREN = 64;
     RamFSNode* m_children[MAX_CHILDREN];
-    u32 m_child_count;
+    u32 m_childCount;
     
     // Timestamps
-    u32 m_create_time;
-    u32 m_modify_time;
-    u32 m_access_time;
+    u32 m_createTime;
+    u32 m_modifyTime;
+    u32 m_accessTime;
     
     // Helper methods
     FSResult resize_buffer(u32 new_size);
@@ -82,11 +82,11 @@ public:
     // RamFS specific methods
     FSResult create_file(const char* path, FileType type);
     FSResult delete_file(const char* path);
-    u32 allocate_inode() { return m_next_inode++; }
+    u32 allocate_inode() { return m_nextInode++; }
 
 private:
     RamFSNode* m_root;
-    u32 m_next_inode;
+    u32 m_nextInode;
     
     // Helper methods
     FSResult resolve_parent_path(const char* path, RamFSNode*& parent, char* filename);

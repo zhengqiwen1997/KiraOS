@@ -109,16 +109,16 @@ VFS& VFS::get_instance() {
 FSResult VFS::initialize() {
     // Initialize file descriptor table
     for (u32 i = 0; i < MAX_FILE_DESCRIPTORS; i++) {
-        m_file_descriptors[i] = nullptr;
+        m_fileDescriptors[i] = nullptr;
     }
     
     // Initialize file system registry
     for (u32 i = 0; i < MAX_FILESYSTEMS; i++) {
         m_filesystems[i] = nullptr;
     }
-    m_filesystem_count = 0;
+    m_filesystemCount = 0;
     
-    m_root_vnode = nullptr;
+    m_rootVnode = nullptr;
     
     return FSResult::SUCCESS;
 }
@@ -128,12 +128,12 @@ FSResult VFS::register_filesystem(FileSystem* fs) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    if (m_filesystem_count >= MAX_FILESYSTEMS) {
+    if (m_filesystemCount >= MAX_FILESYSTEMS) {
         return FSResult::NO_SPACE;
     }
     
-    m_filesystems[m_filesystem_count] = fs;
-    m_filesystem_count++;
+    m_filesystems[m_filesystemCount] = fs;
+    m_filesystemCount++;
     
     return FSResult::SUCCESS;
 }
@@ -145,7 +145,7 @@ FSResult VFS::mount(const char* device, const char* mountpoint, const char* fsty
     
     // Find the requested file system type
     FileSystem* fs = nullptr;
-    for (u32 i = 0; i < m_filesystem_count; i++) {
+    for (u32 i = 0; i < m_filesystemCount; i++) {
         if (m_filesystems[i] && strcmp(m_filesystems[i]->get_name(), fstype) == 0) {
             fs = m_filesystems[i];
             break;
@@ -164,7 +164,7 @@ FSResult VFS::mount(const char* device, const char* mountpoint, const char* fsty
     
     // If this is the root mount, set it as root
     if (strcmp(mountpoint, "/") == 0) {
-        result = fs->get_root(m_root_vnode);
+        result = fs->get_root(m_rootVnode);
         if (result != FSResult::SUCCESS) {
             fs->unmount();
             return result;
@@ -181,12 +181,12 @@ FSResult VFS::unmount(const char* mountpoint) {
     
     // TODO: Implement unmounting for specific mount points
     // For now, just handle root unmount
-    if (strcmp(mountpoint, "/") == 0 && m_root_vnode) {
-        FileSystem* fs = m_root_vnode->get_filesystem();
+    if (strcmp(mountpoint, "/") == 0 && m_rootVnode) {
+        FileSystem* fs = m_rootVnode->get_filesystem();
         if (fs) {
             FSResult result = fs->unmount();
             if (result == FSResult::SUCCESS) {
-                m_root_vnode = nullptr;
+                m_rootVnode = nullptr;
             }
             return result;
         }
@@ -219,7 +219,7 @@ FSResult VFS::open(const char* path, OpenFlags flags, i32& fd) {
         VNode* parent_vnode = nullptr;
         if (!last_slash || last_slash == path) {
             // File is in root directory
-            parent_vnode = m_root_vnode;
+            parent_vnode = m_rootVnode;
         } else {
             // Get parent directory
             u32 parent_len = last_slash - path;
@@ -273,19 +273,19 @@ FSResult VFS::open(const char* path, OpenFlags flags, i32& fd) {
         return FSResult::NO_SPACE;
     }
     
-    m_file_descriptors[new_fd] = new(memory) FileDescriptor(vnode, flags);
+    m_fileDescriptors[new_fd] = new(memory) FileDescriptor(vnode, flags);
     fd = new_fd;
     
     return FSResult::SUCCESS;
 }
 
 FSResult VFS::close(i32 fd) {
-    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_file_descriptors[fd]) {
+    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_fileDescriptors[fd]) {
         return FSResult::INVALID_PARAMETER;
     }
     
     // Clean up file descriptor
-    FileDescriptor* file_desc = m_file_descriptors[fd];
+    FileDescriptor* file_desc = m_fileDescriptors[fd];
     auto& memMgr = MemoryManager::get_instance();
     
     file_desc->~FileDescriptor();
@@ -297,27 +297,27 @@ FSResult VFS::close(i32 fd) {
 }
 
 FSResult VFS::read(i32 fd, u32 size, void* buffer) {
-    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_file_descriptors[fd]) {
+    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_fileDescriptors[fd]) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    return m_file_descriptors[fd]->read(size, buffer);
+    return m_fileDescriptors[fd]->read(size, buffer);
 }
 
 FSResult VFS::write(i32 fd, u32 size, const void* buffer) {
-    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_file_descriptors[fd]) {
+    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_fileDescriptors[fd]) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    return m_file_descriptors[fd]->write(size, buffer);
+    return m_fileDescriptors[fd]->write(size, buffer);
 }
 
 FSResult VFS::seek(i32 fd, u32 position) {
-    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_file_descriptors[fd]) {
+    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_fileDescriptors[fd]) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    return m_file_descriptors[fd]->seek(position);
+    return m_fileDescriptors[fd]->seek(position);
 }
 
 FSResult VFS::stat(const char* path, FileStat& stat) {
@@ -371,18 +371,18 @@ FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
 }
 
 FSResult VFS::resolve_path(const char* path, VNode*& vnode) {
-    if (!path || !m_root_vnode) {
+    if (!path || !m_rootVnode) {
         return FSResult::INVALID_PARAMETER;
     }
     
     // Handle root path
     if (strcmp(path, "/") == 0) {
-        vnode = m_root_vnode;
+        vnode = m_rootVnode;
         return FSResult::SUCCESS;
     }
     
     // Start from root
-    VNode* current = m_root_vnode;
+    VNode* current = m_rootVnode;
     
     // Skip leading slash
     if (path[0] == '/') {
@@ -439,7 +439,7 @@ FSResult VFS::resolve_path(const char* path, VNode*& vnode) {
 
 i32 VFS::allocate_fd() {
     for (i32 i = 0; i < MAX_FILE_DESCRIPTORS; i++) {
-        if (!m_file_descriptors[i]) {
+        if (!m_fileDescriptors[i]) {
             return i;
         }
     }
@@ -448,7 +448,7 @@ i32 VFS::allocate_fd() {
 
 void VFS::free_fd(i32 fd) {
     if (fd >= 0 && fd < MAX_FILE_DESCRIPTORS) {
-        m_file_descriptors[fd] = nullptr;
+        m_fileDescriptors[fd] = nullptr;
     }
 }
 

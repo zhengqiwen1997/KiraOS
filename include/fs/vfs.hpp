@@ -186,15 +186,15 @@ private:
     
     // File descriptor management
     static constexpr u32 MAX_FILE_DESCRIPTORS = 256;
-    FileDescriptor* m_file_descriptors[MAX_FILE_DESCRIPTORS];
+    FileDescriptor* m_fileDescriptors[MAX_FILE_DESCRIPTORS];
     
     // File system registry
     static constexpr u32 MAX_FILESYSTEMS = 16;
     FileSystem* m_filesystems[MAX_FILESYSTEMS];
-    u32 m_filesystem_count;
+    u32 m_filesystemCount;
     
     // Mount points
-    VNode* m_root_vnode;
+    VNode* m_rootVnode;
     
     // Helper methods
     i32 allocate_fd();

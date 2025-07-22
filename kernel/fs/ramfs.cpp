@@ -13,8 +13,8 @@ using namespace kira::utils;
 
 RamFSNode::RamFSNode(u32 inode, FileType type, FileSystem* fs, const char* name)
     : VNode(inode, type, fs), m_parent(nullptr), m_data(nullptr), 
-      m_size(0), m_capacity(0), m_child_count(0),
-      m_create_time(0), m_modify_time(0), m_access_time(0) {
+      m_size(0), m_capacity(0), m_childCount(0),
+      m_createTime(0), m_modifyTime(0), m_accessTime(0) {
     
     // Copy name
     if (name) {
@@ -38,7 +38,7 @@ RamFSNode::~RamFSNode() {
     
     // Clean up children (directories only)
     if (m_type == FileType::DIRECTORY) {
-        for (u32 i = 0; i < m_child_count; i++) {
+        for (u32 i = 0; i < m_childCount; i++) {
             if (m_children[i]) {
                 // Manual cleanup instead of delete
                 m_children[i]->~RamFSNode();
@@ -71,7 +71,7 @@ FSResult RamFSNode::read(u32 offset, u32 size, void* buffer) {
         memcpy(buffer, m_data + offset, bytes_to_read);
     }
     
-    m_access_time++; // Simple timestamp increment
+    m_accessTime++; // Simple timestamp increment
     return FSResult::SUCCESS;
 }
 
@@ -102,7 +102,7 @@ FSResult RamFSNode::write(u32 offset, u32 size, const void* buffer) {
         m_size = required_size;
     }
     
-    m_modify_time++; // Simple timestamp increment
+    m_modifyTime++; // Simple timestamp increment
     return FSResult::SUCCESS;
 }
 
@@ -117,9 +117,9 @@ FSResult RamFSNode::get_stat(FileStat& stat) {
     stat.mode = 0644; // Default permissions
     stat.uid = 0;
     stat.gid = 0;
-    stat.atime = m_access_time;
-    stat.mtime = m_modify_time;
-    stat.ctime = m_create_time;
+    stat.atime = m_accessTime;
+    stat.mtime = m_modifyTime;
+    stat.ctime = m_createTime;
     
     return FSResult::SUCCESS;
 }
@@ -129,7 +129,7 @@ FSResult RamFSNode::read_dir(u32 index, DirectoryEntry& entry) {
         return FSResult::NOT_DIRECTORY;
     }
     
-    if (index >= m_child_count) {
+    if (index >= m_childCount) {
         return FSResult::NOT_FOUND; // End of directory
     }
     
@@ -160,7 +160,7 @@ FSResult RamFSNode::create_file(const char* name, FileType type) {
     }
     
     // Check if we have space for another child
-    if (m_child_count >= MAX_CHILDREN) {
+    if (m_childCount >= MAX_CHILDREN) {
         return FSResult::NO_SPACE;
     }
     
@@ -177,7 +177,7 @@ FSResult RamFSNode::create_file(const char* name, FileType type) {
     
     RamFSNode* new_node = new(memory) RamFSNode(inode, type, m_filesystem, name);
     new_node->set_parent(this);
-    new_node->set_create_time(m_modify_time + 1);
+    new_node->set_create_time(m_modifyTime + 1);
     
     return add_child(new_node);
 }
@@ -254,19 +254,19 @@ FSResult RamFSNode::resize_buffer(u32 new_size) {
 }
 
 FSResult RamFSNode::add_child(RamFSNode* child) {
-    if (m_child_count >= MAX_CHILDREN) {
+    if (m_childCount >= MAX_CHILDREN) {
         return FSResult::NO_SPACE;
     }
     
-    m_children[m_child_count] = child;
-    m_child_count++;
-    m_modify_time++;
+    m_children[m_childCount] = child;
+    m_childCount++;
+    m_modifyTime++;
     
     return FSResult::SUCCESS;
 }
 
 FSResult RamFSNode::remove_child(const char* name) {
-    for (u32 i = 0; i < m_child_count; i++) {
+    for (u32 i = 0; i < m_childCount; i++) {
         if (m_children[i] && strcmp(m_children[i]->get_name(), name) == 0) {
             // Manual cleanup instead of delete
             m_children[i]->~RamFSNode();
@@ -274,13 +274,13 @@ FSResult RamFSNode::remove_child(const char* name) {
             memMgr.free_physical_page(m_children[i]);
             
             // Shift remaining children
-            for (u32 j = i; j < m_child_count - 1; j++) {
+            for (u32 j = i; j < m_childCount - 1; j++) {
                 m_children[j] = m_children[j + 1];
             }
             
-            m_child_count--;
-            m_children[m_child_count] = nullptr;
-            m_modify_time++;
+            m_childCount--;
+            m_children[m_childCount] = nullptr;
+            m_modifyTime++;
             
             return FSResult::SUCCESS;
         }
@@ -290,7 +290,7 @@ FSResult RamFSNode::remove_child(const char* name) {
 }
 
 RamFSNode* RamFSNode::find_child(const char* name) {
-    for (u32 i = 0; i < m_child_count; i++) {
+    for (u32 i = 0; i < m_childCount; i++) {
         if (m_children[i] && strcmp(m_children[i]->get_name(), name) == 0) {
             return m_children[i];
         }
@@ -302,7 +302,7 @@ RamFSNode* RamFSNode::find_child(const char* name) {
 // RamFS Implementation
 //=============================================================================
 
-RamFS::RamFS() : m_root(nullptr), m_next_inode(1) {
+RamFS::RamFS() : m_root(nullptr), m_nextInode(1) {
 }
 
 RamFS::~RamFS() {

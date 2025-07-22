@@ -20,6 +20,7 @@
 #include "drivers/ata.hpp"
 #include "test/ata_driver_test.hpp"
 #include "test/vfs_test.hpp"
+#include "test/block_device_test.hpp"
 
 namespace kira::kernel {
 
@@ -100,6 +101,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("VFS ready for applications", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("VFS tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    
+    // Initialize and test Block Devices
+    console.add_message("Initializing Block Device Layer...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::BlockDeviceTest::run_tests()) {
+        console.add_message("Block devices ready for file systems", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("Block device tests failed", kira::display::VGA_RED_ON_BLUE);
     }
     
     // Initialize process management
