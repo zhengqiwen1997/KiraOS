@@ -21,6 +21,7 @@
 #include "test/ata_driver_test.hpp"
 #include "test/vfs_test.hpp"
 #include "test/block_device_test.hpp"
+#include "test/fat32_test.hpp"
 
 namespace kira::kernel {
 
@@ -109,6 +110,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("Block devices ready for file systems", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("Block device tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    
+    // Initialize and test FAT32 File System
+    console.add_message("Testing FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::FAT32Test::run_tests()) {
+        console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
     }
     
     // Initialize process management

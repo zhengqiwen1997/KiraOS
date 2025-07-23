@@ -19,21 +19,21 @@ public:
 
     /**
      * @brief Read blocks from device
-     * @param block_num Starting block number
-     * @param block_count Number of blocks to read
+     * @param blockNum Starting block number
+     * @param blockCount Number of blocks to read
      * @param buffer Buffer to store read data
      * @return FSResult::SUCCESS on success
      */
-    virtual FSResult read_blocks(u32 block_num, u32 block_count, void* buffer) = 0;
+    virtual FSResult read_blocks(u32 blockNum, u32 blockCount, void* buffer) = 0;
 
     /**
      * @brief Write blocks to device
-     * @param block_num Starting block number
-     * @param block_count Number of blocks to write
+     * @param blockNum Starting block number
+     * @param blockCount Number of blocks to write
      * @param buffer Buffer containing data to write
      * @return FSResult::SUCCESS on success
      */
-    virtual FSResult write_blocks(u32 block_num, u32 block_count, const void* buffer) = 0;
+    virtual FSResult write_blocks(u32 blockNum, u32 blockCount, const void* buffer) = 0;
 
     /**
      * @brief Get device information
@@ -58,14 +58,14 @@ class ATABlockDevice : public BlockDevice {
 public:
     /**
      * @brief Constructor
-     * @param drive_type ATA drive type (MASTER/SLAVE)
+     * @param driveType ATA drive type (MASTER/SLAVE)
      */
-    explicit ATABlockDevice(u8 drive_type);
+    explicit ATABlockDevice(u8 driveType);
     virtual ~ATABlockDevice() = default;
 
     // BlockDevice interface
-    FSResult read_blocks(u32 block_num, u32 block_count, void* buffer) override;
-    FSResult write_blocks(u32 block_num, u32 block_count, const void* buffer) override;
+    FSResult read_blocks(u32 blockNum, u32 blockCount, void* buffer) override;
+    FSResult write_blocks(u32 blockNum, u32 blockCount, const void* buffer) override;
     u32 get_block_size() const override;
     u32 get_block_count() const override;
     bool is_read_only() const override;
@@ -98,24 +98,24 @@ public:
     /**
      * @brief Register a block device
      * @param device Block device to register
-     * @param device_name Name for the device (e.g., "hda", "hdb")
+     * @param deviceName Name for the device (e.g., "hda", "hdb")
      * @return Device ID on success, -1 on failure
      */
-    i32 register_device(BlockDevice* device, const char* device_name);
+    i32 register_device(BlockDevice* device, const char* deviceName);
 
     /**
-     * @brief Get a block device by ID
-     * @param device_id Device ID returned by register_device
-     * @return Block device pointer or nullptr
+     * @brief Get device by ID
+     * @param deviceId Device ID returned by register_device
+     * @return Pointer to device, nullptr if not found
      */
-    BlockDevice* get_device(i32 device_id);
+    BlockDevice* get_device(i32 deviceId);
 
     /**
-     * @brief Get a block device by name
-     * @param device_name Device name
-     * @return Block device pointer or nullptr
+     * @brief Get device by name
+     * @param deviceName Device name
+     * @return Pointer to device, nullptr if not found
      */
-    BlockDevice* get_device(const char* device_name);
+    BlockDevice* get_device(const char* deviceName);
 
     /**
      * @brief Initialize all registered devices
@@ -125,7 +125,9 @@ public:
 
 private:
     BlockDeviceManager() = default;
-    static BlockDeviceManager* s_instance;
+    ~BlockDeviceManager() = default;
+    BlockDeviceManager(const BlockDeviceManager&) = delete;
+    BlockDeviceManager& operator=(const BlockDeviceManager&) = delete;
 
     struct DeviceEntry {
         BlockDevice* device;
@@ -133,9 +135,11 @@ private:
         bool active;
     };
 
+    static BlockDeviceManager* s_instance;
     static constexpr u32 MAX_DEVICES = 8;
-    DeviceEntry m_devices[MAX_DEVICES];
+
     u32 m_deviceCount;
+    DeviceEntry m_devices[MAX_DEVICES];
 };
 
 } // namespace kira::fs 

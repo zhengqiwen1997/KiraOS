@@ -1,7 +1,6 @@
 #pragma once
 
 #include "fs/vfs.hpp"
-#include "core/utils.hpp"
 
 namespace kira::fs {
 

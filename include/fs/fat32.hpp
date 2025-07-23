@@ -9,7 +9,7 @@ namespace kira::fs {
 using namespace kira::system;
 
 // FAT32 filesystem structures (little-endian)
-struct FAT32_BPB {
+struct Fat32Bpb {
     u8  jump_boot[3];           // Jump instruction
     u8  oem_name[8];            // OEM name
     u16 bytes_per_sector;       // Bytes per sector (usually 512)
@@ -39,7 +39,7 @@ struct FAT32_BPB {
     u8  fs_type[8];             // Filesystem type
 } __attribute__((packed));
 
-struct FAT32_DirEntry {
+struct Fat32DirEntry {
     u8  name[11];               // 8.3 filename
     u8  attr;                   // File attributes
     u8  nt_reserved;            // Reserved for Windows NT
@@ -55,7 +55,7 @@ struct FAT32_DirEntry {
 } __attribute__((packed));
 
 // FAT32 file attributes
-namespace FAT32_Attr {
+namespace Fat32Attr {
     constexpr u8 READ_ONLY = 0x01;
     constexpr u8 HIDDEN = 0x02;
     constexpr u8 SYSTEM = 0x04;
@@ -66,7 +66,7 @@ namespace FAT32_Attr {
 }
 
 // FAT32 cluster values
-namespace FAT32_Cluster {
+namespace Fat32Cluster {
     constexpr u32 FREE = 0x00000000;
     constexpr u32 RESERVED_MIN = 0x0FFFFFF0;
     constexpr u32 RESERVED_MAX = 0x0FFFFFF6;
@@ -81,7 +81,7 @@ namespace FAT32_Cluster {
  */
 class FAT32Node : public VNode {
 public:
-    FAT32Node(u32 inode, FileType type, FileSystem* fs, u32 first_cluster, u32 size = 0);
+    FAT32Node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster, u32 size = 0);
     virtual ~FAT32Node() = default;
 
     // File operations
@@ -106,13 +106,13 @@ private:
     u32 m_size;                 // File size (directories: 0)
     
     // Cached directory entries for directories
-    FAT32_DirEntry* m_dirEntries;
+    Fat32DirEntry* m_dirEntries;
     u32 m_dirEntryCount;
     bool m_dirCacheValid;
     
     FSResult load_directory_cache();
     void invalidate_directory_cache();
-    FSResult convert_fat_entry_to_vfs(const FAT32_DirEntry& fat_entry, DirectoryEntry& vfs_entry);
+    FSResult convert_fat_entry_to_vfs(const Fat32DirEntry& fatEntry, DirectoryEntry& vfsEntry);
 };
 
 /**
@@ -137,14 +137,14 @@ public:
     FSResult read_cluster(u32 cluster, void* buffer);
     FSResult write_cluster(u32 cluster, const void* buffer);
     u32 get_next_cluster(u32 cluster);
-    FSResult set_next_cluster(u32 cluster, u32 next_cluster);
+    FSResult set_next_cluster(u32 cluster, u32 nextCluster);
     u32 allocate_cluster();
     FSResult free_cluster(u32 cluster);
 
 private:
     BlockDevice* m_device;
     FAT32Node* m_root;
-    FAT32_BPB m_bpb;
+    Fat32Bpb m_bpb;
     u32 m_fatStartSector;
     u32 m_dataStartSector;
     u32 m_sectorsPerCluster;
@@ -160,7 +160,24 @@ private:
     FSResult flush_fat_cache();
     u32 cluster_to_sector(u32 cluster);
     FSResult parse_bpb();
+    
+    // Cluster allocation and management
+    FSResult extend_cluster_chain(u32 lastCluster, u32& newCluster);
+
+public:
     u32 allocate_inode() { return m_nextInode++; }
+    
+    // FAT32 specific operations
+    FSResult read_file_data(u32 firstCluster, u32 offset, u32 size, void* buffer);
+    FSResult write_file_data(u32 firstCluster, u32 offset, u32 size, const void* buffer);
+    FSResult get_next_cluster(u32 cluster, u32& nextCluster);
+    u32 get_cluster_chain_size(u32 firstCluster);
+    void convert_fat_name(const u8* fatName, char* standardName);
+    
+    // Directory operations
+    FSResult create_file_in_directory(u32 dirCluster, const char* name, FileType type);
+    FSResult delete_file_from_directory(u32 dirCluster, const char* name);
+    FSResult lookup_in_directory(u32 dirCluster, const char* name, VNode*& result);
 };
 
 } // namespace kira::fs 

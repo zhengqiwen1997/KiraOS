@@ -62,30 +62,30 @@ bool BlockDeviceTest::test_device_registration() {
     BlockDeviceManager& manager = BlockDeviceManager::get_instance();
     
     // Create a test ATA device
-    void* device_memory = memMgr.allocate_physical_page();
-    if (!device_memory) {
+    void* deviceMemory = memMgr.allocate_physical_page();
+    if (!deviceMemory) {
         return false;
     }
     
-    ATABlockDevice* ata_device = new(device_memory) ATABlockDevice(0);  // Master drive
+    ATABlockDevice* ataDevice = new(deviceMemory) ATABlockDevice(0);  // Master drive
     
     // Register the device
-    i32 device_id = manager.register_device(ata_device, "hda");
-    if (device_id < 0) {
+    i32 deviceId = manager.register_device(ataDevice, "hda");
+    if (deviceId < 0) {
         console.add_message("Failed to register ATA device", kira::display::VGA_RED_ON_BLUE);
         return false;
     }
     
     // Test lookup by ID
-    BlockDevice* found_device = manager.get_device(device_id);
-    if (found_device != ata_device) {
+    BlockDevice* foundDevice = manager.get_device(deviceId);
+    if (foundDevice != ataDevice) {
         console.add_message("Device lookup by ID failed", kira::display::VGA_RED_ON_BLUE);
         return false;
     }
     
     // Test lookup by name
-    found_device = manager.get_device("hda");
-    if (found_device != ata_device) {
+    foundDevice = manager.get_device("hda");
+    if (foundDevice != ataDevice) {
         console.add_message("Device lookup by name failed", kira::display::VGA_RED_ON_BLUE);
         return false;
     }
@@ -99,9 +99,9 @@ bool BlockDeviceTest::test_ata_device_init() {
     BlockDeviceManager& manager = BlockDeviceManager::get_instance();
     
     // Initialize all registered devices
-    u32 initialized_count = manager.initialize_devices();
+    u32 initializedCount = manager.initialize_devices();
     
-    if (initialized_count == 0) {
+    if (initializedCount == 0) {
         console.add_message("No block devices initialized", kira::display::VGA_YELLOW_ON_BLUE);
         // This might be OK if no ATA drives are present
         return true;
@@ -109,9 +109,9 @@ bool BlockDeviceTest::test_ata_device_init() {
     
     char msg[64];
     strcpy_s(msg, "Initialized ", sizeof(msg));
-    char count_str[16];
-    number_to_decimal(count_str, initialized_count);
-    strcat(msg, count_str);
+    char countStr[16];
+    number_to_decimal(countStr, initializedCount);
+    strcat(msg, countStr);
     strcat(msg, " block device(s)");
     console.add_message(msg, kira::display::VGA_YELLOW_ON_BLUE);
     
@@ -131,53 +131,53 @@ bool BlockDeviceTest::test_block_operations() {
     }
     
     // Allocate test buffers
-    void* write_buffer = memMgr.allocate_physical_page();
-    void* read_buffer = memMgr.allocate_physical_page();
+    void* writeBuffer = memMgr.allocate_physical_page();
+    void* readBuffer = memMgr.allocate_physical_page();
     
-    if (!write_buffer || !read_buffer) {
-        if (write_buffer) memMgr.free_physical_page(write_buffer);
-        if (read_buffer) memMgr.free_physical_page(read_buffer);
+    if (!writeBuffer || !readBuffer) {
+        if (writeBuffer) memMgr.free_physical_page(writeBuffer);
+        if (readBuffer) memMgr.free_physical_page(readBuffer);
         return false;
     }
     
     // Fill write buffer with test pattern
-    u8* write_bytes = static_cast<u8*>(write_buffer);
+    u8* writeBytes = static_cast<u8*>(writeBuffer);
     for (u32 i = 0; i < 512; i++) {
-        write_bytes[i] = static_cast<u8>(i & 0xFF);
+        writeBytes[i] = static_cast<u8>(i & 0xFF);
     }
     
     // Test block write (to a safe location - block 100)
-    FSResult result = device->write_blocks(100, 1, write_buffer);
+    FSResult result = device->write_blocks(100, 1, writeBuffer);
     if (result != FSResult::SUCCESS) {
         console.add_message("Block write failed", kira::display::VGA_RED_ON_BLUE);
-        memMgr.free_physical_page(write_buffer);
-        memMgr.free_physical_page(read_buffer);
+        memMgr.free_physical_page(writeBuffer);
+        memMgr.free_physical_page(readBuffer);
         return false;
     }
     
     // Test block read
-    result = device->read_blocks(100, 1, read_buffer);
+    result = device->read_blocks(100, 1, readBuffer);
     if (result != FSResult::SUCCESS) {
         console.add_message("Block read failed", kira::display::VGA_RED_ON_BLUE);
-        memMgr.free_physical_page(write_buffer);
-        memMgr.free_physical_page(read_buffer);
+        memMgr.free_physical_page(writeBuffer);
+        memMgr.free_physical_page(readBuffer);
         return false;
     }
     
     // Verify data
-    u8* read_bytes = static_cast<u8*>(read_buffer);
-    bool data_match = true;
+    u8* readBytes = static_cast<u8*>(readBuffer);
+    bool dataMatch = true;
     for (u32 i = 0; i < 512; i++) {
-        if (read_bytes[i] != write_bytes[i]) {
-            data_match = false;
+        if (readBytes[i] != writeBytes[i]) {
+            dataMatch = false;
             break;
         }
     }
     
-    memMgr.free_physical_page(write_buffer);
-    memMgr.free_physical_page(read_buffer);
+    memMgr.free_physical_page(writeBuffer);
+    memMgr.free_physical_page(readBuffer);
     
-    if (!data_match) {
+    if (!dataMatch) {
         console.add_message("Block data verification failed", kira::display::VGA_RED_ON_BLUE);
         return false;
     }

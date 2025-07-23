@@ -16,8 +16,8 @@ BlockDeviceManager* BlockDeviceManager::s_instance = nullptr;
 // ATABlockDevice Implementation
 //=============================================================================
 
-ATABlockDevice::ATABlockDevice(u8 drive_type)
-    : m_driveType(drive_type), m_initialized(false), m_blockCount(0), m_readOnly(false) {
+ATABlockDevice::ATABlockDevice(u8 driveType)
+    : m_driveType(driveType), m_initialized(false), m_blockCount(0), m_readOnly(false) {
 }
 
 FSResult ATABlockDevice::initialize() {
@@ -27,20 +27,20 @@ FSResult ATABlockDevice::initialize() {
     }
 
     // Check if our specific drive is present
-    ATADriver::DriveType ata_drive = (m_driveType == 0) ? 
+    ATADriver::DriveType ataDrive = (m_driveType == 0) ? 
         ATADriver::DriveType::MASTER : ATADriver::DriveType::SLAVE;
 
     // Try to get drive information to verify it exists
     auto& memMgr = MemoryManager::get_instance();
-    void* info_buffer = memMgr.allocate_physical_page();
-    if (!info_buffer) {
+    void* infoBuffer = memMgr.allocate_physical_page();
+    if (!infoBuffer) {
         return FSResult::NO_SPACE;
     }
 
-    bool drive_exists = ATADriver::get_drive_info(ata_drive, info_buffer);
-    memMgr.free_physical_page(info_buffer);
+    bool driveExists = ATADriver::get_drive_info(ataDrive, infoBuffer);
+    memMgr.free_physical_page(infoBuffer);
 
-    if (!drive_exists) {
+    if (!driveExists) {
         return FSResult::NOT_FOUND;
     }
 
@@ -53,50 +53,50 @@ FSResult ATABlockDevice::initialize() {
     return FSResult::SUCCESS;
 }
 
-FSResult ATABlockDevice::read_blocks(u32 block_num, u32 block_count, void* buffer) {
+FSResult ATABlockDevice::read_blocks(u32 blockNum, u32 blockCount, void* buffer) {
     if (!m_initialized) {
         return FSResult::IO_ERROR;
     }
 
-    if (!buffer || block_count == 0) {
+    if (!buffer || blockCount == 0) {
         return FSResult::INVALID_PARAMETER;
     }
 
-    if (block_num + block_count > m_blockCount) {
+    if (blockNum + blockCount > m_blockCount) {
         return FSResult::INVALID_PARAMETER;
     }
 
-    ATADriver::DriveType ata_drive = (m_driveType == 0) ? 
+    ATADriver::DriveType ataDrive = (m_driveType == 0) ? 
         ATADriver::DriveType::MASTER : ATADriver::DriveType::SLAVE;
 
     // ATA driver expects sector count as u8, so we need to handle large reads
-    u8* byte_buffer = static_cast<u8*>(buffer);
-    u32 blocks_remaining = block_count;
-    u32 current_block = block_num;
+    u8* byteBuffer = static_cast<u8*>(buffer);
+    u32 blocksRemaining = blockCount;
+    u32 currentBlock = blockNum;
 
-    while (blocks_remaining > 0) {
-        u32 blocks_to_read = (blocks_remaining > 255) ? 255 : blocks_remaining;
+    while (blocksRemaining > 0) {
+        u32 blocksToRead = (blocksRemaining > 255) ? 255 : blocksRemaining;
         
         bool success = ATADriver::read_sectors(
-            ata_drive, 
-            current_block, 
-            static_cast<u8>(blocks_to_read), 
-            byte_buffer
+            ataDrive, 
+            currentBlock, 
+            static_cast<u8>(blocksToRead), 
+            byteBuffer
         );
 
         if (!success) {
             return FSResult::IO_ERROR;
         }
 
-        byte_buffer += blocks_to_read * BLOCK_SIZE;
-        current_block += blocks_to_read;
-        blocks_remaining -= blocks_to_read;
+        byteBuffer += blocksToRead * BLOCK_SIZE;
+        currentBlock += blocksToRead;
+        blocksRemaining -= blocksToRead;
     }
 
     return FSResult::SUCCESS;
 }
 
-FSResult ATABlockDevice::write_blocks(u32 block_num, u32 block_count, const void* buffer) {
+FSResult ATABlockDevice::write_blocks(u32 blockNum, u32 blockCount, const void* buffer) {
     if (!m_initialized) {
         return FSResult::IO_ERROR;
     }
@@ -105,39 +105,39 @@ FSResult ATABlockDevice::write_blocks(u32 block_num, u32 block_count, const void
         return FSResult::PERMISSION_DENIED;
     }
 
-    if (!buffer || block_count == 0) {
+    if (!buffer || blockCount == 0) {
         return FSResult::INVALID_PARAMETER;
     }
 
-    if (block_num + block_count > m_blockCount) {
+    if (blockNum + blockCount > m_blockCount) {
         return FSResult::INVALID_PARAMETER;
     }
 
-    ATADriver::DriveType ata_drive = (m_driveType == 0) ? 
+    ATADriver::DriveType ataDrive = (m_driveType == 0) ? 
         ATADriver::DriveType::MASTER : ATADriver::DriveType::SLAVE;
 
     // Handle large writes similar to reads
-    const u8* byte_buffer = static_cast<const u8*>(buffer);
-    u32 blocks_remaining = block_count;
-    u32 current_block = block_num;
+    const u8* byteBuffer = static_cast<const u8*>(buffer);
+    u32 blocksRemaining = blockCount;
+    u32 currentBlock = blockNum;
 
-    while (blocks_remaining > 0) {
-        u32 blocks_to_write = (blocks_remaining > 255) ? 255 : blocks_remaining;
+    while (blocksRemaining > 0) {
+        u32 blocksToWrite = (blocksRemaining > 255) ? 255 : blocksRemaining;
         
         bool success = ATADriver::write_sectors(
-            ata_drive, 
-            current_block, 
-            static_cast<u8>(blocks_to_write), 
-            byte_buffer
+            ataDrive, 
+            currentBlock, 
+            static_cast<u8>(blocksToWrite), 
+            byteBuffer
         );
 
         if (!success) {
             return FSResult::IO_ERROR;
         }
 
-        byte_buffer += blocks_to_write * BLOCK_SIZE;
-        current_block += blocks_to_write;
-        blocks_remaining -= blocks_to_write;
+        byteBuffer += blocksToWrite * BLOCK_SIZE;
+        currentBlock += blocksToWrite;
+        blocksRemaining -= blocksToWrite;
     }
 
     return FSResult::SUCCESS;
@@ -175,14 +175,14 @@ BlockDeviceManager& BlockDeviceManager::get_instance() {
     return *s_instance;
 }
 
-i32 BlockDeviceManager::register_device(BlockDevice* device, const char* device_name) {
-    if (!device || !device_name || m_deviceCount >= MAX_DEVICES) {
+i32 BlockDeviceManager::register_device(BlockDevice* device, const char* deviceName) {
+    if (!device || !deviceName || m_deviceCount >= MAX_DEVICES) {
         return -1;
     }
 
     // Check for duplicate names
     for (u32 i = 0; i < m_deviceCount; i++) {
-        if (m_devices[i].active && strcmp(m_devices[i].name, device_name) == 0) {
+        if (m_devices[i].active && strcmp(m_devices[i].name, deviceName) == 0) {
             return -1;  // Name already exists
         }
     }
@@ -191,7 +191,7 @@ i32 BlockDeviceManager::register_device(BlockDevice* device, const char* device_
     for (u32 i = 0; i < MAX_DEVICES; i++) {
         if (!m_devices[i].active) {
             m_devices[i].device = device;
-            strcpy_s(m_devices[i].name, device_name, sizeof(m_devices[i].name));
+            strcpy_s(m_devices[i].name, deviceName, sizeof(m_devices[i].name));
             m_devices[i].active = true;
             
             if (i >= m_deviceCount) {
@@ -205,25 +205,25 @@ i32 BlockDeviceManager::register_device(BlockDevice* device, const char* device_
     return -1;  // No free slots
 }
 
-BlockDevice* BlockDeviceManager::get_device(i32 device_id) {
-    if (device_id < 0 || static_cast<u32>(device_id) >= m_deviceCount) {
+BlockDevice* BlockDeviceManager::get_device(i32 deviceId) {
+    if (deviceId < 0 || static_cast<u32>(deviceId) >= m_deviceCount) {
         return nullptr;
     }
 
-    if (!m_devices[device_id].active) {
+    if (!m_devices[deviceId].active) {
         return nullptr;
     }
 
-    return m_devices[device_id].device;
+    return m_devices[deviceId].device;
 }
 
-BlockDevice* BlockDeviceManager::get_device(const char* device_name) {
-    if (!device_name) {
+BlockDevice* BlockDeviceManager::get_device(const char* deviceName) {
+    if (!deviceName) {
         return nullptr;
     }
 
     for (u32 i = 0; i < m_deviceCount; i++) {
-        if (m_devices[i].active && strcmp(m_devices[i].name, device_name) == 0) {
+        if (m_devices[i].active && strcmp(m_devices[i].name, deviceName) == 0) {
             return m_devices[i].device;
         }
     }
@@ -232,7 +232,7 @@ BlockDevice* BlockDeviceManager::get_device(const char* device_name) {
 }
 
 u32 BlockDeviceManager::initialize_devices() {
-    u32 initialized_count = 0;
+    u32 initializedCount = 0;
 
     for (u32 i = 0; i < m_deviceCount; i++) {
         if (!m_devices[i].active) {
@@ -242,13 +242,13 @@ u32 BlockDeviceManager::initialize_devices() {
         // Try to initialize the device
         // For now, assume all devices are ATA devices and need initialization
         // In a more complete implementation, we'd have a device type field
-        ATABlockDevice* ata_device = static_cast<ATABlockDevice*>(m_devices[i].device);
-        if (ata_device->initialize() == FSResult::SUCCESS) {
-            initialized_count++;
+        ATABlockDevice* ataDevice = static_cast<ATABlockDevice*>(m_devices[i].device);
+        if (ataDevice->initialize() == FSResult::SUCCESS) {
+            initializedCount++;
         }
     }
 
-    return initialized_count;
+    return initializedCount;
 }
 
 } // namespace kira::fs 

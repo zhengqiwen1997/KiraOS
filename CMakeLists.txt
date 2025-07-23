@@ -68,6 +68,7 @@ add_library(kernel_core STATIC
     kernel/test/ata_driver_test.cpp
     kernel/test/vfs_test.cpp
     kernel/test/block_device_test.cpp
+    kernel/test/fat32_test.cpp
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/lib/libkira.cpp
@@ -87,6 +88,7 @@ add_library(kernel_core STATIC
     kernel/fs/vfs.cpp
     kernel/fs/ramfs.cpp
     kernel/fs/block_device.cpp
+    kernel/fs/fat32.cpp
     kernel/display/console.cpp
     kernel/debug/serial_debugger.cpp
     kernel/arch/x86/exception_stubs.s
