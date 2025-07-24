@@ -144,6 +144,7 @@ public:
 private:
     BlockDevice* m_device;
     FAT32Node* m_root;
+    bool m_mounted;
     Fat32Bpb m_bpb;
     u32 m_fatStartSector;
     u32 m_dataStartSector;
@@ -173,11 +174,17 @@ public:
     FSResult get_next_cluster(u32 cluster, u32& nextCluster);
     u32 get_cluster_chain_size(u32 firstCluster);
     void convert_fat_name(const u8* fatName, char* standardName);
+    void convert_standard_name_to_fat(const char* standardName, u8* fatName);
     
     // Directory operations
     FSResult create_file_in_directory(u32 dirCluster, const char* name, FileType type);
     FSResult delete_file_from_directory(u32 dirCluster, const char* name);
     FSResult lookup_in_directory(u32 dirCluster, const char* name, VNode*& result);
+    
+    // Directory helper functions
+    FSResult initialize_directory(u32 dirCluster, u32 parentCluster);
+    FSResult delete_directory_contents(u32 dirCluster);
+    FSResult free_cluster_chain(u32 firstCluster);
 };
 
 } // namespace kira::fs 

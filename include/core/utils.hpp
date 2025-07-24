@@ -351,4 +351,35 @@ bool safe_modulo(T dividend, T divisor, T& result) {
     return true;
 }
 
+/**
+ * @brief Convert character to uppercase
+ * @param c Character to convert
+ * @return Uppercase version of character if it's lowercase, otherwise unchanged
+ */
+inline char toupper(char c) {
+    if (c >= 'a' && c <= 'z') {
+        return c - 'a' + 'A';
+    }
+    return c;
+}
+
+/**
+ * @brief Compare two memory regions byte by byte
+ * @param ptr1 First memory region
+ * @param ptr2 Second memory region
+ * @param num Number of bytes to compare
+ * @return 0 if equal, negative if ptr1 < ptr2, positive if ptr1 > ptr2
+ */
+inline int memcmp(const void* ptr1, const void* ptr2, u32 num) {
+    const u8* p1 = static_cast<const u8*>(ptr1);
+    const u8* p2 = static_cast<const u8*>(ptr2);
+    
+    for (u32 i = 0; i < num; i++) {
+        if (p1[i] != p2[i]) {
+            return (p1[i] < p2[i]) ? -1 : 1;
+        }
+    }
+    return 0;
+}
+
 } // namespace kira::utils 

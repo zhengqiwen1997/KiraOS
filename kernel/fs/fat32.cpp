@@ -7,6 +7,10 @@ namespace kira::fs {
 using namespace kira::system;
 using namespace kira::utils;
 
+
+
+
+
 //=============================================================================
 // FAT32Node Implementation
 //=============================================================================
@@ -15,6 +19,8 @@ FAT32Node::FAT32Node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster,
     : VNode(inode, type, fs), m_firstCluster(firstCluster), m_size(size),
       m_dirEntries(nullptr), m_dirEntryCount(0), m_dirCacheValid(false) {
 }
+
+
 
 
 
@@ -116,7 +122,17 @@ FSResult FAT32Node::create_file(const char* name, FileType type) {
     }
     
     FAT32* fat32 = static_cast<FAT32*>(m_filesystem);
-    return fat32->create_file_in_directory(m_firstCluster, name, type);
+    FSResult result = fat32->create_file_in_directory(m_firstCluster, name, type);
+    
+    // Invalidate directory cache so it gets reloaded with the new file
+    if (result == FSResult::SUCCESS) {
+        m_dirCacheValid = false;
+        // Force filesystem sync to ensure directory changes are written to disk
+        FAT32* fat32 = static_cast<FAT32*>(m_filesystem);
+        fat32->sync();
+    }
+    
+    return result;
 }
 
 FSResult FAT32Node::delete_file(const char* name) {
@@ -125,7 +141,17 @@ FSResult FAT32Node::delete_file(const char* name) {
     }
     
     FAT32* fat32 = static_cast<FAT32*>(m_filesystem);
-    return fat32->delete_file_from_directory(m_firstCluster, name);
+    FSResult result = fat32->delete_file_from_directory(m_firstCluster, name);
+    
+    // Invalidate directory cache so it gets reloaded without the deleted file
+    if (result == FSResult::SUCCESS) {
+        m_dirCacheValid = false;
+        // Force filesystem sync to ensure directory changes are written to disk
+        FAT32* fat32 = static_cast<FAT32*>(m_filesystem);
+        fat32->sync();
+    }
+    
+    return result;
 }
 
 FSResult FAT32Node::lookup(const char* name, VNode*& result) {
@@ -187,23 +213,24 @@ FSResult FAT32Node::load_directory_cache() {
 //=============================================================================
 
 FAT32::FAT32(BlockDevice* device) 
-    : m_device(device), m_root(nullptr), m_fatStartSector(0), m_dataStartSector(0),
+    : m_device(device), m_root(nullptr), m_mounted(false), m_fatStartSector(0), m_dataStartSector(0),
       m_sectorsPerCluster(0), m_bytesPerCluster(0), m_nextInode(1),
       m_fatCache(nullptr), m_fatCacheSector(0xFFFFFFFF), m_fatCacheDirty(false) {
 }
 
 FAT32::~FAT32() {
+    auto& memMgr = MemoryManager::get_instance();
+    
     if (m_fatCache) {
-        auto& memMgr = MemoryManager::get_instance();
         memMgr.free_physical_page(m_fatCache);
     }
     
     if (m_root) {
-        m_root->~FAT32Node();
-        auto& memMgr = MemoryManager::get_instance();
         memMgr.free_physical_page(m_root);
     }
 }
+
+
 
 FSResult FAT32::mount(const char* device) {
     if (m_mounted) {
@@ -567,31 +594,79 @@ void FAT32::convert_fat_name(const u8* fatName, char* standardName) {
     standardName[pos] = '\0';
 }
 
+void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) {
+    // Initialize with spaces
+    for (int i = 0; i < 11; i++) {
+        fatName[i] = ' ';
+    }
+    
+    int nameLen = strlen(standardName);
+    int dotPos = -1;
+    
+    // Find the dot (extension separator)
+    for (int i = 0; i < nameLen; i++) {
+        if (standardName[i] == '.') {
+            dotPos = i;
+            break;
+        }
+    }
+    
+    // Copy name part (up to 8 characters)
+    int nameEnd = (dotPos >= 0) ? dotPos : nameLen;
+    int namePartLen = (nameEnd > 8) ? 8 : nameEnd;
+    
+    for (int i = 0; i < namePartLen; i++) {
+        fatName[i] = toupper(standardName[i]);
+    }
+    
+    // Copy extension part (up to 3 characters)
+    if (dotPos >= 0 && dotPos < nameLen - 1) {
+        int extStart = dotPos + 1;
+        int extLen = nameLen - extStart;
+        if (extLen > 3) extLen = 3;
+        
+        for (int i = 0; i < extLen; i++) {
+            fatName[8 + i] = toupper(standardName[extStart + i]);
+        }
+    }
+}
+
 FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileType type) {
-    // TODO: Implement directory file creation
-    return FSResult::INVALID_PARAMETER;
-}
-
-FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
-    // TODO: Implement directory file deletion
-    return FSResult::INVALID_PARAMETER;
-}
-
-FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& result) {
     if (!name || strlen(name) == 0) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    // Read directory entries cluster by cluster
-    u32 currentCluster = dirCluster;
+    // Check if file already exists
+    VNode* existingNode;
+    if (lookup_in_directory(dirCluster, name, existingNode) == FSResult::SUCCESS) {
+        return FSResult::EXISTS;
+    }
     
-    while (currentCluster < Fat32Cluster::END_MIN) {
+    // Convert name to FAT format
+    u8 fatName[11];
+    convert_standard_name_to_fat(name, fatName);
+    
+    // Allocate a new cluster for the file/directory
+    u32 newCluster = allocate_cluster();
+    if (newCluster == 0) {
+        return FSResult::NO_SPACE;
+    }
+    
+    // Find a free directory entry
+    u32 currentCluster = dirCluster;
+    u32 entryOffset = 0;
+    bool foundFreeEntry = false;
+    u8 clusterBuffer[4096]; // Assume max cluster size
+    u32 targetSector = 0; // Track which sector we need to write back
+    
+    while (currentCluster < Fat32Cluster::END_MIN && !foundFreeEntry) {
         u32 sector = cluster_to_sector(currentCluster);
         
         // Read cluster containing directory entries
-        u8 clusterBuffer[4096]; // Assume max cluster size
+        
         FSResult readResult = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
         if (readResult != FSResult::SUCCESS) {
+            free_cluster(newCluster);
             return readResult;
         }
         
@@ -602,50 +677,255 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
         for (u32 i = 0; i < entriesPerCluster; i++) {
             Fat32DirEntry& entry = entries[i];
             
-            // Check for end of directory
+            // Check for end of directory or free entry
+            if (entry.name[0] == 0x00 || entry.name[0] == 0xE5) {
+                // Found a free entry
+                foundFreeEntry = true;
+                entryOffset = i;
+                targetSector = sector; // Remember which sector to write back
+                break;
+            }
+        }
+        
+        if (!foundFreeEntry) {
+            // Move to next cluster in directory
+            FSResult nextResult = get_next_cluster(currentCluster, currentCluster);
+            if (nextResult != FSResult::SUCCESS) {
+                // Need to extend directory
+                u32 newDirCluster = allocate_cluster();
+                if (newDirCluster == 0) {
+                    free_cluster(newCluster);
+                    return FSResult::NO_SPACE;
+                }
+                
+                // Link new cluster to directory
+                set_next_cluster(currentCluster, newDirCluster);
+                currentCluster = newDirCluster;
+                targetSector = cluster_to_sector(currentCluster);
+                entryOffset = 0;
+                foundFreeEntry = true;
+                
+                // Initialize new cluster with zeros
+                memset(clusterBuffer, 0, sizeof(clusterBuffer));
+            }
+        }
+    }
+    
+    if (!foundFreeEntry) {
+        free_cluster(newCluster);
+        return FSResult::NO_SPACE;
+    }
+    
+    // Create the directory entry
+    Fat32DirEntry newEntry;
+    memset(&newEntry, 0, sizeof(newEntry));
+    
+    // Copy name
+    memcpy(newEntry.name, fatName, 11);
+    
+    // Set attributes
+    newEntry.attr = (type == FileType::DIRECTORY) ? Fat32Attr::DIRECTORY : Fat32Attr::ARCHIVE;
+    
+    // Set timestamps (current time - simplified)
+    newEntry.create_time = 0;
+    newEntry.create_date = 0;
+    newEntry.write_time = 0;
+    newEntry.write_date = 0;
+    newEntry.last_access_date = 0;
+    
+    // Set first cluster
+    newEntry.first_cluster_low = newCluster & 0xFFFF;
+    newEntry.first_cluster_high = (newCluster >> 16) & 0xFFFF;
+    
+    // Set file size (0 for directories)
+    newEntry.file_size = (type == FileType::DIRECTORY) ? 0 : 0;
+    
+    // Write the directory entry (reuse the cluster buffer we already have)
+    Fat32DirEntry* entries = reinterpret_cast<Fat32DirEntry*>(clusterBuffer);
+    entries[entryOffset] = newEntry;
+    
+    // Write the cluster back to disk
+    FSResult writeResult = m_device->write_blocks(targetSector, m_sectorsPerCluster, clusterBuffer);
+    if (writeResult != FSResult::SUCCESS) {
+        free_cluster(newCluster);
+        return writeResult;
+    }
+    
+    // If creating a directory, initialize it with . and .. entries
+    if (type == FileType::DIRECTORY) {
+        FSResult initResult = initialize_directory(newCluster, dirCluster);
+        if (initResult != FSResult::SUCCESS) {
+            // Clean up on failure
+            free_cluster(newCluster);
+            return initResult;
+        }
+    }
+    
+    return FSResult::SUCCESS;
+}
+
+FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
+    if (!name || name[0] == '\0') {
+        return FSResult::INVALID_PARAMETER;
+    }
+    
+    // Convert name to FAT format for comparison
+    u8 fatName[11];
+    convert_standard_name_to_fat(name, fatName);
+    
+    // Get memory manager
+    auto& memMgr = MemoryManager::get_instance();
+    
+    // Read directory cluster by cluster to find the file
+    u32 currentCluster = dirCluster;
+    
+    while (currentCluster >= 2 && currentCluster < Fat32Cluster::END_MIN) {
+        // Read this cluster directly
+        u8 clusterBuffer[4096];
+        u32 sector = cluster_to_sector(currentCluster);
+        FSResult readResult = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+        if (readResult != FSResult::SUCCESS) {
+            return FSResult::IO_ERROR;
+        }
+        
+        // Search through directory entries in this cluster
+        Fat32DirEntry* entries = reinterpret_cast<Fat32DirEntry*>(clusterBuffer);
+        u32 entriesPerCluster = m_bytesPerCluster / sizeof(Fat32DirEntry);
+        
+        for (u32 i = 0; i < entriesPerCluster; i++) {
+            Fat32DirEntry& entry = entries[i];
+            
+            // End of directory
             if (entry.name[0] == 0x00) {
                 return FSResult::NOT_FOUND;
             }
             
-            // Skip deleted entries and volume labels
-            if (entry.name[0] == 0xE5 || (entry.attr & Fat32Attr::VOLUME_ID)) {
+            // Skip deleted entries
+            if (entry.name[0] == 0xE5) {
                 continue;
             }
             
-            // Convert FAT name to standard format
-            char standardName[256];
-            convert_fat_name(entry.name, standardName);
+            // Skip volume label and system files
+            if (entry.attr & (Fat32Attr::VOLUME_ID | Fat32Attr::SYSTEM)) {
+                continue;
+            }
             
-            // Check if this is the file we're looking for
-            if (strcmp(standardName, name) == 0) {
-                // Found the file! Create a VNode for it
-                auto& memMgr = MemoryManager::get_instance();
-                void* memory = memMgr.allocate_physical_page();
-                if (!memory) {
-                    return FSResult::NO_SPACE;
+            // Check if this matches our target file
+            if (memcmp(entry.name, fatName, 11) == 0) {
+                // Found it! Get file info before deleting
+                u32 firstCluster = (static_cast<u32>(entry.first_cluster_high) << 16) | entry.first_cluster_low;
+                bool isDirectory = (entry.attr & Fat32Attr::DIRECTORY) != 0;
+                
+                // Mark as deleted
+                entry.name[0] = 0xE5;
+                
+                // Write the modified cluster back
+                FSResult writeResult = m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+                if (writeResult != FSResult::SUCCESS) {
+                    return FSResult::IO_ERROR;
                 }
                 
-                // Get first cluster
-                u32 firstCluster = (static_cast<u32>(entry.first_cluster_high) << 16) | entry.first_cluster_low;
+                // Free the file's cluster chain if it has one
+                if (firstCluster >= 2) {
+                    if (isDirectory) {
+                        // For directories, recursively delete contents first
+                        delete_directory_contents(firstCluster);
+                    }
+                    free_cluster_chain(firstCluster);
+                }
                 
-                // Determine file type
-                FileType type = (entry.attr & Fat32Attr::DIRECTORY) ? FileType::DIRECTORY : FileType::REGULAR;
-                
-                // Create FAT32Node
-                FAT32Node* node = new(memory) FAT32Node(allocate_inode(), type, this, firstCluster, entry.file_size);
-                result = node;
+                // Sync to ensure changes are written
+                sync();
                 
                 return FSResult::SUCCESS;
             }
         }
         
-        // Move to next cluster in directory
-        FSResult nextResult = get_next_cluster(currentCluster, currentCluster);
+        // Move to next cluster in the chain
+        u32 nextCluster;
+        FSResult nextResult = get_next_cluster(currentCluster, nextCluster);
         if (nextResult != FSResult::SUCCESS) {
             break;
         }
+        currentCluster = nextCluster;
     }
     
+    return FSResult::NOT_FOUND;
+}
+
+FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& result) {
+    if (!name || strlen(name) == 0) {
+        return FSResult::INVALID_PARAMETER;
+    }
+    
+    // Convert search name to FAT format for comparison
+    u8 searchFatName[11];
+    convert_standard_name_to_fat(name, searchFatName);
+    
+    // Use the same method as VFS cache - read_file_data
+    u32 dirSize = get_cluster_chain_size(dirCluster);
+    u32 maxEntries = dirSize / sizeof(Fat32DirEntry);
+    
+    // Allocate buffer for directory entries
+    auto& memMgr = MemoryManager::get_instance();
+    Fat32DirEntry* dirEntries = static_cast<Fat32DirEntry*>(memMgr.allocate_physical_page());
+    if (!dirEntries) {
+        return FSResult::NO_SPACE;
+    }
+    
+    // Read directory data using read_file_data (same as VFS cache)
+    FSResult readResult = read_file_data(dirCluster, 0, maxEntries * sizeof(Fat32DirEntry), dirEntries);
+    if (readResult != FSResult::SUCCESS) {
+        memMgr.free_physical_page(dirEntries);
+        return readResult;
+    }
+    
+    // Search through all entries
+    for (u32 i = 0; i < maxEntries; i++) {
+        Fat32DirEntry& entry = dirEntries[i];
+        
+
+        
+        // Skip deleted entries
+        if (entry.name[0] == 0xE5) {
+            continue;
+        }
+        
+        // Skip end of directory marker
+        if (entry.name[0] == 0x00) {
+            break;
+        }
+        
+        // Skip volume label and system files
+        if (entry.attr & (Fat32Attr::VOLUME_ID | Fat32Attr::SYSTEM)) {
+            continue;
+        }
+        
+        // Check if this is the file we're looking for
+        if (memcmp(entry.name, searchFatName, 11) == 0) {
+            // Found the file! Create a VNode for it
+            void* memory = memMgr.allocate_physical_page();
+            if (!memory) {
+                memMgr.free_physical_page(dirEntries);
+                return FSResult::NO_SPACE;
+            }
+            
+            // Get first cluster
+            u32 firstCluster = (static_cast<u32>(entry.first_cluster_high) << 16) | entry.first_cluster_low;
+            
+            // Determine file type
+            FileType type = (entry.attr & Fat32Attr::DIRECTORY) ? FileType::DIRECTORY : FileType::REGULAR;
+            
+            // Create FAT32Node
+            FAT32Node* node = new(memory) FAT32Node(allocate_inode(), type, this, firstCluster, entry.file_size);
+            result = node;
+            
+            memMgr.free_physical_page(dirEntries);
+            return FSResult::SUCCESS;
+        }
+    }
+    
+    memMgr.free_physical_page(dirEntries);
     return FSResult::NOT_FOUND;
 }
 
@@ -735,6 +1015,151 @@ FSResult FAT32::extend_cluster_chain(u32 lastCluster, u32& newCluster) {
         free_cluster(newCluster);
         newCluster = 0;
         return result;
+    }
+    
+    return FSResult::SUCCESS;
+}
+
+FSResult FAT32::initialize_directory(u32 dirCluster, u32 parentCluster) {
+    // Read the directory cluster
+    u32 sector = cluster_to_sector(dirCluster);
+    u8 clusterBuffer[4096];
+    FSResult readResult = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+    if (readResult != FSResult::SUCCESS) {
+        return readResult;
+    }
+    
+    Fat32DirEntry* entries = reinterpret_cast<Fat32DirEntry*>(clusterBuffer);
+    
+    // Create . entry (points to self)
+    Fat32DirEntry& dotEntry = entries[0];
+    memset(&dotEntry, 0, sizeof(dotEntry));
+    
+    // Set name to "."
+    dotEntry.name[0] = '.';
+    for (int i = 1; i < 11; i++) {
+        dotEntry.name[i] = ' ';
+    }
+    
+    // Set attributes
+    dotEntry.attr = Fat32Attr::DIRECTORY;
+    
+    // Set first cluster to self
+    dotEntry.first_cluster_low = dirCluster & 0xFFFF;
+    dotEntry.first_cluster_high = (dirCluster >> 16) & 0xFFFF;
+    
+    // Create .. entry (points to parent)
+    Fat32DirEntry& dotDotEntry = entries[1];
+    memset(&dotDotEntry, 0, sizeof(dotDotEntry));
+    
+    // Set name to ".."
+    dotDotEntry.name[0] = '.';
+    dotDotEntry.name[1] = '.';
+    for (int i = 2; i < 11; i++) {
+        dotDotEntry.name[i] = ' ';
+    }
+    
+    // Set attributes
+    dotDotEntry.attr = Fat32Attr::DIRECTORY;
+    
+    // Set first cluster to parent
+    dotDotEntry.first_cluster_low = parentCluster & 0xFFFF;
+    dotDotEntry.first_cluster_high = (parentCluster >> 16) & 0xFFFF;
+    
+    // Mark end of directory
+    Fat32DirEntry& endEntry = entries[2];
+    endEntry.name[0] = 0x00;
+    
+    // Write back the cluster
+    FSResult writeResult = m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+    if (writeResult != FSResult::SUCCESS) {
+        return writeResult;
+    }
+    
+    return FSResult::SUCCESS;
+}
+
+FSResult FAT32::delete_directory_contents(u32 dirCluster) {
+    // Read directory entries cluster by cluster
+    u32 currentCluster = dirCluster;
+    
+    while (currentCluster < Fat32Cluster::END_MIN) {
+        u32 sector = cluster_to_sector(currentCluster);
+        
+        // Read cluster containing directory entries
+        u8 clusterBuffer[4096]; // Assume max cluster size
+        FSResult readResult = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+        if (readResult != FSResult::SUCCESS) {
+            return readResult;
+        }
+        
+        // Parse directory entries in this cluster
+        u32 entriesPerCluster = m_bytesPerCluster / sizeof(Fat32DirEntry);
+        Fat32DirEntry* entries = reinterpret_cast<Fat32DirEntry*>(clusterBuffer);
+        
+        for (u32 i = 0; i < entriesPerCluster; i++) {
+            Fat32DirEntry& entry = entries[i];
+            
+            // Check for end of directory
+            if (entry.name[0] == 0x00) {
+                return FSResult::SUCCESS; // End of directory
+            }
+            
+            // Skip deleted entries and volume labels
+            if (entry.name[0] == 0xE5 || (entry.attr & Fat32Attr::VOLUME_ID)) {
+                continue;
+            }
+            
+            // Get first cluster of the file/directory
+            u32 firstCluster = (static_cast<u32>(entry.first_cluster_high) << 16) | entry.first_cluster_low;
+            
+            // If it's a directory, recursively delete its contents
+            if (entry.attr & Fat32Attr::DIRECTORY) {
+                FSResult deleteResult = delete_directory_contents(firstCluster);
+                if (deleteResult != FSResult::SUCCESS) {
+                    return deleteResult;
+                }
+            }
+            
+            // Free the cluster chain
+            FSResult freeResult = free_cluster_chain(firstCluster);
+            if (freeResult != FSResult::SUCCESS) {
+                return freeResult;
+            }
+            
+            // Mark directory entry as deleted
+            entry.name[0] = 0xE5;
+            
+            // Write back the modified cluster
+            FSResult writeResult = m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+            if (writeResult != FSResult::SUCCESS) {
+                return writeResult;
+            }
+        }
+        
+        // Move to next cluster in directory
+        FSResult nextResult = get_next_cluster(currentCluster, currentCluster);
+        if (nextResult != FSResult::SUCCESS) {
+            break;
+        }
+    }
+    
+    return FSResult::SUCCESS;
+}
+
+FSResult FAT32::free_cluster_chain(u32 firstCluster) {
+    u32 currentCluster = firstCluster;
+    
+    while (currentCluster < Fat32Cluster::END_MIN) {
+        FSResult result = free_cluster(currentCluster);
+        if (result != FSResult::SUCCESS) {
+            return result;
+        }
+        
+        FSResult nextResult = get_next_cluster(currentCluster, currentCluster);
+        if (nextResult != FSResult::SUCCESS) {
+            break;
+        }
     }
     
     return FSResult::SUCCESS;

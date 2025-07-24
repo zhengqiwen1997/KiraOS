@@ -25,6 +25,7 @@ bool FAT32Test::run_tests() {
     allPassed &= test_fat32_file_reading();
     allPassed &= test_fat32_integration_with_vfs();
     allPassed &= test_fat32_read_write_operations();
+    allPassed &= test_fat32_directory_operations();
     
     if (allPassed) {
         console.add_message("\n=== All FAT32 Tests Passed ===\n", VGA_GREEN_ON_BLUE);
@@ -219,6 +220,8 @@ bool FAT32Test::test_fat32_file_reading() {
             
             // Test read operation API (expected to fail without mounted filesystem)
             u8 readBuffer[512];
+            memset(readBuffer, 0, sizeof(readBuffer));
+            
             FSResult readResult = testNode->read(0, 512, readBuffer);
             if (readResult == FSResult::SUCCESS) {
                 console.add_message("FAT32 Node read API - unexpected success", VGA_YELLOW_ON_BLUE);
@@ -426,6 +429,499 @@ bool FAT32Test::test_fat32_read_write_operations() {
     return testPassed;
 }
 
+bool FAT32Test::test_fat32_directory_operations() {
+    bool testPassed = true;
+    
+    console.add_message("Testing FAT32 directory operations...", VGA_CYAN_ON_BLUE);
+    
+    // Get a block device for testing
+    BlockDeviceManager& bdm = BlockDeviceManager::get_instance();
+    BlockDevice* device = bdm.get_device(0);
+    
+    if (!device) {
+        console.add_message("No block device for directory operations test", VGA_YELLOW_ON_BLUE);
+        print_test_result("FAT32 Directory Operations (skipped)", true);
+        return true;
+    }
+    
+    // Create some mock FAT32 data on the device
+    if (!create_mock_fat32_data(device)) {
+        console.add_message("Failed to create mock FAT32 data for directory test", VGA_RED_ON_BLUE);
+        print_test_result("FAT32 Directory Operations (setup failed)", false);
+        return false;
+    }
+    
+    // Create FAT32 instance
+    auto& memMgr = MemoryManager::get_instance();
+    void* fat32Memory = memMgr.allocate_physical_page();
+    if (!fat32Memory) {
+        testPassed = false;
+    } else {
+        FAT32* fat32 = new(fat32Memory) FAT32(device);
+        
+        // Mount the FAT32 filesystem
+        FSResult mountResult = fat32->mount("test");
+        if (mountResult != FSResult::SUCCESS) {
+            console.add_message("FAT32 mount failed for directory operations test", VGA_YELLOW_ON_BLUE);
+            fat32->~FAT32();
+            memMgr.free_physical_page(fat32Memory);
+            print_test_result("FAT32 Directory Operations (mount failed)", false);
+            return false;
+        }
+        
+        console.add_message("FAT32 mount successful for directory operations", VGA_GREEN_ON_BLUE);
+        
+        // Debug: Test name conversion
+        u8 testFatName[11];
+        fat32->convert_standard_name_to_fat("test.txt", testFatName);
+        console.add_message("Name conversion test completed", VGA_YELLOW_ON_BLUE);
+        
+        // Debug: Show what the converted name looks like
+        char convertedName[256];
+        fat32->convert_fat_name(testFatName, convertedName);
+        char nameMsg[256];
+        strcpy_s(nameMsg, "Converted name: '", sizeof(nameMsg));
+        strcat(nameMsg, convertedName);
+        strcat(nameMsg, "'");
+        console.add_message(nameMsg, VGA_CYAN_ON_BLUE);
+        
+        // Get root directory
+        VNode* rootNode = nullptr;
+        FSResult rootResult = fat32->get_root(rootNode);
+        if (rootResult != FSResult::SUCCESS || !rootNode) {
+            console.add_message("Failed to get root directory", VGA_RED_ON_BLUE);
+            testPassed = false;
+        } else {
+            console.add_message("Root directory obtained successfully", VGA_GREEN_ON_BLUE);
+            
+            // Simple test: just try to create a file and see what happens
+            console.add_message("Attempting to create FIRST file...", VGA_YELLOW_ON_BLUE);
+            
+            // Debug: Check what lookup finds before creating first file
+            VNode* existingNode1 = nullptr;
+            FSResult lookupResult1 = rootNode->lookup("test.txt", existingNode1);
+            
+            char resultMsg[256];
+            char resultStr[16];
+            strcpy_s(resultMsg, "Pre-creation lookup for 'test.txt': ", sizeof(resultMsg));
+            number_to_decimal(resultStr, static_cast<u32>(lookupResult1));
+            strcat(resultMsg, resultStr);
+            console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+            
+            if (lookupResult1 == FSResult::SUCCESS && existingNode1) {
+                console.add_message("'test.txt' already exists before creation!", VGA_RED_ON_BLUE);
+                existingNode1->~VNode();
+                memMgr.free_physical_page(existingNode1);
+            }
+            
+            FSResult createFileResult = rootNode->create_file("test.txt", FileType::REGULAR);
+            
+            strcpy_s(resultMsg, "FIRST file creation result: ", sizeof(resultMsg));
+            number_to_decimal(resultStr, static_cast<u32>(createFileResult));
+            strcat(resultMsg, resultStr);
+            console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+            
+            if (createFileResult == FSResult::SUCCESS) {
+                console.add_message("File creation successful!", VGA_GREEN_ON_BLUE);
+                
+                // Debug: Check raw directory immediately after first file creation
+                console.add_message("Raw directory immediately after FIRST file creation:", VGA_YELLOW_ON_BLUE);
+                u8 rawClusterData1[4096];
+                FSResult rawReadResult1 = device->read_blocks(2080, 8, rawClusterData1);
+                if (rawReadResult1 == FSResult::SUCCESS) {
+                    Fat32DirEntry* rawEntries1 = reinterpret_cast<Fat32DirEntry*>(rawClusterData1);
+                    for (u32 i = 0; i < 4; i++) {
+                        Fat32DirEntry& rawEntry = rawEntries1[i];
+                        char entryMsg[256];
+                        strcpy_s(entryMsg, "After 1st: Entry ", sizeof(entryMsg));
+                        char indexStr[16];
+                        number_to_decimal(indexStr, i);
+                        strcat(entryMsg, indexStr);
+                        strcat(entryMsg, ": first_byte=");
+                        char firstByteStr[16];
+                        number_to_decimal(firstByteStr, (u32)rawEntry.name[0]);
+                        strcat(entryMsg, firstByteStr);
+                        
+                        if (rawEntry.name[0] == 0x00) {
+                            strcat(entryMsg, " FREE");
+                        } else if (rawEntry.name[0] == 0xE5) {
+                            strcat(entryMsg, " DELETED");
+                        } else {
+                            strcat(entryMsg, " ");
+                            char rawName[12];
+                            for (int j = 0; j < 11; j++) {
+                                rawName[j] = rawEntry.name[j];
+                            }
+                            rawName[11] = '\0';
+                            strcat(entryMsg, rawName);
+                        }
+                        console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                    }
+                }
+                
+                // Force sync to ensure first file is written to disk before creating second file
+                fat32->sync();
+                console.add_message("Synced filesystem after first file creation", VGA_YELLOW_ON_BLUE);
+                
+                // Debug: Show raw directory entries after first file creation
+                console.add_message("Raw directory entries after first file creation:", VGA_YELLOW_ON_BLUE);
+                for (u32 i = 0; i < 16; i++) { // Check first 16 entries
+                    DirectoryEntry dirEntry;
+                    FSResult listResult = rootNode->read_dir(i, dirEntry);
+                    if (listResult == FSResult::SUCCESS) {
+                        char entryMsg[256];
+                        strcpy_s(entryMsg, "Raw Entry ", sizeof(entryMsg));
+                        char indexStr[16];
+                        number_to_decimal(indexStr, i);
+                        strcat(entryMsg, indexStr);
+                        strcat(entryMsg, ": '");
+                        strcat(entryMsg, dirEntry.name);
+                        strcat(entryMsg, "'");
+                        console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                    } else if (listResult == FSResult::NOT_FOUND) {
+                        console.add_message("End of directory reached", VGA_YELLOW_ON_BLUE);
+                        break; // End of directory
+                    }
+                }
+                
+                // Debug: List directory entries after first file creation
+                console.add_message("Listing directory entries after first file creation...", VGA_YELLOW_ON_BLUE);
+                for (u32 i = 0; i < 10; i++) { // Check first 10 entries
+                    DirectoryEntry dirEntry;
+                    FSResult listResult = rootNode->read_dir(i, dirEntry);
+                    if (listResult == FSResult::SUCCESS) {
+                        char entryMsg[256];
+                        strcpy_s(entryMsg, "Entry ", sizeof(entryMsg));
+                        char indexStr[16];
+                        number_to_decimal(indexStr, i);
+                        strcat(entryMsg, indexStr);
+                        strcat(entryMsg, ": '");
+                        strcat(entryMsg, dirEntry.name);
+                        strcat(entryMsg, "'");
+                        console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                    } else if (listResult == FSResult::NOT_FOUND) {
+                        console.add_message("End of directory reached", VGA_YELLOW_ON_BLUE);
+                        break; // End of directory
+                    }
+                }
+                
+                // Debug: Show what we're looking for
+                console.add_message("Looking for file: 'test.txt'", VGA_YELLOW_ON_BLUE);
+                
+                // Try to look it up
+                console.add_message("Attempting to lookup created file...", VGA_YELLOW_ON_BLUE);
+                VNode* foundNode = nullptr;
+                FSResult lookupResult = rootNode->lookup("test.txt", foundNode);
+                
+                strcpy_s(resultMsg, "File lookup result: ", sizeof(resultMsg));
+                number_to_decimal(resultStr, static_cast<u32>(lookupResult));
+                strcat(resultMsg, resultStr);
+                console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+                
+                if (lookupResult == FSResult::SUCCESS && foundNode) {
+                    console.add_message("File lookup successful!", VGA_GREEN_ON_BLUE);
+                    
+                    // Clean up found node
+                    foundNode->~VNode();
+                    memMgr.free_physical_page(foundNode);
+                    
+                    // NEW TEST: Try to delete the first file before creating second file
+                    // console.add_message("Attempting to delete FIRST file...", VGA_YELLOW_ON_BLUE);
+                    // FSResult deleteResult = rootNode->delete_file("test.txt");
+                    
+                    // strcpy_s(resultMsg, "FIRST file deletion result: ", sizeof(resultMsg));
+                    // number_to_decimal(resultStr, static_cast<u32>(deleteResult));
+                    // strcat(resultMsg, resultStr);
+                    // console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+                    
+                    // if (deleteResult == FSResult::SUCCESS) {
+                    //     console.add_message("First file deletion successful!", VGA_GREEN_ON_BLUE);
+                    // } else {
+                    //     console.add_message("First file deletion failed", VGA_RED_ON_BLUE);
+                    // }
+                } else {
+                    console.add_message("File lookup failed", VGA_RED_ON_BLUE);
+                    testPassed = false;
+                }
+            } else {
+                console.add_message("File creation failed", VGA_RED_ON_BLUE);
+                testPassed = false;
+            }
+            
+            // Test creating a file in root directory
+            console.add_message("Attempting to create second file...", VGA_YELLOW_ON_BLUE);
+            
+            // Debug: Show root directory cluster info
+            FAT32Node* rootFat32Node = static_cast<FAT32Node*>(rootNode);
+            u32 rootCluster = rootFat32Node->get_first_cluster();
+            strcpy_s(resultMsg, "Root directory cluster: ", sizeof(resultMsg));
+            number_to_decimal(resultStr, rootCluster);
+            strcat(resultMsg, resultStr);
+            console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+            
+            // Debug: Check if the file already exists before creation
+            VNode* existingNode = nullptr;
+            FSResult checkResult = rootNode->lookup("test2.txt", existingNode);
+            strcpy_s(resultMsg, "Pre-creation lookup result: ", sizeof(resultMsg));
+            number_to_decimal(resultStr, static_cast<u32>(checkResult));
+            strcat(resultMsg, resultStr);
+            console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+            
+            if (checkResult == FSResult::SUCCESS && existingNode) {
+                console.add_message("File already exists before creation!", VGA_RED_ON_BLUE);
+                existingNode->~VNode();
+                memMgr.free_physical_page(existingNode);
+            }
+            
+            // Debug: Show raw directory entries before second file creation
+            console.add_message("Raw directory entries before second file creation:", VGA_YELLOW_ON_BLUE);
+            for (u32 i = 0; i < 16; i++) { // Check first 16 entries
+                DirectoryEntry dirEntry;
+                FSResult listResult = rootNode->read_dir(i, dirEntry);
+                if (listResult == FSResult::SUCCESS) {
+                    char entryMsg[256];
+                    strcpy_s(entryMsg, "Raw Entry ", sizeof(entryMsg));
+                    char indexStr[16];
+                    number_to_decimal(indexStr, i);
+                    strcat(entryMsg, indexStr);
+                    strcat(entryMsg, ": '");
+                    strcat(entryMsg, dirEntry.name);
+                    strcat(entryMsg, "'");
+                    console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                } else if (listResult == FSResult::NOT_FOUND) {
+                    console.add_message("End of directory reached", VGA_YELLOW_ON_BLUE);
+                    break; // End of directory
+                }
+            }
+            
+            FSResult createFileResult2 = rootNode->create_file("test2.txt", FileType::REGULAR);
+            
+            strcpy_s(resultMsg, "Second file creation result: ", sizeof(resultMsg));
+            number_to_decimal(resultStr, static_cast<u32>(createFileResult2));
+            strcat(resultMsg, resultStr);
+            console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+            
+            if (createFileResult2 == FSResult::SUCCESS) {
+                console.add_message("Second file creation successful", VGA_GREEN_ON_BLUE);
+                
+                // Debug: Try to directly read the root directory cluster to see what's actually there
+                console.add_message("Reading raw root directory cluster data...", VGA_YELLOW_ON_BLUE);
+                
+                // Calculate the sector for cluster 2 (root directory)
+                // Data area starts at: reserved_sectors + (num_fats * fat_size) = 32 + (2 * 1024) = 2080
+                u8 rawClusterData[4096]; // 8 sectors * 512 bytes
+                FSResult rawReadResult = device->read_blocks(2080, 8, rawClusterData);
+                
+                if (rawReadResult == FSResult::SUCCESS) {
+                    Fat32DirEntry* rawEntries = reinterpret_cast<Fat32DirEntry*>(rawClusterData);
+                    
+                    console.add_message("Raw cluster entries:", VGA_YELLOW_ON_BLUE);
+                    for (u32 i = 0; i < 4; i++) { // Check first 4 raw entries
+                        Fat32DirEntry& rawEntry = rawEntries[i];
+                        
+                        char entryMsg[256];
+                        strcpy_s(entryMsg, "Raw Entry ", sizeof(entryMsg));
+                        char indexStr[16];
+                        number_to_decimal(indexStr, i);
+                        strcat(entryMsg, indexStr);
+                        strcat(entryMsg, ": ");
+                        
+                        // Show the first byte value
+                        char firstByteStr[16];
+                        number_to_decimal(firstByteStr, (u32)rawEntry.name[0]);
+                        strcat(entryMsg, "first_byte=");
+                        strcat(entryMsg, firstByteStr);
+                        strcat(entryMsg, " ");
+                        
+                        if (rawEntry.name[0] == 0x00) {
+                            strcat(entryMsg, "FREE (0x00)");
+                            console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                        } else if (rawEntry.name[0] == 0xE5) {
+                            strcat(entryMsg, "DELETED (0xE5)");
+                            console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                        } else {
+                            // Convert raw name to readable format
+                            char rawName[12];
+                            for (int j = 0; j < 11; j++) {
+                                rawName[j] = rawEntry.name[j];
+                            }
+                            rawName[11] = '\0';
+                            strcat(entryMsg, rawName);
+                            
+                            // Also show if this matches our deletion target
+                            if (i == 1) { // Check if entry 1 matches our deletion target
+                                u8 deleteFatName[11];
+                                fat32->convert_standard_name_to_fat("test2.txt", deleteFatName);
+                                
+                                // Compare byte by byte
+                                bool matches = true;
+                                for (int k = 0; k < 11; k++) {
+                                    if (rawEntry.name[k] != deleteFatName[k]) {
+                                        matches = false;
+                                        break;
+                                    }
+                                }
+                                
+                                if (matches) {
+                                    strcat(entryMsg, " (MATCHES deletion target)");
+                                } else {
+                                    strcat(entryMsg, " (does NOT match deletion target)");
+                                }
+                            }
+                            
+                            console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                        }
+                    }
+                } else {
+                    console.add_message("Failed to read raw cluster data", VGA_RED_ON_BLUE);
+                }
+                
+                // Debug: List directory entries after second file creation
+                console.add_message("Listing directory entries after second file creation...", VGA_YELLOW_ON_BLUE);
+                for (u32 i = 0; i < 10; i++) { // Check first 10 entries
+                    DirectoryEntry dirEntry;
+                    FSResult listResult = rootNode->read_dir(i, dirEntry);
+                    if (listResult == FSResult::SUCCESS) {
+                        char entryMsg[256];
+                        strcpy_s(entryMsg, "Entry ", sizeof(entryMsg));
+                        char indexStr[16];
+                        number_to_decimal(indexStr, i);
+                        strcat(entryMsg, indexStr);
+                        strcat(entryMsg, ": '");
+                        strcat(entryMsg, dirEntry.name);
+                        strcat(entryMsg, "'");
+                        console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                    } else if (listResult == FSResult::NOT_FOUND) {
+                        console.add_message("End of directory reached", VGA_YELLOW_ON_BLUE);
+                        break; // End of directory
+                    }
+                }
+                
+                // Debug: Try to read more entries to see if there are more clusters
+                console.add_message("Checking for more directory entries...", VGA_YELLOW_ON_BLUE);
+                for (u32 i = 10; i < 50; i++) { // Check more entries
+                    DirectoryEntry dirEntry;
+                    FSResult listResult = rootNode->read_dir(i, dirEntry);
+                    if (listResult == FSResult::SUCCESS) {
+                        char entryMsg[256];
+                        strcpy_s(entryMsg, "Entry ", sizeof(entryMsg));
+                        char indexStr[16];
+                        number_to_decimal(indexStr, i);
+                        strcat(entryMsg, indexStr);
+                        strcat(entryMsg, ": '");
+                        strcat(entryMsg, dirEntry.name);
+                        strcat(entryMsg, "'");
+                        console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                    } else if (listResult == FSResult::NOT_FOUND) {
+                        console.add_message("No more entries found", VGA_YELLOW_ON_BLUE);
+                        break; // End of directory
+                    }
+                }
+                
+                // Test looking up the second file
+                VNode* foundNode2 = nullptr;
+                FSResult lookupResult2 = rootNode->lookup("test2.txt", foundNode2);
+                
+                strcpy_s(resultMsg, "Second file lookup result: ", sizeof(resultMsg));
+                number_to_decimal(resultStr, static_cast<u32>(lookupResult2));
+                strcat(resultMsg, resultStr);
+                console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+                
+                if (lookupResult2 == FSResult::SUCCESS && foundNode2) {
+                    console.add_message("Second file lookup successful", VGA_GREEN_ON_BLUE);
+                    
+                    // Test deleting the second file
+                    console.add_message("Attempting to delete second file...", VGA_YELLOW_ON_BLUE);
+                    
+                    // Debug: Show what FAT name we're looking for in deletion
+                    u8 deleteFatName[11];
+                    fat32->convert_standard_name_to_fat("test2.txt", deleteFatName);
+                    char deleteName[256];
+                    fat32->convert_fat_name(deleteFatName, deleteName);
+                    char deleteMsg[256];
+                    strcpy_s(deleteMsg, "Deletion looking for FAT name: '", sizeof(deleteMsg));
+                    strcat(deleteMsg, deleteName);
+                    strcat(deleteMsg, "'");
+                    console.add_message(deleteMsg, VGA_CYAN_ON_BLUE);
+                    
+                    // Debug: List directory entries before deletion
+                    console.add_message("Listing directory entries before deletion...", VGA_YELLOW_ON_BLUE);
+                    for (u32 i = 0; i < 10; i++) { // Check first 10 entries
+                        DirectoryEntry dirEntry;
+                        FSResult listResult = rootNode->read_dir(i, dirEntry);
+                        if (listResult == FSResult::SUCCESS) {
+                            char entryMsg[256];
+                            strcpy_s(entryMsg, "Entry ", sizeof(entryMsg));
+                            char indexStr[16];
+                            number_to_decimal(indexStr, i);
+                            strcat(entryMsg, indexStr);
+                            strcat(entryMsg, ": '");
+                            strcat(entryMsg, dirEntry.name);
+                            strcat(entryMsg, "'");
+                            console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                        } else if (listResult == FSResult::NOT_FOUND) {
+                            console.add_message("End of directory reached", VGA_YELLOW_ON_BLUE);
+                            break; // End of directory
+                        }
+                    }
+                    
+                    FSResult deleteResult2 = rootNode->delete_file("test2.txt");
+                    
+                    strcpy_s(resultMsg, "Second file deletion result: ", sizeof(resultMsg));
+                    number_to_decimal(resultStr, static_cast<u32>(deleteResult2));
+                    strcat(resultMsg, resultStr);
+                    console.add_message(resultMsg, VGA_CYAN_ON_BLUE);
+                    
+                    if (deleteResult2 == FSResult::SUCCESS) {
+                        console.add_message("Second file deletion successful", VGA_GREEN_ON_BLUE);
+                    } else {
+                        console.add_message("Second file deletion failed", VGA_YELLOW_ON_BLUE);
+                        testPassed = false;
+                    }
+
+                                // Debug: Show raw directory entries before second file creation
+                    console.add_message("Raw directory entries after second file deletion:", VGA_YELLOW_ON_BLUE);
+                    for (u32 i = 0; i < 16; i++) { // Check first 16 entries
+                        DirectoryEntry dirEntry;
+                        FSResult listResult = rootNode->read_dir(i, dirEntry);
+                        if (listResult == FSResult::SUCCESS) {
+                            char entryMsg[256];
+                            strcpy_s(entryMsg, "Raw Entry ", sizeof(entryMsg));
+                            char indexStr[16];
+                            number_to_decimal(indexStr, i);
+                            strcat(entryMsg, indexStr);
+                            strcat(entryMsg, ": '");
+                            strcat(entryMsg, dirEntry.name);
+                            strcat(entryMsg, "'");
+                            console.add_message(entryMsg, VGA_CYAN_ON_BLUE);
+                        } else if (listResult == FSResult::NOT_FOUND) {
+                            console.add_message("End of directory reached", VGA_YELLOW_ON_BLUE);
+                            break; // End of directory
+                        }
+                    }
+                    
+                    // Clean up found node
+                    foundNode2->~VNode();
+                    memMgr.free_physical_page(foundNode2);
+                } else {
+                    console.add_message("Second file lookup failed", VGA_YELLOW_ON_BLUE);
+                    testPassed = false;
+                }
+            } else {
+                console.add_message("Second file creation failed", VGA_YELLOW_ON_BLUE);
+                testPassed = false;
+            }
+        }
+        
+        // Clean up FAT32 instance
+        fat32->~FAT32();
+        memMgr.free_physical_page(fat32Memory);
+    }
+    
+    print_test_result("FAT32 Directory Operations", testPassed);
+    return testPassed;
+}
+
 bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
     // Create a minimal mock FAT32 boot sector
     u8 bootSector[512];
@@ -473,6 +969,20 @@ bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
     
     // Also write to second FAT (for consistency)
     result = device->write_blocks(32 + 1024, 1, fatSector);
+    if (result != FSResult::SUCCESS) {
+        return false;
+    }
+    
+    // Initialize root directory cluster (cluster 2)
+    u8 rootDirCluster[4096]; // 8 sectors * 512 bytes
+    memset(rootDirCluster, 0, sizeof(rootDirCluster));
+    
+    // All entries are already initialized to 0x00 (free) by memset
+    // No need to explicitly mark end of directory - the first 0x00 entry will serve as the end marker
+    
+    // Write root directory cluster (cluster 2 starts at sector 2080)
+    // Data area starts at: reserved_sectors + (num_fats * fat_size) = 32 + (2 * 1024) = 2080
+    result = device->write_blocks(2080, 8, rootDirCluster); // 8 sectors per cluster
     if (result != FSResult::SUCCESS) {
         return false;
     }
