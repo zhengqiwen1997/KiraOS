@@ -63,7 +63,8 @@ add_library(kernel_core STATIC
     kernel/core/process.cpp
     kernel/core/syscalls.cpp
     kernel/core/usermode.cpp
-    kernel/core/operators.cpp
+    kernel/core/memory_operators.cpp
+    kernel/core/runtime_support.cpp
     kernel/test/exception_tester.cpp
     kernel/test/ata_driver_test.cpp
     kernel/test/vfs_test.cpp
