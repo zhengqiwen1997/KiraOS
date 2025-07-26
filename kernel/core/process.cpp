@@ -618,4 +618,11 @@ void ProcessManager::sleep_current_process(u32 ticks) {
     }
 }
 
+void ProcessManager::wake_up_process(Process* process) {
+    if (process && process->state == ProcessState::BLOCKED) {
+        process->state = ProcessState::READY;
+        add_to_ready_queue(process);
+    }
+}
+
 } // namespace kira::system 

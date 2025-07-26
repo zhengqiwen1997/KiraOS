@@ -182,6 +182,12 @@ public:
      * @brief Enable timer-driven scheduling
      */
     static void enable_timer_scheduling();
+    
+    /**
+     * @brief Wake up a blocked process (make it ready to run)
+     * @param process Process to wake up
+     */
+    void wake_up_process(Process* process);
 
 private:
     /**

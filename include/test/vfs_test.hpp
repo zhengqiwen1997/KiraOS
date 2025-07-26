@@ -1,5 +1,6 @@
 #pragma once
 
+#include "test/test_base.hpp"
 #include "fs/vfs.hpp"
 #include "fs/ramfs.hpp"
 
@@ -10,7 +11,7 @@ namespace kira::test {
  * 
  * Tests the Virtual File System and RamFS implementation
  */
-class VFSTest {
+class VFSTest : public TestBase {
 public:
     /**
      * @brief Run comprehensive VFS tests

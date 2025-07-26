@@ -1,32 +1,22 @@
 #include "test/fat32_test.hpp"
-#include "display/console.hpp"
-#include "core/utils.hpp"
 #include "memory/memory_manager.hpp"
-
-// Forward declaration to access global console from kernel namespace
-namespace kira::kernel {
-    extern kira::display::ScrollableConsole console;
-}
 
 namespace kira::test {
 
-using namespace kira::display;
 using namespace kira::fs;
-using namespace kira::utils;
-using kira::kernel::console;
 
 bool FAT32Test::run_tests() {
-    console.add_message("\n=== FAT32 File System Tests ===\n", VGA_CYAN_ON_BLUE);
+    print_section_header("FAT32 File System Tests");
     
-    bool allPassed = true;
-    allPassed &= test_fat32_mount();
-    allPassed &= test_fat32_integration_with_vfs();
-    allPassed &= test_fat32_directory_operations();
+    u32 passedTests = 0;
+    u32 totalTests = 3;
     
-    if (allPassed) {
-        console.add_message("\n=== All FAT32 Tests Passed ===\n", VGA_GREEN_ON_BLUE);
-    }
-    return allPassed;
+    if (test_fat32_mount()) passedTests++;
+    if (test_fat32_integration_with_vfs()) passedTests++;
+    if (test_fat32_directory_operations()) passedTests++;
+    
+    print_section_footer("FAT32 File System Tests", passedTests, totalTests);
+    return (passedTests == totalTests);
 }
 
 bool FAT32Test::test_fat32_mount() {
@@ -37,7 +27,7 @@ bool FAT32Test::test_fat32_mount() {
     BlockDevice* device = bdm.get_device(0);
     
     if (!device) {
-        console.add_message("No block device available for FAT32 testing", VGA_YELLOW_ON_BLUE);
+        print_warning("No block device available for FAT32 testing");
         print_test_result("FAT32 Mount (skipped - no device)", true);
         return true;
     }
@@ -53,22 +43,22 @@ bool FAT32Test::test_fat32_mount() {
         // Test mount without mock data (should fail gracefully)
         FSResult mountResult = fat32->mount("test");
         if (mountResult != FSResult::SUCCESS) {
-            console.add_message("FAT32 mount failed as expected (no filesystem)", VGA_GREEN_ON_BLUE);
+            print_success("FAT32 mount failed as expected (no filesystem)");
         } else {
-            console.add_message("FAT32 mount unexpectedly succeeded", VGA_YELLOW_ON_BLUE);
+            print_warning("FAT32 mount unexpectedly succeeded");
         }
         
         // Test with mock data
         if (create_mock_fat32_data(device)) {
             FSResult mockMountResult = fat32->mount("test");
             if (mockMountResult == FSResult::SUCCESS) {
-                console.add_message("FAT32 mount with mock data successful", VGA_GREEN_ON_BLUE);
+                print_success("FAT32 mount with mock data successful");
             } else {
-                console.add_message("FAT32 mount with mock data failed", VGA_RED_ON_BLUE);
+                print_error("FAT32 mount with mock data failed");
                 testPassed = false;
             }
         } else {
-            console.add_message("Failed to create mock FAT32 data", VGA_RED_ON_BLUE);
+            print_error("Failed to create mock FAT32 data");
             testPassed = false;
         }
         
@@ -83,21 +73,21 @@ bool FAT32Test::test_fat32_mount() {
 bool FAT32Test::test_fat32_integration_with_vfs() {
     bool testPassed = true;
     
-    console.add_message("Testing FAT32 integration with VFS...", VGA_CYAN_ON_BLUE);
+    print_info("Testing FAT32 integration with VFS...");
     
     // Get a block device for testing
     BlockDeviceManager& bdm = BlockDeviceManager::get_instance();
     BlockDevice* device = bdm.get_device(0);
     
     if (!device) {
-        console.add_message("No block device for VFS integration test", VGA_YELLOW_ON_BLUE);
+        print_warning("No block device for VFS integration test");
         print_test_result("FAT32 VFS Integration (skipped)", true);
         return true;
     }
     
     // Create some mock FAT32 data on the device
     if (!create_mock_fat32_data(device)) {
-        console.add_message("Failed to create mock FAT32 data for VFS test", VGA_RED_ON_BLUE);
+        print_error("Failed to create mock FAT32 data for VFS test");
         print_test_result("FAT32 VFS Integration (setup failed)", false);
         return false;
     }
@@ -113,58 +103,58 @@ bool FAT32Test::test_fat32_integration_with_vfs() {
         // Mount the FAT32 filesystem
         FSResult mountResult = fat32->mount("test");
         if (mountResult != FSResult::SUCCESS) {
-            console.add_message("FAT32 mount failed for VFS integration test", VGA_RED_ON_BLUE);
+            print_error("FAT32 mount failed for VFS integration test");
             testPassed = false;
         } else {
             // Test getting root directory through VFS
             VNode* rootNode = nullptr;
             FSResult rootResult = fat32->get_root(rootNode);
             if (rootResult == FSResult::SUCCESS && rootNode) {
-                console.add_message("VFS root directory access successful", VGA_GREEN_ON_BLUE);
+                print_success("VFS root directory access successful");
                 
                 // Test directory listing
                 DirectoryEntry dirEntry;
                 FSResult listResult = rootNode->read_dir(0, dirEntry);
                 if (listResult == FSResult::NOT_FOUND) {
-                    console.add_message("VFS directory listing works (empty directory)", VGA_GREEN_ON_BLUE);
+                    print_success("VFS directory listing works (empty directory)");
                 } else {
-                    console.add_message("VFS directory listing failed", VGA_RED_ON_BLUE);
+                    print_error("VFS directory listing failed");
                     testPassed = false;
                 }
                 
-                console.add_message("About to clean up root node...", VGA_CYAN_ON_BLUE);
+                print_debug("About to clean up root node...");
                 
                 // Clean up root node safely using cleanup method
                 if (rootNode) {
-                    console.add_message("Cleaning up root node resources...", VGA_CYAN_ON_BLUE);
+                    print_debug("Cleaning up root node resources...");
                     rootNode->~VNode();
-                    console.add_message("Freeing root node memory...", VGA_CYAN_ON_BLUE);
+                    print_debug("Freeing root node memory...");
                     memMgr.free_physical_page(rootNode);
                     rootNode = nullptr;
-                    console.add_message("Root node cleanup complete", VGA_CYAN_ON_BLUE);
+                    print_debug("Root node cleanup complete");
                 }
             } else {
-                console.add_message("VFS root directory access failed", VGA_RED_ON_BLUE);
+                print_error("VFS root directory access failed");
                 testPassed = false;
             }
         }
         
-        console.add_message("About to clean up FAT32...", VGA_CYAN_ON_BLUE);
+        print_debug("About to clean up FAT32...");
         
         // Clean up FAT32 resources safely using cleanup method
-        console.add_message("Cleaning up FAT32 resources...", VGA_CYAN_ON_BLUE);
+        print_debug("Cleaning up FAT32 resources...");
         // No explicit cleanup needed - destructor will handle it
         
-        console.add_message("About to free FAT32 memory...", VGA_CYAN_ON_BLUE);
-        console.add_message("FAT32 memory pointer check...", VGA_CYAN_ON_BLUE);
+        print_debug("About to free FAT32 memory...");
+        print_debug("FAT32 memory pointer check...");
         if (fat32Memory) {
-            console.add_message("FAT32 memory pointer is valid, freeing...", VGA_CYAN_ON_BLUE);
+            print_debug("FAT32 memory pointer is valid, freeing...");
             memMgr.free_physical_page(fat32Memory);
-            console.add_message("FAT32 memory freed successfully", VGA_CYAN_ON_BLUE);
+            print_debug("FAT32 memory freed successfully");
         } else {
-            console.add_message("FAT32 memory pointer is NULL!", VGA_RED_ON_BLUE);
+            print_error("FAT32 memory pointer is NULL!");
         }
-        console.add_message("FAT32 cleanup complete", VGA_CYAN_ON_BLUE);
+        print_debug("FAT32 cleanup complete");
     }
     
     print_test_result("FAT32 VFS Integration", testPassed);
@@ -179,14 +169,14 @@ bool FAT32Test::test_fat32_directory_operations() {
     BlockDevice* device = bdm.get_device(0);
     
     if (!device) {
-        console.add_message("No block device for directory operations test", VGA_YELLOW_ON_BLUE);
+        print_warning("No block device for directory operations test");
         print_test_result("FAT32 Directory Operations (skipped)", true);
         return true;
     }
     
     // Create some mock FAT32 data on the device
     if (!create_mock_fat32_data(device)) {
-        console.add_message("Failed to create mock FAT32 data for directory test", VGA_RED_ON_BLUE);
+        print_error("Failed to create mock FAT32 data for directory test");
         print_test_result("FAT32 Directory Operations (setup failed)", false);
         return false;
     }
@@ -202,7 +192,7 @@ bool FAT32Test::test_fat32_directory_operations() {
         // Mount the FAT32 filesystem
         FSResult mountResult = fat32->mount("test");
         if (mountResult != FSResult::SUCCESS) {
-            console.add_message("FAT32 mount failed for directory operations test", VGA_YELLOW_ON_BLUE);
+            print_warning("FAT32 mount failed for directory operations test");
             fat32->~FAT32();
             memMgr.free_physical_page(fat32Memory);
             print_test_result("FAT32 Directory Operations (mount failed)", false);
@@ -213,11 +203,11 @@ bool FAT32Test::test_fat32_directory_operations() {
         VNode* rootNode = nullptr;
         FSResult rootResult = fat32->get_root(rootNode);
         if (rootResult != FSResult::SUCCESS || !rootNode) {
-            console.add_message("Failed to get root directory", VGA_RED_ON_BLUE);
+            print_error("Failed to get root directory");
             testPassed = false;
         } else {
             // Test file operations
-            console.add_message("Testing file create/lookup/delete operations...", VGA_CYAN_ON_BLUE);
+            print_info("Testing file create/lookup/delete operations...");
             
             // Test 1: Create and lookup first file
             FSResult createResult1 = rootNode->create_file("test.txt", FileType::REGULAR);
@@ -225,38 +215,38 @@ bool FAT32Test::test_fat32_directory_operations() {
                 VNode* foundNode = nullptr;
                 FSResult lookupResult = rootNode->lookup("test.txt", foundNode);
                 if (lookupResult == FSResult::SUCCESS && foundNode) {
-                    console.add_message("File create/lookup: SUCCESS", VGA_GREEN_ON_BLUE);
+                    print_success("File create/lookup: SUCCESS");
                     memMgr.free_physical_page(foundNode);
                     
                     // Test 2: Delete first file
                     FSResult deleteResult = rootNode->delete_file("test.txt");
                     if (deleteResult == FSResult::SUCCESS) {
-                        console.add_message("File deletion: SUCCESS", VGA_GREEN_ON_BLUE);
+                        print_success("File deletion: SUCCESS");
                         
                         // Test 3: Create and delete second file
                         FSResult createResult2 = rootNode->create_file("test2.txt", FileType::REGULAR);
                         if (createResult2 == FSResult::SUCCESS) {
                             FSResult deleteResult2 = rootNode->delete_file("test2.txt");
                             if (deleteResult2 == FSResult::SUCCESS) {
-                                console.add_message("Second file create/delete: SUCCESS", VGA_GREEN_ON_BLUE);
+                                print_success("Second file create/delete: SUCCESS");
                             } else {
-                                console.add_message("Second file deletion failed", VGA_RED_ON_BLUE);
+                                print_error("Second file deletion failed");
                                 testPassed = false;
                             }
                         } else {
-                            console.add_message("Second file creation failed", VGA_RED_ON_BLUE);
+                            print_error("Second file creation failed");
                             testPassed = false;
                         }
                     } else {
-                        console.add_message("First file deletion failed", VGA_RED_ON_BLUE);
+                        print_error("First file deletion failed");
                         testPassed = false;
                     }
                 } else {
-                    console.add_message("File lookup failed", VGA_RED_ON_BLUE);
+                    print_error("File lookup failed");
                     testPassed = false;
                 }
             } else {
-                console.add_message("First file creation failed", VGA_RED_ON_BLUE);
+                print_error("First file creation failed");
                 testPassed = false;
             }
         }
@@ -356,18 +346,6 @@ bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
     }
     
     return true;
-}
-
-void FAT32Test::print_test_result(const char* testName, bool passed) {
-    char msg[256];
-    strcpy_s(msg, testName, sizeof(msg));
-    if (passed) {
-        strcat(msg, ": PASSED");
-        console.add_message(msg, VGA_GREEN_ON_BLUE);
-    } else {
-        strcat(msg, ": FAILED");
-        console.add_message(msg, VGA_RED_ON_BLUE);
-    }
 }
 
 } // namespace kira::test 

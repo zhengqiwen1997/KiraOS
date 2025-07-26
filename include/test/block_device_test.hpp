@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fs/block_device.hpp"
+#include "test/test_base.hpp"
 
 namespace kira::test {
 
@@ -9,7 +10,7 @@ namespace kira::test {
  * 
  * Tests the block device abstraction layer and ATA integration
  */
-class BlockDeviceTest {
+class BlockDeviceTest : public TestBase {
 public:
     /**
      * @brief Run comprehensive block device tests

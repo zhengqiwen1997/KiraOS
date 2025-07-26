@@ -65,11 +65,14 @@ add_library(kernel_core STATIC
     kernel/core/usermode.cpp
     kernel/core/memory_operators.cpp
     kernel/core/runtime_support.cpp
+    kernel/core/sync.cpp
+    kernel/test/test_base.cpp
     kernel/test/exception_tester.cpp
     kernel/test/ata_driver_test.cpp
     kernel/test/vfs_test.cpp
     kernel/test/block_device_test.cpp
     kernel/test/fat32_test.cpp
+    kernel/test/sync_test.cpp
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/lib/libkira.cpp

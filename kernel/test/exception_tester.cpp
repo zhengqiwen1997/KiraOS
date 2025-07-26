@@ -1,34 +1,24 @@
 #include "test/exception_tester.hpp"
 #include "core/utils.hpp"
-#include "display/console.hpp"
-
-// Forward declarations
-namespace kira::kernel {
-    extern kira::display::ScrollableConsole console;
-}
 
 namespace kira::test {
 
-using namespace kira::display;
 using namespace kira::utils;
 
-// ScrollableConsole& get_console() {
-//     return kira::kernel::console;
-// }
 
 void ExceptionTester::log_test_start(const char* test_name) {
     char msg[256];
     utils::strcpy(msg, "Testing ");
     utils::strcat(msg, test_name);
     utils::strcat(msg, "...");
-    kira::kernel::console.add_message(msg, VGA_CYAN_ON_BLUE);
+    print_info(msg);
 }
 
 void ExceptionTester::log_test_end(const char* test_name) {
     char msg[256];
     utils::strcpy(msg, test_name);
     utils::strcat(msg, " completed!");
-    kira::kernel::console.add_message(msg, VGA_GREEN_ON_BLUE);
+    print_success(msg);
 }
 
 void ExceptionTester::test_breakpoint() {
@@ -85,8 +75,8 @@ void ExceptionTester::test_division_by_zero() {
     log_test_end("division by zero");
 }
 
-void ExceptionTester::run_all_tests() {
-    kira::kernel::console.add_message("=== EXCEPTION TESTING ===", VGA_WHITE_ON_BLUE);
+void ExceptionTester::run_tests() {
+    print_section_header("Exception Testing");
     
     //test_division_by_zero();
     test_breakpoint();
@@ -96,13 +86,13 @@ void ExceptionTester::run_all_tests() {
     test_x87_fpu_error();
     test_simd_fpu_error();
     
-    kira::kernel::console.add_message("=== ALL EXCEPTION TESTS PASSED ===", VGA_WHITE_ON_BLUE);
+    print_section_footer("Exception Testing", 6, 6);
 }
 
 void ExceptionTester::run_single_test() {
-    kira::kernel::console.add_message("=== SINGLE EXCEPTION TEST ===", VGA_WHITE_ON_BLUE);
+    print_section_header("Single Exception Test");
     test_division_by_zero();
-    kira::kernel::console.add_message("=== SINGLE EXCEPTION TEST PASSED ===", VGA_WHITE_ON_BLUE);
+    print_section_footer("Single Exception Test", 1, 1);
 }
 
 } // namespace kira::test 

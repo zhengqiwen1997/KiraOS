@@ -1,6 +1,7 @@
 #pragma once
 
 #include "drivers/ata.hpp"
+#include "test/test_base.hpp"
 
 namespace kira::test {
 
@@ -10,7 +11,7 @@ namespace kira::test {
  * Contains comprehensive tests for the ATA/IDE driver functionality.
  * Tests drive detection, sector reading, and integration with memory manager.
  */
-class ATADriverTest {
+class ATADriverTest : public TestBase {
 public:
     /**
      * @brief Run comprehensive ATA driver tests
