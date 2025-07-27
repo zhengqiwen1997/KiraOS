@@ -16,6 +16,7 @@
 #include "core/usermode.hpp"
 #include "user_programs.hpp"
 #include "display/console.hpp"
+#include "test/process_test.hpp"
 #include "test/exception_tester.hpp"
 #include "drivers/ata.hpp"
 #include "test/ata_driver_test.hpp"
@@ -127,6 +128,15 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    
+    // Initialize and test Process Management and Scheduler
+    console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+    kira::test::ProcessTest processTest;
+    if (processTest.run_tests()) {
+        console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
     }
     
     // Initialize process management

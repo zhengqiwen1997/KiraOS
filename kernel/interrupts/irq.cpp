@@ -167,9 +167,9 @@ void timer_handler(IRQFrame* frame) {
     timerTicks++;
     
     // Call process scheduler every timer tick
-    // Only call scheduler if timer scheduling is enabled
+    // Only call scheduler if timer scheduling is enabled AND scheduling is not disabled
     extern bool timerSchedulingEnabled;
-    if (timerSchedulingEnabled) {
+    if (timerSchedulingEnabled && !ProcessManager::is_scheduling_disabled()) {
         auto& pm = ProcessManager::get_instance();
         pm.schedule();
     }

@@ -19,6 +19,8 @@ using namespace kira::utils;
 
 // Global variable to control timer-driven scheduling
 bool timerSchedulingEnabled = false;
+// Global variable to disable scheduling during tests
+bool schedulingDisabled = false;
 
 // Static member definitions
 u8 ProcessManager::kernelStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
@@ -42,13 +44,21 @@ ProcessManager& ProcessManager::get_instance() {
 
 ProcessManager::ProcessManager() {
     // Initialize basic fields
-    readyQueue = nullptr;
     currentProcess = nullptr;
+    sleepQueue = nullptr;
     nextPid = 1;
     processCount = 0;
     schedulerTicks = 0;
+    lastAgingTime = 0;
     nextStackIndex = 0;
     isInIdleState = false;
+    
+    // Initialize priority queues
+    for (u32 i = 0; i <= MAX_PRIORITY; i++) {
+        readyQueues[i].head = nullptr;
+        readyQueues[i].tail = nullptr;
+        readyQueues[i].count = 0;
+    }
     
     // Initialize all processes to TERMINATED state
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
@@ -56,6 +66,11 @@ ProcessManager::ProcessManager() {
         processes[i].pid = 0;
         processes[i].isUserMode = false;
         processes[i].addressSpace = nullptr;
+        processes[i].next = nullptr;
+        processes[i].prev = nullptr;
+        processes[i].sleepUntil = 0;
+        processes[i].age = 0;
+        processes[i].lastRunTime = 0;
     }
 }
 
@@ -126,8 +141,60 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
 }
 
 u32 ProcessManager::create_process(ProcessFunction function, const char* name, u32 priority) {
-    // Legacy method - create user mode process
-    return create_user_process(function, name, priority);
+    if (processCount >= MAX_PROCESSES || !function) {
+        return 0;
+    }
+    
+    // Find free process slot
+    Process* process = nullptr;
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].state == ProcessState::TERMINATED || processes[i].pid == 0) {
+            process = &processes[i];
+            break;
+        }
+    }
+    
+    if (!process) {
+        return 0;
+    }
+    
+    // Initialize process for kernel mode
+    process->pid = nextPid++;
+    strcpy_s(process->name, name ? name : "unnamed", sizeof(process->name) - 1);
+    process->state = ProcessState::READY;
+    process->priority = priority;
+    process->timeSlice = DEFAULT_TIME_SLICE;
+    process->timeUsed = 0;
+    process->creationTime = 0;
+    process->totalCpuTime = 0;
+    process->isUserMode = false;  // Kernel mode process
+    process->hasStarted = false;
+    process->addressSpace = nullptr;  // No address space for kernel processes
+    process->next = nullptr;
+    process->prev = nullptr;
+    process->sleepUntil = 0;
+    process->age = 0;
+    process->lastRunTime = 0;
+    
+    // Allocate kernel stack
+    if (!allocate_process_stacks(process)) {
+        process->pid = 0;  // Mark as free
+        return 0;
+    }
+    
+    // Initialize context for kernel mode
+    init_process_context(process, function);
+    
+    // Add to ready queue
+    add_to_ready_queue(process);
+    processCount++;
+    
+    // Debug: Verify the process is still in READY state after adding to queue
+    if (process->state != ProcessState::READY) {
+        kira::kernel::console.add_message("ERROR: Process state changed after adding to ready queue", kira::display::VGA_RED_ON_BLUE);
+    }
+    
+    return process->pid;
 }
 
 bool ProcessManager::terminate_process(u32 pid) {
@@ -160,7 +227,18 @@ bool ProcessManager::terminate_process(u32 pid) {
 }
 
 void ProcessManager::schedule() {
+    // Don't schedule if scheduling is disabled (for testing)
+    if (schedulingDisabled) {
+        return;
+    }
+    
     schedulerTicks++;
+    
+    // Process sleep queue to wake up expired processes
+    process_sleep_queue();
+    
+    // Perform aging to prevent starvation
+    perform_aging();
     
     // Debug: Show scheduler state only when it changes
     if (currentProcess) {
@@ -211,7 +289,8 @@ void ProcessManager::schedule() {
         // No current process, try to schedule one
         // kira::kernel::console.add_message("DEBUG: NO CURRENT PROCESS, CHECKING READY QUEUE", kira::display::VGA_CYAN_ON_BLUE);
         
-        if (readyQueue) {
+        Process* nextProcess = get_next_process();
+        if (nextProcess) {
             // kira::kernel::console.add_message("DEBUG: READY QUEUE EXISTS, CALLING SWITCH_PROCESS", kira::display::VGA_GREEN_ON_BLUE);
             switch_process();
         } else {
@@ -271,52 +350,102 @@ void ProcessManager::yield() {
 void ProcessManager::add_to_ready_queue(Process* process) {
     if (!process) return;
     
-    process->next = nullptr;
-    
-    if (!readyQueue) {
-        readyQueue = process;
-    } else {
-        // Add to end of queue (simple FIFO for now)
-        Process* current = readyQueue;
-        while (current->next) {
-            current = current->next;
-        }
-        current->next = process;
+    // Debug: Check process state before adding to queue
+    if (process->state != ProcessState::READY) {
+        kira::kernel::console.add_message("WARNING: Process not in READY state when adding to queue", kira::display::VGA_YELLOW_ON_BLUE);
     }
+    
+    // Ensure priority is within bounds
+    u32 priority = process->priority;
+    if (priority > MAX_PRIORITY) {
+        priority = MAX_PRIORITY;
+    }
+    
+    PriorityQueue& queue = readyQueues[priority];
+    
+    process->next = nullptr;
+    process->prev = nullptr;
+    
+    if (!queue.head) {
+        // Empty queue
+        queue.head = process;
+        queue.tail = process;
+    } else {
+        // Add to end of queue (FIFO within priority level)
+        process->prev = queue.tail;
+        queue.tail->next = process;
+        queue.tail = process;
+    }
+    
+    queue.count++;
+    
+    // Debug: Check process state after adding to queue
+    if (process->state != ProcessState::READY) {
+        kira::kernel::console.add_message("ERROR: Process state changed during add_to_ready_queue", kira::display::VGA_RED_ON_BLUE);
+    }
+}
+
+Process* ProcessManager::get_next_process() {
+    // Find highest priority non-empty queue
+    for (u32 priority = 0; priority <= MAX_PRIORITY; priority++) {
+        PriorityQueue& queue = readyQueues[priority];
+        if (queue.head) {
+            return queue.head; // Return head of highest priority queue
+        }
+    }
+    return nullptr; // No ready processes
 }
 
 void ProcessManager::remove_from_ready_queue(Process* process) {
-    if (!process || !readyQueue) {
-        kira::kernel::console.add_message("DEBUG: remove_from_ready_queue called with NULL process or empty queue", kira::display::VGA_YELLOW_ON_BLUE);
+    if (!process) {
         return;
     }
     
-    kira::kernel::console.add_message("DEBUG: REMOVING PROCESS FROM READY QUEUE!", kira::display::VGA_RED_ON_BLUE);
-    
-    if (readyQueue == process) {
-        readyQueue = process->next;
-        kira::kernel::console.add_message("DEBUG: Removed first process from ready queue", kira::display::VGA_RED_ON_BLUE);
-    } else {
-        Process* current = readyQueue;
-        while (current->next && current->next != process) {
-            current = current->next;
-        }
-        if (current->next) {
-            current->next = current->next->next;
-            kira::kernel::console.add_message("DEBUG: Removed process from middle/end of ready queue", kira::display::VGA_RED_ON_BLUE);
-        }
+    // Find which queue the process is in
+    u32 priority = process->priority;
+    if (priority > MAX_PRIORITY) {
+        priority = MAX_PRIORITY;
     }
+    
+    PriorityQueue& queue = readyQueues[priority];
+    
+    if (!queue.head) {
+        return; // Process not in this queue
+    }
+    
+    if (queue.head == process) {
+        // Process is at head of queue
+        queue.head = process->next;
+        if (queue.head) {
+            queue.head->prev = nullptr;
+        } else {
+            // Queue is now empty
+            queue.tail = nullptr;
+        }
+    } else if (queue.tail == process) {
+        // Process is at tail of queue
+        queue.tail = process->prev;
+        queue.tail->next = nullptr;
+    } else {
+        // Process is in middle of queue
+        process->prev->next = process->next;
+        process->next->prev = process->prev;
+    }
+    
     process->next = nullptr;
+    process->prev = nullptr;
+    queue.count--;
 }
 
 void ProcessManager::switch_process() {
-    if (readyQueue) {
-        // Get next process from ready queue
-        currentProcess = readyQueue;
-        readyQueue = readyQueue->next;
-        currentProcess->next = nullptr;
+    Process* nextProcess = get_next_process();
+    if (nextProcess) {
+        // Get next process from priority queue
+        currentProcess = nextProcess;
+        remove_from_ready_queue(currentProcess);
         currentProcess->state = ProcessState::RUNNING;
         currentProcess->timeUsed = 0;
+        currentProcess->lastRunTime = schedulerTicks;
         
         // Immediately update the display to show the new current process
         display_current_process_only();
@@ -359,7 +488,25 @@ void ProcessManager::switch_process() {
                 userFunc();
             }
         } else {
-            // Process is not user mode - shouldn't happen in current implementation
+            // Kernel mode process - execute the function directly
+            if (!currentProcess->hasStarted) {
+                currentProcess->hasStarted = true;
+                
+                // For kernel mode processes, we execute the function directly
+                // The function will run in kernel mode and return when done
+                ProcessFunction func = (ProcessFunction)currentProcess->context.eip;
+                if (func) {
+                    func(); // Execute the kernel mode function
+                }
+                
+                // After function completes, terminate the process
+                currentProcess->state = ProcessState::TERMINATED;
+                processCount--;
+                currentProcess = nullptr;
+                
+                // Try to schedule the next process
+                switch_process();
+            }
         }
     } else {
         // Ready queue is empty - no more processes to run
@@ -610,19 +757,157 @@ void ProcessManager::enable_timer_scheduling() {
     timerSchedulingEnabled = true;
 }
 
+void ProcessManager::disable_scheduling() {
+    schedulingDisabled = true;
+}
+
+void ProcessManager::enable_scheduling() {
+    schedulingDisabled = false;
+}
+
+bool ProcessManager::is_scheduling_disabled() {
+    return schedulingDisabled;
+}
+
 void ProcessManager::sleep_current_process(u32 ticks) {
-    if (currentProcess) {
-        currentProcess->state = ProcessState::BLOCKED;
-        // For now, just yield - we'd need a proper sleep queue for real implementation
-        yield();
+    if (!currentProcess) {
+        return;
     }
+    
+    add_to_sleep_queue(currentProcess, ticks);
+    currentProcess = nullptr;
+    switch_process();
 }
 
 void ProcessManager::wake_up_process(Process* process) {
-    if (process && process->state == ProcessState::BLOCKED) {
+    if (!process) return;
+    
+    if (process->state == ProcessState::BLOCKED || process->state == ProcessState::WAITING) {
         process->state = ProcessState::READY;
         add_to_ready_queue(process);
     }
+}
+
+void ProcessManager::add_to_sleep_queue(Process* process, u32 sleepTicks) {
+    if (!process) return;
+    
+    process->state = ProcessState::SLEEPING;
+    process->sleepUntil = schedulerTicks + sleepTicks;
+    
+    // Add to sleep queue (sorted by wake time)
+    if (!sleepQueue || process->sleepUntil < sleepQueue->sleepUntil) {
+        // Insert at head
+        process->next = sleepQueue;
+        process->prev = nullptr;
+        if (sleepQueue) {
+            sleepQueue->prev = process;
+        }
+        sleepQueue = process;
+    } else {
+        // Insert in middle or at end
+        Process* current = sleepQueue;
+        while (current->next && current->next->sleepUntil <= process->sleepUntil) {
+            current = current->next;
+        }
+        
+        process->next = current->next;
+        process->prev = current;
+        current->next = process;
+        if (process->next) {
+            process->next->prev = process;
+        }
+    }
+}
+
+void ProcessManager::process_sleep_queue() {
+    Process* current = sleepQueue;
+    while (current && current->sleepUntil <= schedulerTicks) {
+        Process* next = current->next;
+        
+        // Remove from sleep queue
+        if (current->prev) {
+            current->prev->next = current->next;
+        } else {
+            sleepQueue = current->next;
+        }
+        if (current->next) {
+            current->next->prev = current->prev;
+        }
+        
+        // Wake up the process
+        current->state = ProcessState::READY;
+        current->next = nullptr;
+        current->prev = nullptr;
+        add_to_ready_queue(current);
+        
+        current = next;
+    }
+}
+
+void ProcessManager::perform_aging() {
+    if (schedulerTicks - lastAgingTime < AGING_INTERVAL) {
+        return; // Not time for aging yet
+    }
+    
+    lastAgingTime = schedulerTicks;
+    
+    // Age all processes in ready queues
+    for (u32 priority = 1; priority <= MAX_PRIORITY; priority++) {
+        PriorityQueue& queue = readyQueues[priority];
+        Process* current = queue.head;
+        
+        while (current) {
+            Process* next = current->next;
+            current->age++;
+            
+            // Promote process to higher priority if it's been waiting too long
+            if (current->age > 50 && priority > 0) {
+                remove_from_ready_queue(current);
+                current->priority = priority - 1;
+                current->age = 0;
+                add_to_ready_queue(current);
+            }
+            
+            current = next;
+        }
+    }
+}
+
+void ProcessManager::block_current_process() {
+    if (!currentProcess) return;
+    
+    currentProcess->state = ProcessState::BLOCKED;
+    currentProcess = nullptr;
+    switch_process();
+}
+
+bool ProcessManager::set_process_priority(u32 pid, u32 priority) {
+    Process* process = get_process(pid);
+    if (!process) return false;
+    
+    if (priority > MAX_PRIORITY) {
+        return false; // Invalid priority
+    }
+    
+    // If process is in ready queue, remove and re-add with new priority
+    if (process->state == ProcessState::READY) {
+        remove_from_ready_queue(process);
+        process->priority = priority;
+        add_to_ready_queue(process);
+    } else {
+        process->priority = priority;
+    }
+    
+    return true;
+}
+
+u32 ProcessManager::get_process_priority(u32 pid) const {
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid == pid && processes[i].state != ProcessState::TERMINATED) {
+            return processes[i].priority;
+        }
+    }
+    return 0xFFFFFFFF; // Not found
 }
 
 } // namespace kira::system 

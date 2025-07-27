@@ -67,6 +67,7 @@ add_library(kernel_core STATIC
     kernel/core/runtime_support.cpp
     kernel/core/sync.cpp
     kernel/test/test_base.cpp
+    kernel/test/process_test.cpp
     kernel/test/exception_tester.cpp
     kernel/test/ata_driver_test.cpp
     kernel/test/vfs_test.cpp

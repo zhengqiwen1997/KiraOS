@@ -1,7 +1,11 @@
 #pragma once
 
 #include "core/types.hpp"
-#include "core/process.hpp"
+
+// Forward declaration
+namespace kira::system {
+    struct Process;
+}
 
 namespace kira::sync {
 

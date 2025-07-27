@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/types.hpp"
+#include "core/sync.hpp"
 
 // Forward declaration to avoid circular dependency
 namespace kira::system {
@@ -9,12 +10,16 @@ namespace kira::system {
 
 namespace kira::system {
 
-// Process states
+using namespace kira::sync;
+
+// Enhanced process states
 enum class ProcessState : u8 {
-    READY = 0,      // Ready to run
-    RUNNING = 1,    // Currently executing
-    BLOCKED = 2,    // Waiting for I/O or event
-    TERMINATED = 3  // Finished execution
+    READY = 0,          // Ready to run
+    RUNNING = 1,        // Currently executing
+    BLOCKED = 2,        // Waiting for I/O or event
+    SLEEPING = 3,       // Sleeping for a specific time
+    TERMINATED = 4,     // Finished execution
+    WAITING = 5         // Waiting for synchronization primitive
 };
 
 // CPU register state for context switching
@@ -58,37 +63,59 @@ struct Process {
     bool isUserMode;            // True if process runs in user mode
     bool hasStarted;            // True if user mode process has been started
     
-    // Scheduling information
+    // Enhanced scheduling information
     u32 creationTime;           // When process was created
     u32 totalCpuTime;           // Total CPU time used
+    u32 sleepUntil;             // Time when sleep should end
+    u32 age;                    // Age for starvation prevention
+    u32 lastRunTime;            // Last time process ran
     
+    // Queue pointers
     Process* next;              // Next process in queue (for linked list)
+    Process* prev;              // Previous process in queue (for doubly-linked list)
 } __attribute__((packed));
 
 // Process function type
 typedef void (*ProcessFunction)();
 
+// Priority queue node
+struct PriorityQueue {
+    Process* head;
+    Process* tail;
+    u32 count;
+    
+    PriorityQueue() : head(nullptr), tail(nullptr), count(0) {}
+};
+
 /**
- * @brief Process Manager - handles process creation, scheduling, and context switching
+ * @brief Enhanced Process Manager - handles process creation, scheduling, and context switching
  */
 class ProcessManager {
 private:
     static constexpr u32 MAX_PROCESSES = 16;
     static constexpr u32 DEFAULT_TIME_SLICE = 10;  // Timer ticks
     static constexpr u32 STACK_SIZE = 4096;        // 4KB stack per process
+    static constexpr u32 MAX_PRIORITY = 10;        // Maximum priority level
+    static constexpr u32 AGING_INTERVAL = 100;     // Ticks between aging
     
     Process processes[MAX_PROCESSES];
-    Process* readyQueue;           // Ready processes queue
-    Process* currentProcess;       // Currently running process
-    u32 nextPid;                  // Next available PID
-    u32 processCount;             // Number of active processes
-    u32 schedulerTicks;           // Ticks since last schedule
+    PriorityQueue readyQueues[MAX_PRIORITY + 1];   // Priority queues
+    Process* sleepQueue;                           // Sleeping processes
+    Process* currentProcess;                       // Currently running process
+    u32 nextPid;                                  // Next available PID
+    u32 processCount;                             // Number of active processes
+    u32 schedulerTicks;                           // Ticks since last schedule
+    u32 lastAgingTime;                            // Last time aging was performed
+    
+    // Synchronization
+    Mutex schedulerMutex;                         // Protects scheduler data structures
+    Spinlock contextSwitchLock;                   // Protects context switching
     
     // Static stack allocation - safer than dynamic addresses
     static u8 kernelStacks[MAX_PROCESSES][STACK_SIZE];  // Kernel mode stacks
     static u8 userStacks[MAX_PROCESSES][STACK_SIZE];    // User mode stacks
     u32 nextStackIndex;
-    bool isInIdleState;           // Flag to track if we're in idle state
+    bool isInIdleState;                           // Flag to track if we're in idle state
     
 public:
     /**
@@ -184,10 +211,45 @@ public:
     static void enable_timer_scheduling();
     
     /**
+     * @brief Disable scheduling (for testing)
+     */
+    static void disable_scheduling();
+    
+    /**
+     * @brief Enable scheduling (for testing)
+     */
+    static void enable_scheduling();
+    
+    /**
+     * @brief Check if scheduling is disabled
+     */
+    static bool is_scheduling_disabled();
+    
+    /**
      * @brief Wake up a blocked process (make it ready to run)
      * @param process Process to wake up
      */
     void wake_up_process(Process* process);
+    
+    /**
+     * @brief Block current process (waiting for event)
+     */
+    void block_current_process();
+    
+    /**
+     * @brief Set process priority
+     * @param pid Process ID
+     * @param priority New priority
+     * @return true if successful
+     */
+    bool set_process_priority(u32 pid, u32 priority);
+    
+    /**
+     * @brief Get process priority
+     * @param pid Process ID
+     * @return Priority or 0xFFFFFFFF if not found
+     */
+    u32 get_process_priority(u32 pid) const;
 
 private:
     /**
@@ -197,8 +259,32 @@ private:
     
     /**
      * @brief Remove process from ready queue
+     * @param process Process to remove
      */
     void remove_from_ready_queue(Process* process);
+    
+    /**
+     * @brief Add process to sleep queue
+     * @param process Process to add
+     * @param sleepTicks Number of ticks to sleep
+     */
+    void add_to_sleep_queue(Process* process, u32 sleepTicks);
+    
+    /**
+     * @brief Process sleep queue and wake up expired processes
+     */
+    void process_sleep_queue();
+    
+    /**
+     * @brief Perform aging to prevent starvation
+     */
+    void perform_aging();
+    
+    /**
+     * @brief Get next process from priority queues
+     * @return Next process to run or nullptr
+     */
+    Process* get_next_process();
     
     /**
      * @brief Switch to next ready process
