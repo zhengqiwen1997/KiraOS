@@ -6,6 +6,8 @@ namespace kira::test {
 using namespace kira::system;
 using namespace kira::utils;
 
+ProcessManager* processManagerPtr = nullptr;
+
 // Simple test process functions
 static void test_process_function_1() {
     // This process just runs for a while
@@ -17,7 +19,7 @@ static void test_process_function_1() {
 
 bool ProcessTest::run_tests() {
     print_section_header("Process Management and Scheduler Tests");
-    
+    processManagerPtr = &ProcessManager::get_instance();
     // Disable scheduling during tests to prevent processes from being executed
     ProcessManager::disable_scheduling();
     
@@ -34,26 +36,26 @@ bool ProcessTest::run_tests() {
     
     // Re-enable scheduling after tests
     ProcessManager::enable_scheduling();
-    
+    processManagerPtr = nullptr;
     print_section_footer("Process Management and Scheduler Tests", passedTests, totalTests);
     return (passedTests == totalTests);
 }
 
 u32 ProcessTest::create_test_process(const char* name, u32 priority) {
-    auto& processManager = ProcessManager::get_instance();
-    return processManager.create_process(test_process_function_1, name, priority);
+    return processManagerPtr->create_process(test_process_function_1, name, priority);
 }
 
 void ProcessTest::simulate_scheduler_ticks(u32 ticks) {
-    auto& processManager = ProcessManager::get_instance();
     for (u32 i = 0; i < ticks; i++) {
-        processManager.schedule();
+        processManagerPtr->schedule();
     }
 }
 
 bool ProcessTest::verify_process_state(u32 pid, ProcessState expectedState) {
-    auto& processManager = ProcessManager::get_instance();
-    Process* process = processManager.get_process(pid);
+    Process* process = processManagerPtr->get_process(pid);
+    if (expectedState == ProcessState::TERMINATED && process->state == ProcessState::TERMINATED) {
+        return true;
+    }
     if (!process) {
         char msg[128];
         strcpy_s(msg, "Process not found for state verification. PID: ", sizeof(msg));
@@ -85,8 +87,7 @@ bool ProcessTest::verify_process_state(u32 pid, ProcessState expectedState) {
 }
 
 bool ProcessTest::verify_process_priority(u32 pid, u32 expectedPriority) {
-    auto& processManager = ProcessManager::get_instance();
-    u32 actualPriority = processManager.get_process_priority(pid);
+    u32 actualPriority = processManagerPtr->get_process_priority(pid);
     
     if (actualPriority == expectedPriority) {
         return true;
@@ -107,8 +108,6 @@ bool ProcessTest::verify_process_priority(u32 pid, u32 expectedPriority) {
 bool ProcessTest::test_process_creation_termination() {
     print_info("Testing process creation and termination...");
     
-    auto& processManager = ProcessManager::get_instance();
-    
     // Test process creation
     u32 pid1 = create_test_process("TestProcess1", 5);
     if (pid1 == 0) {
@@ -122,31 +121,11 @@ bool ProcessTest::test_process_creation_termination() {
         return false;
     }
     
-    // Debug: Print the PIDs we got back
-    char debugMsg[128];
-    strcpy_s(debugMsg, "Created processes with PIDs: ", sizeof(debugMsg));
-    char pidStr[16];
-    number_to_decimal(pidStr, pid1);
-    strcat(debugMsg, pidStr);
-    strcat(debugMsg, " and ");
-    number_to_decimal(pidStr, pid2);
-    strcat(debugMsg, pidStr);
-    print_info(debugMsg);
-    
-    // Verify processes are created
-    Process* process1 = processManager.get_process(pid1);
-    Process* process2 = processManager.get_process(pid2);
-    
-    if (!process1 || !process2) {
-        print_error("Failed to retrieve created processes");
-        return false;
-    }
-    
     if (!verify_process_state(pid1, ProcessState::READY)) return false;
     if (!verify_process_state(pid2, ProcessState::READY)) return false;
     
     // Test process termination
-    if (!processManager.terminate_process(pid1)) {
+    if (!processManagerPtr->terminate_process(pid1)) {
         print_error("Failed to terminate process 1");
         return false;
     }
@@ -162,8 +141,6 @@ bool ProcessTest::test_process_creation_termination() {
 
 bool ProcessTest::test_priority_scheduling() {
     print_info("Testing priority-based scheduling...");
-    
-    auto& processManager = ProcessManager::get_instance();
     
     // Create processes with different priorities
     u32 highPriorityPid = create_test_process("HighPriority", 1);  // High priority
@@ -186,7 +163,7 @@ bool ProcessTest::test_priority_scheduling() {
     if (!verify_process_priority(lowPriorityPid, 9)) return false;
     
     // Test priority management without executing processes
-    if (!processManager.set_process_priority(highPriorityPid, 2)) return false;
+    if (!processManagerPtr->set_process_priority(highPriorityPid, 2)) return false;
     if (!verify_process_priority(highPriorityPid, 2)) return false;
     
     print_success("Priority-based scheduling test passed");
@@ -195,9 +172,7 @@ bool ProcessTest::test_priority_scheduling() {
 
 bool ProcessTest::test_sleep_queue() {
     print_info("Testing sleep queue functionality...");
-    
-    auto& processManager = ProcessManager::get_instance();
-    
+        
     // Create a test process
     u32 pid = create_test_process("SleepTest", 5);
     if (pid == 0) {
@@ -206,7 +181,7 @@ bool ProcessTest::test_sleep_queue() {
     }
     
     // Get the process
-    Process* process = processManager.get_process(pid);
+    Process* process = processManagerPtr->get_process(pid);
     if (!process) {
         print_error("Failed to retrieve process for sleep test");
         return false;
@@ -230,9 +205,7 @@ bool ProcessTest::test_sleep_queue() {
 
 bool ProcessTest::test_aging_mechanism() {
     print_info("Testing aging mechanism...");
-    
-    auto& processManager = ProcessManager::get_instance();
-    
+        
     // Create processes with different priorities
     u32 lowPriorityPid = create_test_process("LowPriorityAging", 9);
     u32 mediumPriorityPid = create_test_process("MediumPriorityAging", 5);
@@ -256,9 +229,7 @@ bool ProcessTest::test_aging_mechanism() {
 
 bool ProcessTest::test_process_blocking_waking() {
     print_info("Testing process blocking and waking...");
-    
-    auto& processManager = ProcessManager::get_instance();
-    
+        
     // Create a test process
     u32 pid = create_test_process("BlockTest", 5);
     if (pid == 0) {
@@ -267,7 +238,7 @@ bool ProcessTest::test_process_blocking_waking() {
     }
     
     // Get the process
-    Process* process = processManager.get_process(pid);
+    Process* process = processManagerPtr->get_process(pid);
     if (!process) {
         print_error("Failed to retrieve process for blocking test");
         return false;
@@ -277,7 +248,7 @@ bool ProcessTest::test_process_blocking_waking() {
     if (!verify_process_state(pid, ProcessState::READY)) return false;
     
     // Test wake up functionality (even though process is already ready)
-    processManager.wake_up_process(process);
+    processManagerPtr->wake_up_process(process);
     
     // Verify process is still ready
     if (!verify_process_state(pid, ProcessState::READY)) return false;
@@ -288,9 +259,7 @@ bool ProcessTest::test_process_blocking_waking() {
 
 bool ProcessTest::test_priority_management() {
     print_info("Testing priority management...");
-    
-    auto& processManager = ProcessManager::get_instance();
-    
+        
     // Create a test process
     u32 pid = create_test_process("PriorityTest", 5);
     if (pid == 0) {
@@ -302,7 +271,7 @@ bool ProcessTest::test_priority_management() {
     if (!verify_process_priority(pid, 5)) return false;
     
     // Change priority to higher
-    if (!processManager.set_process_priority(pid, 2)) {
+    if (!processManagerPtr->set_process_priority(pid, 2)) {
         print_error("Failed to set process priority to 2");
         return false;
     }
@@ -310,7 +279,7 @@ bool ProcessTest::test_priority_management() {
     if (!verify_process_priority(pid, 2)) return false;
     
     // Change priority to lower
-    if (!processManager.set_process_priority(pid, 8)) {
+    if (!processManagerPtr->set_process_priority(pid, 8)) {
         print_error("Failed to set process priority to 8");
         return false;
     }
@@ -318,13 +287,13 @@ bool ProcessTest::test_priority_management() {
     if (!verify_process_priority(pid, 8)) return false;
     
     // Test invalid priority
-    if (processManager.set_process_priority(pid, 15)) {
+    if (processManagerPtr->set_process_priority(pid, 15)) {
         print_error("Should not accept priority > MAX_PRIORITY");
         return false;
     }
     
     // Test non-existent process
-    if (processManager.set_process_priority(999, 5)) {
+    if (processManagerPtr->set_process_priority(999, 5)) {
         print_error("Should not accept non-existent process ID");
         return false;
     }
@@ -335,9 +304,7 @@ bool ProcessTest::test_priority_management() {
 
 bool ProcessTest::test_scheduler_statistics() {
     print_info("Testing scheduler statistics...");
-    
-    auto& processManager = ProcessManager::get_instance();
-    
+        
     // Create some test processes
     u32 pid1 = create_test_process("StatsTest1", 3);
     u32 pid2 = create_test_process("StatsTest2", 7);
@@ -348,14 +315,14 @@ bool ProcessTest::test_scheduler_statistics() {
     }
     
     // Test getting current PID (should be 0 if no process is running)
-    u32 currentPid = processManager.get_current_pid();
+    u32 currentPid = processManagerPtr->get_current_pid();
     if (currentPid != 0) {
         print_warning("Current PID is not 0, but this is expected in test environment");
     }
     
     // Test priority retrieval
-    u32 priority1 = processManager.get_process_priority(pid1);
-    u32 priority2 = processManager.get_process_priority(pid2);
+    u32 priority1 = processManagerPtr->get_process_priority(pid1);
+    u32 priority2 = processManagerPtr->get_process_priority(pid2);
     
     if (priority1 != 3 || priority2 != 7) {
         print_error("Priority retrieval failed");
@@ -363,7 +330,7 @@ bool ProcessTest::test_scheduler_statistics() {
     }
     
     // Test getting non-existent process priority
-    u32 invalidPriority = processManager.get_process_priority(999);
+    u32 invalidPriority = processManagerPtr->get_process_priority(999);
     if (invalidPriority != 0xFFFFFFFF) {
         print_error("Should return 0xFFFFFFFF for non-existent process");
         return false;

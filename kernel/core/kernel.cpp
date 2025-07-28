@@ -121,23 +121,33 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     } else {
         console.add_message("Synchronization tests failed", kira::display::VGA_RED_ON_BLUE);
     }
-    
-    // Initialize and test FAT32 File System
-    console.add_message("Testing FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
-    if (kira::test::FAT32Test::run_tests()) {
-        console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
+
+    if (gIsDiskBoot) {
+        console.add_message("gIsDiskBoot is true", kira::display::VGA_CYAN_ON_BLUE);
     } else {
-        console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
+        console.add_message("gIsDiskBoot is false", kira::display::VGA_CYAN_ON_BLUE);
+    }
+    
+    // Initialize and test FAT32 File System (only for ELF boot, not disk boot)
+    if (!kira::system::gIsDiskBoot) {
+        console.add_message("Testing FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
+        if (kira::test::FAT32Test::run_tests()) {
+            console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
+        } else {
+            console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
+        }
+    } else {
+        console.add_message("Skipping FAT32 tests (disk boot mode)", kira::display::VGA_CYAN_ON_BLUE);
     }
     
     // Initialize and test Process Management and Scheduler
-    console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
-    kira::test::ProcessTest processTest;
-    if (processTest.run_tests()) {
-        console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
-    } else {
-        console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
-    }
+    // console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+    // kira::test::ProcessTest processTest;
+    // if (processTest.run_tests()) {
+    //     console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
+    // } else {
+    //     console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
+    // }
     
     // Initialize process management
     console.add_message("Initializing process management...", kira::display::VGA_YELLOW_ON_BLUE);

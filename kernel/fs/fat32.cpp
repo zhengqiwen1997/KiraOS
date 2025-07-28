@@ -7,10 +7,6 @@ namespace kira::fs {
 using namespace kira::system;
 using namespace kira::utils;
 
-
-
-
-
 //=============================================================================
 // FAT32Node Implementation
 //=============================================================================
@@ -19,10 +15,6 @@ FAT32Node::FAT32Node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster,
     : VNode(inode, type, fs), m_firstCluster(firstCluster), m_size(size),
       m_dirEntries(nullptr), m_dirEntryCount(0), m_dirCacheValid(false) {
 }
-
-
-
-
 
 FSResult FAT32Node::read(u32 offset, u32 size, void* buffer) {
     if (!buffer || size == 0) {

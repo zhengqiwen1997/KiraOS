@@ -5,8 +5,14 @@ namespace kira::test {
 
 using namespace kira::fs;
 
+static MemoryManager* memMgrPtr = nullptr;
+static BlockDeviceManager* bdmPtr = nullptr;
+
 bool FAT32Test::run_tests() {
     print_section_header("FAT32 File System Tests");
+    
+    memMgrPtr = &MemoryManager::get_instance();
+    bdmPtr = &BlockDeviceManager::get_instance();
     
     u32 passedTests = 0;
     u32 totalTests = 3;
@@ -14,6 +20,9 @@ bool FAT32Test::run_tests() {
     if (test_fat32_mount()) passedTests++;
     if (test_fat32_integration_with_vfs()) passedTests++;
     if (test_fat32_directory_operations()) passedTests++;
+    
+    memMgrPtr = nullptr;
+    bdmPtr = nullptr;
     
     print_section_footer("FAT32 File System Tests", passedTests, totalTests);
     return (passedTests == totalTests);
@@ -23,8 +32,8 @@ bool FAT32Test::test_fat32_mount() {
     bool testPassed = true;
     
     // Get a block device for testing
-    BlockDeviceManager& bdm = BlockDeviceManager::get_instance();
-    BlockDevice* device = bdm.get_device(0);
+    // BlockDeviceManager& bdm = BlockDeviceManager::get_instance();
+    BlockDevice* device = bdmPtr->get_device(0);
     
     if (!device) {
         print_warning("No block device available for FAT32 testing");
@@ -33,19 +42,26 @@ bool FAT32Test::test_fat32_mount() {
     }
     
     // Create FAT32 instance
-    auto& memMgr = MemoryManager::get_instance();
-    void* fat32Memory = memMgr.allocate_physical_page();
+    void* fat32Memory = memMgrPtr->allocate_physical_page();
     if (!fat32Memory) {
         testPassed = false;
     } else {
         FAT32* fat32 = new(fat32Memory) FAT32(device);
         
-        // Test mount without mock data (should fail gracefully)
-        FSResult mountResult = fat32->mount("test");
-        if (mountResult != FSResult::SUCCESS) {
-            print_success("FAT32 mount failed as expected (no filesystem)");
+        // Clear the disk first to ensure clean state for the first mount test
+        u8 emptySector[512];
+        memset(emptySector, 0, 512);
+        if (device->write_blocks(0, 1, emptySector) != FSResult::SUCCESS) {
+            print_error("Failed to clear boot sector for first mount test");
+            testPassed = false;
         } else {
-            print_warning("FAT32 mount unexpectedly succeeded");
+            // Test mount without mock data (should fail gracefully)
+            FSResult mountResult = fat32->mount("test");
+            if (mountResult != FSResult::SUCCESS) {
+                print_success("FAT32 mount failed as expected (no filesystem)");
+            } else {
+                print_warning("FAT32 mount unexpectedly succeeded");
+            }
         }
         
         // Test with mock data
@@ -63,7 +79,7 @@ bool FAT32Test::test_fat32_mount() {
         }
         
         fat32->~FAT32();
-        memMgr.free_physical_page(fat32Memory);
+        memMgrPtr->free_physical_page(fat32Memory);
     }
     
     print_test_result("FAT32 Mount", testPassed);
@@ -93,8 +109,7 @@ bool FAT32Test::test_fat32_integration_with_vfs() {
     }
     
     // Create FAT32 instance
-    auto& memMgr = MemoryManager::get_instance();
-    void* fat32Memory = memMgr.allocate_physical_page();
+    void* fat32Memory = memMgrPtr->allocate_physical_page();
     if (!fat32Memory) {
         testPassed = false;
     } else {
@@ -129,7 +144,7 @@ bool FAT32Test::test_fat32_integration_with_vfs() {
                     print_debug("Cleaning up root node resources...");
                     rootNode->~VNode();
                     print_debug("Freeing root node memory...");
-                    memMgr.free_physical_page(rootNode);
+                    memMgrPtr->free_physical_page(rootNode);
                     rootNode = nullptr;
                     print_debug("Root node cleanup complete");
                 }
@@ -149,7 +164,7 @@ bool FAT32Test::test_fat32_integration_with_vfs() {
         print_debug("FAT32 memory pointer check...");
         if (fat32Memory) {
             print_debug("FAT32 memory pointer is valid, freeing...");
-            memMgr.free_physical_page(fat32Memory);
+            memMgrPtr->free_physical_page(fat32Memory);
             print_debug("FAT32 memory freed successfully");
         } else {
             print_error("FAT32 memory pointer is NULL!");
@@ -165,8 +180,7 @@ bool FAT32Test::test_fat32_directory_operations() {
     bool testPassed = true;
     
     // Get a block device for testing
-    BlockDeviceManager& bdm = BlockDeviceManager::get_instance();
-    BlockDevice* device = bdm.get_device(0);
+    BlockDevice* device = bdmPtr->get_device(0);
     
     if (!device) {
         print_warning("No block device for directory operations test");
@@ -182,8 +196,7 @@ bool FAT32Test::test_fat32_directory_operations() {
     }
     
     // Create FAT32 instance
-    auto& memMgr = MemoryManager::get_instance();
-    void* fat32Memory = memMgr.allocate_physical_page();
+    void* fat32Memory = memMgrPtr->allocate_physical_page();
     if (!fat32Memory) {
         testPassed = false;
     } else {
@@ -194,7 +207,7 @@ bool FAT32Test::test_fat32_directory_operations() {
         if (mountResult != FSResult::SUCCESS) {
             print_warning("FAT32 mount failed for directory operations test");
             fat32->~FAT32();
-            memMgr.free_physical_page(fat32Memory);
+            memMgrPtr->free_physical_page(fat32Memory);
             print_test_result("FAT32 Directory Operations (mount failed)", false);
             return false;
         }
@@ -216,7 +229,7 @@ bool FAT32Test::test_fat32_directory_operations() {
                 FSResult lookupResult = rootNode->lookup("test.txt", foundNode);
                 if (lookupResult == FSResult::SUCCESS && foundNode) {
                     print_success("File create/lookup: SUCCESS");
-                    memMgr.free_physical_page(foundNode);
+                    memMgrPtr->free_physical_page(foundNode);
                     
                     // Test 2: Delete first file
                     FSResult deleteResult = rootNode->delete_file("test.txt");
@@ -252,7 +265,7 @@ bool FAT32Test::test_fat32_directory_operations() {
         }
 
         fat32->~FAT32();
-        memMgr.free_physical_page(fat32Memory);
+        memMgrPtr->free_physical_page(fat32Memory);
     }
     
     print_test_result("FAT32 Directory Operations", testPassed);
@@ -261,14 +274,51 @@ bool FAT32Test::test_fat32_directory_operations() {
 
 bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
     if (!device) return false;
+        
+    // FAT32 layout constants - using safe region to avoid bootloader/kernel
+    static constexpr u32 BOOT_SECTOR = 1000;  // Safe region, far from bootloader
+    static constexpr u32 RESERVED_SECTORS = 32;
+    static constexpr u32 FAT_SIZE_SECTORS = 1024;
+    static constexpr u32 NUM_FATS = 2;
+    static constexpr u32 ROOT_CLUSTER = 2;
+    static constexpr u32 SECTORS_PER_CLUSTER = 8;
+    static constexpr u32 BYTES_PER_SECTOR = 512;
     
-    auto& memMgr = MemoryManager::get_instance();
+    // Calculate FAT32 layout
+    u32 fatStartSector = RESERVED_SECTORS;
+    u32 fatEndSector = fatStartSector + (NUM_FATS * FAT_SIZE_SECTORS);
+    u32 dataStartSector = fatEndSector;
+    u32 rootClusterSector = dataStartSector + ((ROOT_CLUSTER - 2) * SECTORS_PER_CLUSTER);
+    u32 rootClusterEndSector = rootClusterSector + SECTORS_PER_CLUSTER;
+    
+    // Clear only the specific sectors that FAT32 will use
+    u8 emptySector[BYTES_PER_SECTOR];
+    memset(emptySector, 0, BYTES_PER_SECTOR);
+    
+    // Clear boot sector
+    if (device->write_blocks(BOOT_SECTOR, 1, emptySector) != FSResult::SUCCESS) {
+        return false;
+    }
+    
+    // Clear FAT tables
+    for (u32 sector = fatStartSector; sector < fatEndSector; sector++) {
+        if (device->write_blocks(sector, 1, emptySector) != FSResult::SUCCESS) {
+            return false;
+        }
+    }
+    
+    // Clear root directory cluster
+    for (u32 sector = rootClusterSector; sector < rootClusterEndSector; sector++) {
+        if (device->write_blocks(sector, 1, emptySector) != FSResult::SUCCESS) {
+            return false;
+        }
+    }
     
     // Create a simple FAT32 BPB (BIOS Parameter Block)
     Fat32Bpb bpb;
     memset(&bpb, 0, sizeof(bpb));
     
-    // Jump instruction
+    // Jump instruction (standard boot jump)
     bpb.jump_boot[0] = 0xEB;
     bpb.jump_boot[1] = 0x58;
     bpb.jump_boot[2] = 0x90;
@@ -276,23 +326,23 @@ bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
     // OEM name
     memcpy(bpb.oem_name, "KIRAOS  ", 8);
     
-    // Basic FAT32 parameters
-    bpb.bytes_per_sector = 512;
-    bpb.sectors_per_cluster = 8;  // 4KB clusters
-    bpb.reserved_sector_count = 32;
-    bpb.num_fats = 2;
+    // Basic FAT32 parameters using constants
+    bpb.bytes_per_sector = BYTES_PER_SECTOR;
+    bpb.sectors_per_cluster = SECTORS_PER_CLUSTER;
+    bpb.reserved_sector_count = RESERVED_SECTORS;
+    bpb.num_fats = NUM_FATS;
     bpb.root_entry_count = 0;  // FAT32 uses cluster chain for root
     bpb.total_sectors_16 = 0;  // Use 32-bit field
     bpb.media = 0xF8;  // Hard disk
     bpb.fat_size_16 = 0;  // Use 32-bit field
     bpb.sectors_per_track = 63;
     bpb.num_heads = 255;
-    bpb.hidden_sectors = 0;
-    bpb.total_sectors_32 = 65536;  // 32MB
-    bpb.fat_size_32 = 1024;  // FAT size in sectors
+    bpb.hidden_sectors = BOOT_SECTOR;  // Offset from start of disk
+    bpb.total_sectors_32 = 65536;  // 32MB filesystem
+    bpb.fat_size_32 = FAT_SIZE_SECTORS;
     bpb.ext_flags = 0;
     bpb.fs_version = 0;
-    bpb.root_cluster = 2;  // Root directory starts at cluster 2
+    bpb.root_cluster = ROOT_CLUSTER;
     bpb.fs_info = 1;
     bpb.backup_boot_sector = 6;
     bpb.drive_number = 0x80;
@@ -313,9 +363,9 @@ bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
         return false;
     }
     
-    // Initialize FAT tables (sectors 32-1055 and 1056-2079)
-    u8 fatSector[512];
-    memset(fatSector, 0, 512);
+    // Initialize FAT tables
+    u8 fatSector[BYTES_PER_SECTOR];
+    memset(fatSector, 0, BYTES_PER_SECTOR);
     
     // First FAT sector has special entries
     u32* fatEntries = reinterpret_cast<u32*>(fatSector);
@@ -324,23 +374,26 @@ bool FAT32Test::create_mock_fat32_data(BlockDevice* device) {
     fatEntries[2] = 0x0FFFFFFF;  // Root directory (single cluster)
     
     // Write first FAT sector to both FAT copies
-    if (device->write_blocks(32, 1, fatSector) != FSResult::SUCCESS) return false;
-    if (device->write_blocks(1056, 1, fatSector) != FSResult::SUCCESS) return false;
+    u32 firstFatSector = fatStartSector;
+    u32 secondFatSector = fatStartSector + FAT_SIZE_SECTORS;
+    if (device->write_blocks(firstFatSector, 1, fatSector) != FSResult::SUCCESS) return false;
+    if (device->write_blocks(secondFatSector, 1, fatSector) != FSResult::SUCCESS) return false;
     
     // Initialize remaining FAT sectors (all zeros = free clusters)
-    memset(fatSector, 0, 512);
-    for (u32 sector = 33; sector < 1056; sector++) {
+    memset(fatSector, 0, BYTES_PER_SECTOR);
+    for (u32 sector = firstFatSector + 1; sector < firstFatSector + FAT_SIZE_SECTORS; sector++) {
         if (device->write_blocks(sector, 1, fatSector) != FSResult::SUCCESS) return false;
     }
-    for (u32 sector = 1057; sector < 2080; sector++) {
+    for (u32 sector = secondFatSector + 1; sector < secondFatSector + FAT_SIZE_SECTORS; sector++) {
         if (device->write_blocks(sector, 1, fatSector) != FSResult::SUCCESS) return false;
     }
     
-    // Initialize root directory cluster (cluster 2 = sectors 2080-2087)
-    u8 rootCluster[4096];  // 8 sectors * 512 bytes
-    memset(rootCluster, 0, 4096);  // Empty directory
+    // Initialize root directory cluster
+    u32 rootClusterSize = SECTORS_PER_CLUSTER * BYTES_PER_SECTOR;
+    u8 rootCluster[rootClusterSize];
+    memset(rootCluster, 0, rootClusterSize);  // Empty directory
     
-    FSResult rootWriteResult = device->write_blocks(2080, 8, rootCluster);
+    FSResult rootWriteResult = device->write_blocks(rootClusterSector, SECTORS_PER_CLUSTER, rootCluster);
     if (rootWriteResult != FSResult::SUCCESS) {
         return false;
     }

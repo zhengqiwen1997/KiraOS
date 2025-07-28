@@ -18,6 +18,9 @@ using i64 = signed long long;
 using uintptr_t = u32;
 using intptr_t = i32;
 
+// Global variables for boot information
+extern bool gIsDiskBoot;
+
 } // namespace kira::system
 
 // Placement new operator for kernel

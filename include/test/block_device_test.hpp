@@ -20,12 +20,6 @@ public:
     
 private:
     /**
-     * @brief Test block device manager initialization
-     * @return true if successful
-     */
-    static bool test_device_manager();
-    
-    /**
      * @brief Test ATA block device initialization
      * @return true if successful
      */

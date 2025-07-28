@@ -47,6 +47,8 @@ ProcessManager::ProcessManager() {
     currentProcess = nullptr;
     sleepQueue = nullptr;
     nextPid = 1;
+    kira::kernel::console.add_message("Initializing ProcessManager in constructor", kira::display::VGA_YELLOW_ON_BLUE);
+
     processCount = 0;
     schedulerTicks = 0;
     lastAgingTime = 0;
@@ -155,6 +157,7 @@ u32 ProcessManager::create_process(ProcessFunction function, const char* name, u
     }
     
     if (!process) {
+        kira::kernel::console.add_message("no process slot", kira::display::VGA_RED_ON_BLUE);
         return 0;
     }
     
@@ -181,7 +184,7 @@ u32 ProcessManager::create_process(ProcessFunction function, const char* name, u
         process->pid = 0;  // Mark as free
         return 0;
     }
-    
+    kira::kernel::console.add_message("init_process_context", kira::display::VGA_GREEN_ON_BLUE);
     // Initialize context for kernel mode
     init_process_context(process, function);
     
@@ -193,7 +196,6 @@ u32 ProcessManager::create_process(ProcessFunction function, const char* name, u
     if (process->state != ProcessState::READY) {
         kira::kernel::console.add_message("ERROR: Process state changed after adding to ready queue", kira::display::VGA_RED_ON_BLUE);
     }
-    
     return process->pid;
 }
 
@@ -301,7 +303,7 @@ void ProcessManager::schedule() {
 
 Process* ProcessManager::get_process(u32 pid) {
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
-        if (processes[i].pid == pid && processes[i].state != ProcessState::TERMINATED) {
+        if (processes[i].pid == pid) {
             return &processes[i];
         }
     }
