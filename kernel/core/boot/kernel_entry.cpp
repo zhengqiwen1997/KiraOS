@@ -9,7 +9,6 @@ using namespace kira::display;
 namespace kira::system {
     extern u32 gMemoryMapAddr;
     extern u32 gMemoryMapCount;
-    bool gIsDiskBoot = false;  // Flag to indicate disk boot vs ELF boot
 }
 
 // Forward declaration of main kernel function
@@ -35,7 +34,6 @@ extern "C" __attribute__((section(".text._start"))) void _start() {
     // Store memory map info in global variables for MemoryManager to access later
     gMemoryMapAddr = memoryMapAddr;
     gMemoryMapCount = memoryMapCount;
-    gIsDiskBoot = (isDiskBoot == 0xDEADBEEF);  // Check for Stage2 signature
     
     // Call the main kernel function with VGA buffer for compatibility
     kira::kernel::main((volatile unsigned short*)VGA_BUFFER);

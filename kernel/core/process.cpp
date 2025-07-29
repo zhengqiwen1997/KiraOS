@@ -184,7 +184,6 @@ u32 ProcessManager::create_process(ProcessFunction function, const char* name, u
         process->pid = 0;  // Mark as free
         return 0;
     }
-    kira::kernel::console.add_message("init_process_context", kira::display::VGA_GREEN_ON_BLUE);
     // Initialize context for kernel mode
     init_process_context(process, function);
     

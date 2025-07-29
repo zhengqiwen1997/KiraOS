@@ -18,8 +18,8 @@ STAGE1_SRC = $(BOOT_DIR)/stage1.asm
 STAGE2_SRC = $(BOOT_DIR)/stage2.asm
 STAGE1_BIN = $(BUILD_DIR)/stage1.bin
 STAGE2_BIN = $(BUILD_DIR)/stage2.bin
-CPP_KERNEL_BIN = $(CMAKE_BUILD_DIR)/kernel.bin
-CPP_KERNEL_ELF = $(CMAKE_BUILD_DIR)/kernel.elf
+CPP_KERNEL_BIN = $(CMAKE_BUILD_DIR)-elf/kernel.bin
+CPP_KERNEL_ELF = $(CMAKE_BUILD_DIR)-elf/kernel.elf
 DISK_IMAGE = $(BUILD_DIR)/kiraos.img
 SERIAL_LOG = $(BUILD_DIR)/serial.log
 
@@ -56,7 +56,7 @@ QEMU_ELF_SIMPLE_FLAGS = -kernel kernel.elf \
 #=============================================================================
 
 # Default target
-all: $(DISK_IMAGE)
+all: $(CPP_KERNEL_ELF)
 
 # Create build directory
 $(BUILD_DIR):
@@ -86,14 +86,23 @@ $(STAGE2_BIN): $(STAGE2_SRC) | $(BUILD_DIR)
 
 # Build C++ kernel using CMake
 $(CPP_KERNEL_ELF):
-	@echo "Building C++ kernel..."
-	@mkdir -p $(CMAKE_BUILD_DIR)
-	@cd $(CMAKE_BUILD_DIR) && \
-		cmake .. -DCMAKE_TOOLCHAIN_FILE=../i686-elf-toolchain.cmake && \
+	@echo "Building C++ kernel for ELF boot..."
+	@mkdir -p $(CMAKE_BUILD_DIR)-elf
+	@cd $(CMAKE_BUILD_DIR)-elf && \
+		cmake .. -DCMAKE_TOOLCHAIN_FILE=../i686-elf-toolchain.cmake -DDISK_BOOT_ONLY=0 && \
 		cmake --build .
 	@echo "  ✓ C++ kernel built: $(CPP_KERNEL_ELF)"
 
 
+
+# Build kernel for disk boot (minimal, no FAT32 tests)
+$(CMAKE_BUILD_DIR)-disk/kernel.elf:
+	@echo "Building C++ kernel for disk boot..."
+	@mkdir -p $(CMAKE_BUILD_DIR)-disk
+	@cd $(CMAKE_BUILD_DIR)-disk && \
+		cmake .. -DCMAKE_TOOLCHAIN_FILE=../i686-elf-toolchain.cmake -DDISK_BOOT_ONLY=1 && \
+		cmake --build .
+	@echo "  ✓ C++ kernel built for disk boot: $@"
 
 # Legacy target for binary kernel
 $(CPP_KERNEL_BIN): $(CPP_KERNEL_ELF)
@@ -104,14 +113,14 @@ $(CPP_KERNEL_BIN): $(CPP_KERNEL_ELF)
 	fi
 
 # Create bootable disk image (legacy method)
-$(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(CPP_KERNEL_BIN)
+$(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(CMAKE_BUILD_DIR)-disk/kernel.elf
 	@echo "Creating bootable disk image..."
 	@$(DD) if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
 	@$(DD) if=$(STAGE1_BIN) of=$@ conv=notrunc 2>/dev/null
 	@echo "  ✓ Stage1 loaded at sector 0 (MBR)"
 	@$(DD) if=$(STAGE2_BIN) of=$@ seek=1 conv=notrunc 2>/dev/null
 	@echo "  ✓ Stage2 loaded at sectors 1-4"
-	@$(DD) if=$(CPP_KERNEL_BIN) of=$@ seek=5 conv=notrunc 2>/dev/null
+	@$(DD) if=$(CMAKE_BUILD_DIR)-disk/kernel.bin of=$@ seek=5 conv=notrunc 2>/dev/null
 	@echo "  ✓ C++ kernel loaded at disk sector 5, will be moved to 0x100000 (1MB)"
 	@echo "  ✓ Disk image created: $@"
 
@@ -128,32 +137,36 @@ $(BUILD_DIR)/test_disk.img: | $(BUILD_DIR)
 # Run KiraOS using ELF kernel (simple and reliable)
 run: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img
 	@echo "Starting KiraOS..."
-	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
+	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
 
 # Run KiraOS with serial logging and monitor
 run-with-log: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
 	@echo "Starting KiraOS with serial logging..."
 	@echo "Note: Serial output will be saved to build/serial.log"
-	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
+	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
 
 # Run KiraOS simply (no serial logging) - kept for compatibility
 run-simple: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img
 	@echo "Starting KiraOS (simple mode)..."
-	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
+	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
 
 # Run with graphics disabled (serial output only)
 run-headless: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
 	@echo "Starting KiraOS in headless mode..."
-	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_FLAGS) -nographic
+	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -nographic
 
 # Run in debug mode with GDB server
 debug: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
 	@echo "Starting KiraOS in debug mode..."
 	@echo "Connect GDB with: target remote localhost:1234"
-	@cd $(CMAKE_BUILD_DIR) && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio -s -S
+	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio -s -S
+
+# Create bootable disk image without running it
+disk: clean-disk $(DISK_IMAGE)
+	@echo "Bootable disk image created: $(DISK_IMAGE)"
 
 # Run using legacy disk image method
-run-disk: clean-disk $(DISK_IMAGE)
+run-disk: disk
 	@echo "Starting KiraOS using disk image (legacy method)..."
 	@$(QEMU) $(QEMU_DISK_FLAGS) -monitor stdio
 
@@ -178,7 +191,7 @@ log:
 # Clean all build files
 clean:
 	@echo "Cleaning build files..."
-	@rm -rf $(BUILD_DIR) $(CMAKE_BUILD_DIR)
+	@rm -rf $(BUILD_DIR) $(CMAKE_BUILD_DIR) $(CMAKE_BUILD_DIR)-elf $(CMAKE_BUILD_DIR)-disk
 	@echo "  ✓ Build files cleaned"
 
 # Show help information
@@ -187,7 +200,8 @@ help:
 	@echo "=================="
 	@echo ""
 	@echo "Build targets:"
-	@echo "  all          - Build bootable disk image (default)"
+	@echo "  all          - Build ELF kernel (default)"
+	@echo "  disk         - Create bootable disk image"
 	@echo "  clean        - Remove all build files"
 	@echo ""
 	@echo "Run targets:"
@@ -202,4 +216,4 @@ help:
 	@echo "  log          - Show serial port output"
 	@echo "  help         - Show this help message"
 
-.PHONY: all run run-with-log run-simple run-headless run-disk debug log clean help 
+.PHONY: all disk run run-with-log run-simple run-headless run-disk debug log clean help 

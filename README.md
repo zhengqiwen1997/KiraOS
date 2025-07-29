@@ -17,13 +17,16 @@ KiraOS is a self-made operating system written in C++ for fun and study. It feat
 ## Quick Start
 
 ```bash
-# Build
+# Build ELF kernel (default - includes all tests)
 make clean && make
 
-# Run (ELF method - recommended)
+# Run ELF kernel (recommended for development)
 make run
 
-# Run (IMG method - custom bootloader)
+# Create bootable disk image
+make disk
+
+# Run disk image (custom bootloader)
 make run-disk
 ```
 
@@ -51,8 +54,9 @@ KiraOS/
 ├── include/                   # Kernel headers
 │   ├── drivers/               # Driver interfaces
 │   └── test/                  # Test framework headers
-├── build/                     # Build output (disk images)
-├── cmake-build/               # CMake build directory
+├── build/                     # Build output (disk images, logs)
+├── cmake-build-elf/           # ELF kernel build directory (full tests)
+├── cmake-build-disk/          # Disk kernel build directory (minimal)
 ├── Makefile                   # Main build system
 └── CMakeLists.txt            # CMake configuration
 ```
@@ -61,20 +65,33 @@ KiraOS/
 
 ### Build Commands
 ```bash
-make clean && make            # Clean build everything
-make                          # Build everything
-make clean                    # Clean build files
+make clean && make            # Clean build ELF kernel (full tests)
+make                          # Build ELF kernel (default target)
+make disk                     # Create bootable disk image (minimal kernel)
+make clean                    # Remove all build files
 ```
 
-### Running
+### Running & Testing
 ```bash
-# ELF method (recommended) - QEMU loads kernel directly
+# ELF method (recommended) - Fast development cycle
 make run                      # Basic run with console output
-make run-with-log            # Run with serial logging
+make run-with-log            # Run with serial logging to build/serial.log
+make run-headless            # Run without graphics (serial only)
+make debug                    # Run with GDB server on port 1234
 
-# IMG method - Custom bootloader with disk image
-make run-disk                # Boot from disk image
+# Disk method - Real bootloader experience
+make disk                     # Create disk image only
+make run-disk                # Create and run disk image
+
+# Get help
+make help                     # Show all available targets
 ```
+
+### Build System Architecture
+- **ELF Kernel** (`cmake-build-elf/`): Full-featured kernel with all tests (ProcessTest, FAT32Test, etc.)
+- **Disk Kernel** (`cmake-build-disk/`): Minimal kernel optimized for 64KB bootloader limit
+- **Conditional Compilation**: Heavy tests automatically excluded from disk builds to prevent boot failures
+- **Separate Dependencies**: Each build type maintains its own artifacts to prevent interference
 
 ## Boot Methods
 

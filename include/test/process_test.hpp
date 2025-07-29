@@ -96,6 +96,11 @@ private:
      * @return true if priority matches
      */
     bool verify_process_priority(u32 pid, u32 expectedPriority);
+    
+    /**
+     * @brief Clean up all test processes
+     */
+    void cleanup_all_test_processes();
 };
 
 } // namespace kira::test

@@ -122,23 +122,26 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("Synchronization tests failed", kira::display::VGA_RED_ON_BLUE);
     }
 
-    if (gIsDiskBoot) {
-        console.add_message("gIsDiskBoot is true", kira::display::VGA_CYAN_ON_BLUE);
-    } else {
-        console.add_message("gIsDiskBoot is false", kira::display::VGA_CYAN_ON_BLUE);
-    }
-    
     // Initialize and test FAT32 File System (only for ELF boot, not disk boot)
-    if (!kira::system::gIsDiskBoot) {
-        console.add_message("Testing FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
-        if (kira::test::FAT32Test::run_tests()) {
-            console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
-        } else {
-            console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
-        }
+    #ifndef DISK_BOOT_ONLY
+    console.add_message("Testing FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
+    // kira::test::FAT32Test fat32Test;
+    if (kira::test::FAT32Test::run_tests()) {
+        console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
     } else {
-        console.add_message("Skipping FAT32 tests (disk boot mode)", kira::display::VGA_CYAN_ON_BLUE);
+        console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
     }
+
+    console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+    kira::test::ProcessTest processTest;
+    if (processTest.run_tests()) {
+        console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    #else
+    console.add_message("FAT32 and Process Management tests disabled for disk boot", kira::display::VGA_CYAN_ON_BLUE);
+    #endif
     
     // Initialize and test Process Management and Scheduler
     // console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
@@ -154,9 +157,25 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     auto& process_manager = ProcessManager::get_instance();
     
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
+    
+    // // Debug: Show process manager state before creating user process
+    // console.add_message("DEBUG: Process manager state before user process creation", kira::display::VGA_MAGENTA_ON_BLUE);
+    
+    // // Show current process count and next PID
+    // char debugMsg[128];
+    // strcpy_s(debugMsg, "DEBUG: Next PID will be: ", sizeof(debugMsg));
+    // // We can't directly access the next PID, but we can see what PID gets assigned
+    
+    // console.add_message(debugMsg, kira::display::VGA_MAGENTA_ON_BLUE);
+    
     u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
     if (pid1) {
-        console.add_message("User mode process: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+        char pidMsg[64];
+        strcpy_s(pidMsg, "User mode process created with PID: ", sizeof(pidMsg));
+        char pidStr[16];
+        number_to_decimal(pidStr, pid1);
+        strcat(pidMsg, pidStr);
+        console.add_message(pidMsg, kira::display::VGA_GREEN_ON_BLUE);
         console.add_message("Starting process scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
         
         // Debug: Check if ready queue still has processes before scheduling

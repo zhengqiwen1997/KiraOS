@@ -6,7 +6,8 @@ namespace kira::test {
 using namespace kira::system;
 using namespace kira::utils;
 
-ProcessManager* processManagerPtr = nullptr;
+static ProcessManager* processManagerPtr = nullptr;
+static u32 testProcessCount = 20;
 
 // Simple test process functions
 static void test_process_function_1() {
@@ -20,6 +21,7 @@ static void test_process_function_1() {
 bool ProcessTest::run_tests() {
     print_section_header("Process Management and Scheduler Tests");
     processManagerPtr = &ProcessManager::get_instance();
+    
     // Disable scheduling during tests to prevent processes from being executed
     ProcessManager::disable_scheduling();
     
@@ -33,6 +35,12 @@ bool ProcessTest::run_tests() {
     if (test_process_blocking_waking()) passedTests++;
     if (test_priority_management()) passedTests++;
     if (test_scheduler_statistics()) passedTests++;
+    
+    // Adjust total test count to match enabled tests
+    totalTests = 7;
+    
+    // Clean up all test processes before re-enabling scheduling
+    cleanup_all_test_processes();
     
     // Re-enable scheduling after tests
     ProcessManager::enable_scheduling();
@@ -134,7 +142,7 @@ bool ProcessTest::test_process_creation_termination() {
     
     // Verify process2 is still active
     if (!verify_process_state(pid2, ProcessState::READY)) return false;
-    
+
     print_success("Process creation and termination test passed");
     return true;
 }
@@ -198,7 +206,7 @@ bool ProcessTest::test_sleep_queue() {
         print_error("Process priority should be 5");
         return false;
     }
-    
+
     print_success("Sleep queue functionality test passed");
     return true;
 }
@@ -252,7 +260,7 @@ bool ProcessTest::test_process_blocking_waking() {
     
     // Verify process is still ready
     if (!verify_process_state(pid, ProcessState::READY)) return false;
-    
+
     print_success("Process blocking and waking test passed");
     return true;
 }
@@ -297,7 +305,7 @@ bool ProcessTest::test_priority_management() {
         print_error("Should not accept non-existent process ID");
         return false;
     }
-    
+
     print_success("Priority management test passed");
     return true;
 }
@@ -335,9 +343,49 @@ bool ProcessTest::test_scheduler_statistics() {
         print_error("Should return 0xFFFFFFFF for non-existent process");
         return false;
     }
-    
+
     print_success("Scheduler statistics test passed");
     return true;
+}
+
+void ProcessTest::cleanup_all_test_processes() {
+    print_debug("Cleaning up test processes...");
+    
+    u32 terminatedCount = 0;
+    u32 alreadyTerminatedCount = 0;
+    
+    for (u32 pid = 1; pid < testProcessCount; pid++) {
+        // Check if process still exists and is not already terminated
+        Process* process = processManagerPtr->get_process(pid);
+        if (process && process->state != ProcessState::TERMINATED) {
+            char msg[64];
+            strcpy_s(msg, "Terminating test process PID: ", sizeof(msg));
+            char pidStr[16];
+            number_to_decimal(pidStr, pid);
+            strcat(msg, pidStr);
+            print_debug(msg);
+            
+            if (processManagerPtr->terminate_process(pid)) {
+                terminatedCount++;
+            } else {
+                strcpy_s(msg, "Failed to terminate PID: ", sizeof(msg));
+                strcat(msg, pidStr);
+                print_warning(msg);
+            }
+        } else {
+            alreadyTerminatedCount++;
+        }
+    }
+    
+    char msg[128];
+    strcpy_s(msg, "Test process cleanup complete. Terminated: ", sizeof(msg));
+    char countStr[16];
+    number_to_decimal(countStr, terminatedCount);
+    strcat(msg, countStr);
+    strcat(msg, ", Already terminated: ");
+    number_to_decimal(countStr, alreadyTerminatedCount);
+    strcat(msg, countStr);
+    print_debug(msg);
 }
 
 } // namespace kira::test
