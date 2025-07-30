@@ -31,8 +31,10 @@ private:
     u32 currentLine;                       // Next line to write to
     u32 scrollOffset;                      // Top line currently displayed
     u32 totalLines;                        // Total lines written
+    u32 currentLinePos;                    // Current position in current line (for printf)
     
     bool active;                           // Whether console is actively scrolling
+    bool currentLineIncomplete;            // True if current line can be continued (printf-style)
     
 public:
     /**
@@ -46,6 +48,14 @@ public:
      * @param color Color for the text
      */
     void add_message(const char* message, u16 color = VGA_WHITE_ON_BLUE);
+    
+    /**
+     * @brief Add printf-style output to console (no auto-newline)
+     * @param text Formatted text from printf
+     * @param color Color for the text
+     * @note Behaves like standard printf - only advances line on \n
+     */
+    void add_printf_output(const char* text, u16 color = VGA_WHITE_ON_BLUE);
     
     /**
      * @brief Add a message using a String object
@@ -124,6 +134,11 @@ private:
      * @brief Copy string to buffer line (with bounds checking)
      */
     void copy_to_buffer_line(u32 lineIndex, const char* text, u16 color);
+    
+    /**
+     * @brief Append string to current line at current position (printf-style)
+     */
+    void append_to_current_line(const char* text, u16 color);
     
     /**
      * @brief Handle multiline messages (parse \n characters)

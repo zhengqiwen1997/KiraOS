@@ -67,15 +67,7 @@ bool ATADriverTest::test_sector_read(ATADriver::DriveType drive) {
         print_success("Sector read successful");
         // Display first few bytes (whatever they are)
         u8* byteBuffer = static_cast<u8*>(testBuffer);
-        char msg[64];
-        kira::utils::strcpy_s(msg, "First bytes: ", sizeof(msg));
-        for (int i = 0; i < 4; i++) {
-            char hex[16];
-            kira::utils::number_to_hex(hex, byteBuffer[i]);
-            kira::utils::strcat(msg, hex);
-            kira::utils::strcat(msg, " ");
-        }
-        print_info(msg);
+        printf_info("First bytes: %x %x %x %x\n", byteBuffer[0], byteBuffer[1], byteBuffer[2], byteBuffer[3]);
         memMgrPtr->free_physical_page(testBuffer);
         return true;
     } else {

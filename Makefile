@@ -9,7 +9,7 @@ QEMU = qemu-system-i386
 
 # Directories
 BUILD_DIR = build
-BOOT_DIR = kernel/boot
+BOOT_DIR = kernel/boot/img
 KERNEL_DIR = kernel/core
 CMAKE_BUILD_DIR = cmake-build
 

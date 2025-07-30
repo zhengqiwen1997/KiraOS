@@ -137,7 +137,7 @@ bool SyncTest::test_semaphore_basic() {
     print_info("Testing basic semaphore operations...");
     
     // Debug: Print actual count
-    print_numbered_message("Semaphore count: ", g_testSemaphore->get_count());
+    printf_info("Semaphore count: %u\n", g_testSemaphore->get_count());
     
     // Test 1: Initial count should be 2
     if (g_testSemaphore->get_count() == 2) {
@@ -150,13 +150,13 @@ bool SyncTest::test_semaphore_basic() {
     // Test 2: try_wait should succeed twice
     print_debug("About to try first try_wait...");
     bool firstResult = g_testSemaphore->try_wait();
-    print_numbered_message("First try_wait result: ", firstResult);
+    printf_info("First try_wait result: %u\n", firstResult);
     
     if (firstResult) {
         print_success("First try_wait succeeded");
         print_debug("About to try second try_wait...");
         bool secondResult = g_testSemaphore->try_wait();
-        print_numbered_message("Second try_wait result: ", secondResult);
+        printf_info("Second try_wait result: %u\n", secondResult);
         
         if (secondResult) {
             print_success("Second try_wait succeeded");

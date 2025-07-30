@@ -382,4 +382,21 @@ inline int memcmp(const void* ptr1, const void* ptr2, u32 num) {
     return 0;
 }
 
+/**
+ * @brief Kernel printf function - formatted output to console
+ * @param format Format string with %d, %x, %s, %c specifiers
+ * @param ... Variable arguments
+ * @return Number of characters written
+ */
+int k_printf(const char* format, ...);
+
+/**
+ * @brief Kernel printf function with color support
+ * @param color VGA color for the output
+ * @param format Format string with %d, %x, %s, %c specifiers  
+ * @param ... Variable arguments
+ * @return Number of characters written
+ */
+int k_printf_colored(u16 color, const char* format, ...);
+
 } // namespace kira::utils 

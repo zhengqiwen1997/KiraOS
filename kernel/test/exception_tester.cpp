@@ -1,5 +1,6 @@
 #include "test/exception_tester.hpp"
 #include "core/utils.hpp"
+#include "test/test_base.hpp"
 
 namespace kira::test {
 
@@ -7,18 +8,11 @@ using namespace kira::utils;
 
 
 void ExceptionTester::log_test_start(const char* test_name) {
-    char msg[256];
-    utils::strcpy(msg, "Testing ");
-    utils::strcat(msg, test_name);
-    utils::strcat(msg, "...");
-    print_info(msg);
+    printf_info("Testing %s...\n", test_name);
 }
 
 void ExceptionTester::log_test_end(const char* test_name) {
-    char msg[256];
-    utils::strcpy(msg, test_name);
-    utils::strcat(msg, " completed!");
-    print_success(msg);
+    printf_success("%s completed!\n", test_name);
 }
 
 void ExceptionTester::test_breakpoint() {

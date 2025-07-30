@@ -65,31 +65,15 @@ bool ProcessTest::verify_process_state(u32 pid, ProcessState expectedState) {
         return true;
     }
     if (!process) {
-        char msg[128];
-        strcpy_s(msg, "Process not found for state verification. PID: ", sizeof(msg));
-        char pidStr[16];
-        number_to_decimal(pidStr, pid);
-        strcat(msg, pidStr);
-        print_error(msg);
+        printf_error("Process not found for state verification. PID: %u\n", pid);
         return false;
     }
     
     if (process->state == expectedState) {
         return true;
     } else {
-        char msg[128];
-        strcpy_s(msg, "Process state mismatch. Expected: ", sizeof(msg));
-        char stateStr[16];
-        char pidStr2[16];
-        number_to_decimal(stateStr, static_cast<u32>(expectedState));
-        strcat(msg, stateStr);
-        strcat(msg, ", Got: ");
-        number_to_decimal(stateStr, static_cast<u32>(process->state));
-        strcat(msg, stateStr);
-        strcat(msg, " for PID: ");
-        number_to_decimal(pidStr2, pid);
-        strcat(msg, pidStr2);
-        print_error(msg);
+        printf_error("Process state mismatch. Expected: %u, Got: %u for PID: %u\n", 
+                     static_cast<u32>(expectedState), static_cast<u32>(process->state), pid);
         return false;
     }
 }
@@ -100,15 +84,8 @@ bool ProcessTest::verify_process_priority(u32 pid, u32 expectedPriority) {
     if (actualPriority == expectedPriority) {
         return true;
     } else {
-        char msg[128];
-        strcpy_s(msg, "Process priority mismatch. Expected: ", sizeof(msg));
-        char priorityStr[16];
-        number_to_decimal(priorityStr, expectedPriority);
-        strcat(msg, priorityStr);
-        strcat(msg, ", Got: ");
-        number_to_decimal(priorityStr, actualPriority);
-        strcat(msg, priorityStr);
-        print_error(msg);
+        printf_error("Process priority mismatch. Expected: %u, Got: %u\n", 
+                     expectedPriority, actualPriority);
         return false;
     }
 }
@@ -358,34 +335,20 @@ void ProcessTest::cleanup_all_test_processes() {
         // Check if process still exists and is not already terminated
         Process* process = processManagerPtr->get_process(pid);
         if (process && process->state != ProcessState::TERMINATED) {
-            char msg[64];
-            strcpy_s(msg, "Terminating test process PID: ", sizeof(msg));
-            char pidStr[16];
-            number_to_decimal(pidStr, pid);
-            strcat(msg, pidStr);
-            print_debug(msg);
+            printf_debug("Terminating test process PID: %u\n", pid);
             
             if (processManagerPtr->terminate_process(pid)) {
                 terminatedCount++;
             } else {
-                strcpy_s(msg, "Failed to terminate PID: ", sizeof(msg));
-                strcat(msg, pidStr);
-                print_warning(msg);
+                printf_warning("Failed to terminate PID: %u\n", pid);
             }
         } else {
             alreadyTerminatedCount++;
         }
     }
     
-    char msg[128];
-    strcpy_s(msg, "Test process cleanup complete. Terminated: ", sizeof(msg));
-    char countStr[16];
-    number_to_decimal(countStr, terminatedCount);
-    strcat(msg, countStr);
-    strcat(msg, ", Already terminated: ");
-    number_to_decimal(countStr, alreadyTerminatedCount);
-    strcat(msg, countStr);
-    print_debug(msg);
+    printf_debug("Test process cleanup complete. Terminated: %u, Already terminated: %u\n", 
+                  terminatedCount, alreadyTerminatedCount);
 }
 
 } // namespace kira::test

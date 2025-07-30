@@ -1,5 +1,6 @@
 #include "test/vfs_test.hpp"
 #include "memory/memory_manager.hpp"
+#include "test/test_base.hpp"
 
 namespace kira::test {
 
@@ -101,6 +102,8 @@ bool VFSTest::test_file_operations() {
     // Verify data
     if (strcmp(read_buffer, test_data) != 0) {
         print_error("File data mismatch");
+        printf_error("Expected: %s\n", test_data);
+        printf_error("Actual: %s\n", read_buffer);
         vfs.close(fd);
         return false;
     }
@@ -124,10 +127,7 @@ bool VFSTest::test_directory_operations() {
         }
     } else {
         // If we found an entry, display it
-        char msg[128];
-        strcpy_s(msg, "Found file: ", sizeof(msg));
-        strcat(msg, entry.name);
-        print_debug(msg);
+        printf_debug("Found file: %s\n", entry.name);
     }
     
     print_success("Directory operations functional");

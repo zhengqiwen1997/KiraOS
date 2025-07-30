@@ -310,32 +310,11 @@ Process* ProcessManager::get_process(u32 pid) {
 }
 
 void ProcessManager::display_stats() {
-    // Convert to console message instead of direct VGA access
-    char statsMsg[80];
     u32 totalHundreds = (schedulerTicks / 100) % 1000;
     
     // Format: "Scheduler: X active, total: YYY00"
-    int pos = 0;
-    const char* schedText = "Scheduler: ";
-    for (int i = 0; schedText[i] != '\0'; i++) {
-        statsMsg[pos++] = schedText[i];
-    }
-    
-    statsMsg[pos++] = '0' + processCount;
-    
-    const char* activeText = " active, total: ";
-    for (int i = 0; activeText[i] != '\0'; i++) {
-        statsMsg[pos++] = activeText[i];
-    }
-    
-    statsMsg[pos++] = '0' + ((totalHundreds / 100) % 10);
-    statsMsg[pos++] = '0' + ((totalHundreds / 10) % 10);
-    statsMsg[pos++] = '0' + (totalHundreds % 10);
-    statsMsg[pos++] = '0';
-    statsMsg[pos++] = '0';
-    statsMsg[pos] = '\0';
-    
-    kira::kernel::console.add_message(statsMsg, kira::display::VGA_YELLOW_ON_BLUE);
+    kira::utils::k_printf_colored(kira::display::VGA_YELLOW_ON_BLUE, 
+        "Scheduler: %u active, total: %u00\n", processCount, totalHundreds);
 }
 
 void ProcessManager::yield() {
@@ -529,57 +508,18 @@ void ProcessManager::switch_process() {
 }
 
 void ProcessManager::display_current_process_only() {
-    // Convert to console message instead of direct VGA access
-    char processMsg[80];
-    int pos = 0;
-    
-    const char* currentText = "Current: ";
-    for (int i = 0; currentText[i] != '\0'; i++) {
-        processMsg[pos++] = currentText[i];
-    }
-    
     if (currentProcess) {
-        // Display current process name
-        for (int i = 0; currentProcess->name[i] != '\0' && i < 15; i++) {
-            processMsg[pos++] = currentProcess->name[i];
-        }
-        
-        // Display PID
-        const char* pidText = " (PID:";
-        for (int i = 0; pidText[i] != '\0'; i++) {
-            processMsg[pos++] = pidText[i];
-        }
-        
-        // Display PID (handle up to 2 digits)
-        u32 pid = currentProcess->pid;
-        if (pid >= 10) {
-            processMsg[pos++] = '0' + (pid / 10); // Tens digit
-            processMsg[pos++] = '0' + (pid % 10); // Ones digit
-        } else {
-            processMsg[pos++] = '0' + pid; // Single digit
-        }
-        
-        // Show user mode indicator
+        // Display current process with PID and user mode indicator
         if (currentProcess->isUserMode) {
-            processMsg[pos++] = ',';
-            processMsg[pos++] = ' ';
-            const char* userText = "U3";
-            for (int i = 0; userText[i] != '\0'; i++) {
-                processMsg[pos++] = userText[i];
-            }
+            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, 
+                "Current: %s (PID:%u, U3)\n", currentProcess->name, currentProcess->pid);
+        } else {
+            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, 
+                "Current: %s (PID:%u)\n", currentProcess->name, currentProcess->pid);
         }
-        
-        // Closing parenthesis
-        processMsg[pos++] = ')';
     } else {
-        const char* idleText = "IDLE";
-        for (int i = 0; idleText[i] != '\0'; i++) {
-            processMsg[pos++] = idleText[i];
-        }
+        kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, "Current: IDLE\n");
     }
-    
-    processMsg[pos] = '\0';
-    kira::kernel::console.add_message(processMsg, kira::display::VGA_CYAN_ON_BLUE);
 }
 
 void ProcessManager::init_user_process_context(Process* process, ProcessFunction function) {

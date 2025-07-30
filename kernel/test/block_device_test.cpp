@@ -1,5 +1,6 @@
 #include "test/block_device_test.hpp"
 #include "memory/memory_manager.hpp"
+#include "test/test_base.hpp"
 
 namespace kira::test {
 
@@ -73,13 +74,7 @@ bool BlockDeviceTest::test_ata_device_init() {
         return true;
     }
     
-    char msg[64];
-    strcpy_s(msg, "Initialized ", sizeof(msg));
-    char countStr[16];
-    number_to_decimal(countStr, initializedCount);
-    strcat(msg, countStr);
-    strcat(msg, " block device(s)");
-    print_info(msg);
+    printf_info("Initialized %u block device(s)\n", initializedCount);
     
     return true;
 }

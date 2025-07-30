@@ -31,7 +31,9 @@ void ScrollableConsole::initialize() {
     currentLine = 0;
     scrollOffset = 0;
     totalLines = 0;
+    currentLinePos = 0;
     active = false;
+    currentLineIncomplete = false;
 }
 
 void ScrollableConsole::add_message(const char* message, u16 color) {
@@ -331,6 +333,84 @@ void ScrollableConsole::copy_to_buffer_line(u32 lineIndex, const char* text, u16
     for (u32 i = 0; text[i] != '\0' && i < (LINE_WIDTH - 1); i++) {
         buffer[lineIndex][i] = text[i];
     }
+}
+
+void ScrollableConsole::append_to_current_line(const char* text, u16 color) {
+    if (!text || currentLine >= BUFFER_LINES) return;
+    
+    // Set color for the line (if it's a new line)
+    colors[currentLine] = color;
+    
+    // Append text starting at currentLinePos
+    for (u32 i = 0; text[i] != '\0' && currentLinePos < (LINE_WIDTH - 1); i++) {
+        buffer[currentLine][currentLinePos++] = text[i];
+    }
+    
+    // Null terminate
+    if (currentLinePos < LINE_WIDTH) {
+        buffer[currentLine][currentLinePos] = '\0';
+    }
+}
+
+void ScrollableConsole::add_printf_output(const char* text, u16 color) {
+    if (!text) return;
+    
+    // Check if we're in an exception context (interrupts disabled)
+    bool was_interrupts_enabled = interrupts_enabled();
+    
+    // If current line is complete, start a new one
+    if (!currentLineIncomplete) {
+        // Clear the new line
+        clear_buffer_line(currentLine);
+        currentLinePos = 0;
+        currentLineIncomplete = true;
+        
+        // If this is the first line, count it
+        if (totalLines == 0) {
+            totalLines = 1;
+        }
+    }
+    
+    // Process text character by character
+    for (u32 i = 0; text[i] != '\0'; i++) {
+        if (text[i] == '\n') {
+            // Newline: complete current line and advance
+            currentLineIncomplete = false;
+            currentLine = (currentLine + 1) % BUFFER_LINES;
+            totalLines++;
+            
+            // Prepare next line
+            clear_buffer_line(currentLine);
+            currentLinePos = 0;
+            currentLineIncomplete = true;
+        } else if (currentLinePos < (LINE_WIDTH - 1)) {
+            // Add character to current line
+            buffer[currentLine][currentLinePos++] = text[i];
+            buffer[currentLine][currentLinePos] = '\0';  // Keep null terminated
+            colors[currentLine] = color;
+        } else {
+            // Line too long, force wrap
+            currentLineIncomplete = false;
+            currentLine = (currentLine + 1) % BUFFER_LINES;
+            totalLines++;
+            
+            // Start new line with current character
+            clear_buffer_line(currentLine);
+            buffer[currentLine][0] = text[i];
+            buffer[currentLine][1] = '\0';
+            currentLinePos = 1;
+            currentLineIncomplete = true;
+            colors[currentLine] = color;
+        }
+    }
+    
+    // If not in active scroll mode, automatically refresh display
+    if (!active) {
+        refresh_display();
+    }
+    
+    // Don't mess with interrupt state if we're in an exception handler
+    (void)was_interrupts_enabled;  // Suppress unused variable warning
 }
 
 } // namespace kira::display 

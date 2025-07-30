@@ -81,15 +81,7 @@ protected:
      * @param message Info message to print
      */
     static void print_info(const char* message);
-    
-    /**
-     * @brief Format a message with a number and print it
-     * @param prefix Message prefix
-     * @param number Number to append
-     * @param color Color to use for output
-     */
-    static void print_numbered_message(const char* prefix, u32 number);
-    
+
     /**
      * @brief Assert a condition and print result
      * @param condition Condition to check
@@ -109,13 +101,8 @@ protected:
     static bool assert_equal(T expected, T actual, const char* message) {
         bool result = (expected == actual);
         if (!result) {
-            char debugMsg[256];
-            strcpy_s(debugMsg, message, sizeof(debugMsg));
-            strcat(debugMsg, " Expected: ");
-            number_to_decimal(debugMsg + strlen(debugMsg), static_cast<u32>(expected));
-            strcat(debugMsg, " Actual: ");
-            number_to_decimal(debugMsg + strlen(debugMsg), static_cast<u32>(actual));
-            print_error(debugMsg);
+            k_printf_colored(VGA_RED_ON_BLUE, "%s Expected: %u Actual: %u\n", 
+                           message, static_cast<u32>(expected), static_cast<u32>(actual));
         }
         return result;
     }
@@ -131,14 +118,27 @@ protected:
     static bool assert_not_equal(T expected, T actual, const char* message) {
         bool result = (expected != actual);
         if (!result) {
-            char debugMsg[256];
-            strcpy_s(debugMsg, message, sizeof(debugMsg));
-            strcat(debugMsg, " Both values are: ");
-            number_to_decimal(debugMsg + strlen(debugMsg), static_cast<u32>(expected));
-            print_error(debugMsg);
+            k_printf_colored(VGA_RED_ON_BLUE, "%s Both values are: %u\n", 
+                           message, static_cast<u32>(expected));
         }
         return result;
     }
 };
+
+// Printf-style convenience macros for test output
+#define printf_debug(format, ...) \
+    kira::utils::k_printf_colored(kira::display::VGA_YELLOW_ON_BLUE, format, ##__VA_ARGS__)
+
+#define printf_success(format, ...) \
+    kira::utils::k_printf_colored(kira::display::VGA_GREEN_ON_BLUE, format, ##__VA_ARGS__)
+
+#define printf_error(format, ...) \
+    kira::utils::k_printf_colored(kira::display::VGA_RED_ON_BLUE, format, ##__VA_ARGS__)
+
+#define printf_warning(format, ...) \
+    kira::utils::k_printf_colored(kira::display::VGA_YELLOW_ON_BLUE, format, ##__VA_ARGS__)
+
+#define printf_info(format, ...) \
+    kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, format, ##__VA_ARGS__)
 
 } // namespace kira::test 

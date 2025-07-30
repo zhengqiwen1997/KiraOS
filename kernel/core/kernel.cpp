@@ -24,6 +24,7 @@
 #include "test/block_device_test.hpp"
 #include "test/fat32_test.hpp"
 #include "test/sync_test.hpp"
+#include "test/k_printf_test.hpp"
 
 namespace kira::kernel {
 
@@ -91,7 +92,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     }
     
     // Initialize and test ATA driver
-    console.add_message("Initializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nInitializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
     if (kira::test::ATADriverTest::run_tests()) {
         console.add_message("ATA driver ready for file system", kira::display::VGA_GREEN_ON_BLUE);
     } else {
@@ -99,7 +100,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     }
     
     // Initialize and test VFS
-    console.add_message("Initializing Virtual File System...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nInitializing Virtual File System...", kira::display::VGA_YELLOW_ON_BLUE);
     if (kira::test::VFSTest::run_tests()) {
         console.add_message("VFS ready for applications", kira::display::VGA_GREEN_ON_BLUE);
     } else {
@@ -107,15 +108,23 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     }
     
     // Initialize and test Block Devices
-    console.add_message("Initializing Block Device Layer...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nInitializing Block Device Layer...", kira::display::VGA_YELLOW_ON_BLUE);
     if (kira::test::BlockDeviceTest::run_tests()) {
         console.add_message("Block devices ready for file systems", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("Block device tests failed", kira::display::VGA_RED_ON_BLUE);
     }
     
+    // Test k_printf functionality
+    console.add_message("\nTesting k_printf functionality...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::KPrintfTest::run_tests()) {
+        console.add_message("k_printf tests passed", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("k_printf tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+
     // Initialize and test Synchronization Primitives
-    console.add_message("Testing Synchronization Primitives...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nTesting Synchronization Primitives...", kira::display::VGA_YELLOW_ON_BLUE);
     if (kira::test::SyncTest::run_tests()) {
         console.add_message("Synchronization primitives ready", kira::display::VGA_GREEN_ON_BLUE);
     } else {
@@ -124,7 +133,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
 
     // Initialize and test FAT32 File System (only for ELF boot, not disk boot)
     #ifndef DISK_BOOT_ONLY
-    console.add_message("Testing FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nTesting FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
     // kira::test::FAT32Test fat32Test;
     if (kira::test::FAT32Test::run_tests()) {
         console.add_message("FAT32 file system ready", kira::display::VGA_GREEN_ON_BLUE);
@@ -132,7 +141,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
     }
 
-    console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nTesting Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
     kira::test::ProcessTest processTest;
     if (processTest.run_tests()) {
         console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
@@ -153,7 +162,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     // }
     
     // Initialize process management
-    console.add_message("Initializing process management...", kira::display::VGA_YELLOW_ON_BLUE);
+    console.add_message("\nInitializing process management...", kira::display::VGA_YELLOW_ON_BLUE);
     auto& process_manager = ProcessManager::get_instance();
     
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);

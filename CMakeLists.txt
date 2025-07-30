@@ -62,8 +62,8 @@ set(KERNEL_LINK_FLAGS
 
 # Create kernel library
 add_library(kernel_core STATIC
+    kernel/boot/elf/multiboot_entry.s
     kernel/core/boot/kernel_entry.cpp
-    kernel/core/boot/multiboot_entry.s
     kernel/core/kernel.cpp
     kernel/core/process.cpp
     kernel/core/syscalls.cpp
@@ -71,6 +71,7 @@ add_library(kernel_core STATIC
     kernel/core/memory_operators.cpp
     kernel/core/runtime_support.cpp
     kernel/core/sync.cpp
+    kernel/core/k_printf.cpp
     kernel/test/test_base.cpp
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/process_test.cpp>
     kernel/test/exception_tester.cpp
@@ -79,6 +80,7 @@ add_library(kernel_core STATIC
     kernel/test/block_device_test.cpp
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/fat32_test.cpp>
     kernel/test/sync_test.cpp
+    kernel/test/k_printf_test.cpp
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/lib/libkira.cpp
