@@ -6,4 +6,7 @@ namespace kira::usermode {
 void user_test_simple();
 void user_test_syscall();
 
+// Interactive shell
+void user_shell();
+
 } // namespace kira::usermode 

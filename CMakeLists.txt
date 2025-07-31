@@ -83,6 +83,7 @@ add_library(kernel_core STATIC
     kernel/test/k_printf_test.cpp
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
+    userspace/programs/shell.cpp
     userspace/lib/libkira.cpp
     kernel/memory/memory_manager.cpp
     kernel/memory/virtual_memory.cpp

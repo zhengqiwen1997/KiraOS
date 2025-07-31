@@ -31,6 +31,8 @@ namespace kira::kernel {
 using namespace kira::display;
 using namespace kira::system;
 using namespace kira::utils;  // Add utils namespace for String
+using namespace kira::drivers;
+using namespace kira::fs;
 
 #define ENABLE_EXCEPTION_TESTING
 //#define ENABLE_SINGLE_EXCEPTION_TEST
@@ -77,50 +79,37 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
     virtualMemoryManager.initialize();
 
-    // Test memory manager before running user processes
-    console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
-    
+    // Initialize memory manager
     auto& memoryManager = MemoryManager::get_instance();
+
+    // Initialize process management
+    console.add_message("\nInitializing process management...", kira::display::VGA_YELLOW_ON_BLUE);
+    auto& process_manager = ProcessManager::get_instance();
     
-    // Test basic memory allocation
-    void* testPage = memoryManager.allocate_physical_page();
-    if (testPage) {
-        console.add_message("Memory manager allocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
-        memoryManager.free_physical_page(testPage);
-    } else {
-        console.add_message("Memory manager allocation: FAILED", kira::display::VGA_RED_ON_BLUE);
-    }
-    
-    // Initialize and test ATA driver
-    console.add_message("\nInitializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
-    if (kira::test::ATADriverTest::run_tests()) {
-        console.add_message("ATA driver ready for file system", kira::display::VGA_GREEN_ON_BLUE);
-    } else {
-        console.add_message("ATA driver tests failed", kira::display::VGA_RED_ON_BLUE);
-    }
-    
-    // Initialize and test VFS
-    console.add_message("\nInitializing Virtual File System...", kira::display::VGA_YELLOW_ON_BLUE);
-    if (kira::test::VFSTest::run_tests()) {
-        console.add_message("VFS ready for applications", kira::display::VGA_GREEN_ON_BLUE);
-    } else {
-        console.add_message("VFS tests failed", kira::display::VGA_RED_ON_BLUE);
-    }
-    
-    // Initialize and test Block Devices
-    console.add_message("\nInitializing Block Device Layer...", kira::display::VGA_YELLOW_ON_BLUE);
-    if (kira::test::BlockDeviceTest::run_tests()) {
-        console.add_message("Block devices ready for file systems", kira::display::VGA_GREEN_ON_BLUE);
-    } else {
-        console.add_message("Block device tests failed", kira::display::VGA_RED_ON_BLUE);
-    }
-    
+    // Initialize the ATA driver, VFS and Block Devices
+    ATADriver::initialize();
+    VFS::get_instance().initialize();
+    BlockDeviceManager::get_instance().initialize_devices();
+
+    // We put many tests here because we don't want to run them on disk boot
+    #ifndef DISK_BOOT_ONLY
     // Test k_printf functionality
     console.add_message("\nTesting k_printf functionality...", kira::display::VGA_YELLOW_ON_BLUE);
     if (kira::test::KPrintfTest::run_tests()) {
         console.add_message("k_printf tests passed", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("k_printf tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+
+    // Test memory manager before running user processes
+    console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
+   
+    void* testPage = memoryManager.allocate_physical_page();
+    if (testPage) {
+        console.add_message("Memory manager allocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+        memoryManager.free_physical_page(testPage);
+    } else {
+        console.add_message("Memory manager allocation: FAILED", kira::display::VGA_RED_ON_BLUE);
     }
 
     // Initialize and test Synchronization Primitives
@@ -131,8 +120,31 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("Synchronization tests failed", kira::display::VGA_RED_ON_BLUE);
     }
 
-    // Initialize and test FAT32 File System (only for ELF boot, not disk boot)
-    #ifndef DISK_BOOT_ONLY
+    // Test ATA driver
+    console.add_message("\nInitializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::ATADriverTest::run_tests()) {
+        console.add_message("ATA driver ready for file system", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("ATA driver tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+
+    // Test VFS
+    console.add_message("\nInitializing Virtual File System...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::VFSTest::run_tests()) {
+        console.add_message("VFS ready for applications", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("VFS tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+        
+    // Test Block Devices
+    console.add_message("\nInitializing Block Device Layer...", kira::display::VGA_YELLOW_ON_BLUE);
+    if (kira::test::BlockDeviceTest::run_tests()) {
+        console.add_message("Block devices ready for file systems", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("Block device tests failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    
+    // Test FAT32 File System
     console.add_message("\nTesting FAT32 File System...", kira::display::VGA_YELLOW_ON_BLUE);
     // kira::test::FAT32Test fat32Test;
     if (kira::test::FAT32Test::run_tests()) {
@@ -141,46 +153,23 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("FAT32 tests failed", kira::display::VGA_RED_ON_BLUE);
     }
 
+    // Initialize and test Process Management and Scheduler
     console.add_message("\nTesting Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
-    kira::test::ProcessTest processTest;
-    if (processTest.run_tests()) {
+    if (kira::test::ProcessTest::run_tests()) {
         console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
     }
     #else
-    console.add_message("FAT32 and Process Management tests disabled for disk boot", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message("Many tests disabled for disk boot", kira::display::VGA_CYAN_ON_BLUE);
     #endif
-    
-    // Initialize and test Process Management and Scheduler
-    // console.add_message("Testing Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
-    // kira::test::ProcessTest processTest;
-    // if (processTest.run_tests()) {
-    //     console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
-    // } else {
-    //     console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
-    // }
-    
-    // Initialize process management
-    console.add_message("\nInitializing process management...", kira::display::VGA_YELLOW_ON_BLUE);
-    auto& process_manager = ProcessManager::get_instance();
     
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
     
-    // // Debug: Show process manager state before creating user process
-    // console.add_message("DEBUG: Process manager state before user process creation", kira::display::VGA_MAGENTA_ON_BLUE);
-    
-    // // Show current process count and next PID
-    // char debugMsg[128];
-    // strcpy_s(debugMsg, "DEBUG: Next PID will be: ", sizeof(debugMsg));
-    // // We can't directly access the next PID, but we can see what PID gets assigned
-    
-    // console.add_message(debugMsg, kira::display::VGA_MAGENTA_ON_BLUE);
-    
-    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_syscall, "TestSysCall", 5);
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_shell, "KiraShell", 5);
     if (pid1) {
         char pidMsg[64];
-        strcpy_s(pidMsg, "User mode process created with PID: ", sizeof(pidMsg));
+        strcpy_s(pidMsg, "Interactive shell started with PID: ", sizeof(pidMsg));
         char pidStr[16];
         number_to_decimal(pidStr, pid1);
         strcat(pidMsg, pidStr);

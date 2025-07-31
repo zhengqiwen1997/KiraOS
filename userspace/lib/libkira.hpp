@@ -48,6 +48,14 @@ public:
     static i32 print_colored(const char* text, u16 color);
     
     /**
+     * @brief Formatted print to console (printf-style)
+     * @param format Format string with %d, %u, %x, %X, %s, %c specifiers
+     * @param ... Variable arguments for format specifiers
+     * @return 0 on success, negative on error
+     */
+    static i32 printf(const char* format, ...);
+    
+    /**
      * @brief Write text to screen at specified position (legacy)
      * @param line Line number (0-24) - currently ignored, uses console
      * @param column Column number (0-79) - currently ignored, uses console

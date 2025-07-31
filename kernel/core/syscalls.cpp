@@ -55,7 +55,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
         }
         
         case SystemCall::WRITE_COLORED: {
-            // Enhanced write system call with color support
+            // Enhanced write system call with color support (auto-newline)
             // arg1 = string pointer, arg2 = color, arg3 = unused
             const char* str = reinterpret_cast<const char*>(arg1);
             if (!str) {
@@ -71,6 +71,26 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             
             // Display the string via console system with specified color
             kira::kernel::console.add_message(str, color);
+            return static_cast<i32>(SyscallResult::SUCCESS);
+        }
+        
+        case SystemCall::WRITE_PRINTF: {
+            // Printf-style write system call (explicit newlines only)
+            // arg1 = string pointer, arg2 = color, arg3 = unused
+            const char* str = reinterpret_cast<const char*>(arg1);
+            if (!str) {
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
+            
+            u16 color = static_cast<u16>(arg2);
+            
+            // Validate color (basic validation - ensure it's not 0)
+            if (color == 0) {
+                color = VGA_WHITE_ON_BLUE; // Default color
+            }
+            
+            // Display the string via printf-style console output (explicit newlines only)
+            kira::kernel::console.add_printf_output(str, color);
             return static_cast<i32>(SyscallResult::SUCCESS);
         }
         

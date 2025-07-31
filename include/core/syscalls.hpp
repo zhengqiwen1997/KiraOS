@@ -14,7 +14,8 @@ enum class SystemCall : u32 {
     YIELD = 3,          // Yield CPU to scheduler
     GET_PID = 4,        // Get current process ID
     SLEEP = 5,          // Sleep for specified ticks
-    WRITE_COLORED = 6,  // Write to display with color
+    WRITE_COLORED = 6,  // Write to display with color (auto-newline)
+    WRITE_PRINTF = 7,   // Write to display with printf-style behavior (explicit newlines only)
 };
 
 /**

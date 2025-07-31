@@ -5,6 +5,19 @@ namespace kira::usermode {
 
 using namespace kira::system;
 
+// Manual implementation of variadic arguments for user space
+typedef char* va_list;
+
+#define va_start(ap, last) \
+    (ap = (va_list)&last + ((sizeof(last) + sizeof(void*) - 1) & ~(sizeof(void*) - 1)))
+
+#define va_arg(ap, type) \
+    (ap += ((sizeof(type) + sizeof(void*) - 1) & ~(sizeof(void*) - 1)), \
+     *(type*)(ap - ((sizeof(type) + sizeof(void*) - 1) & ~(sizeof(void*) - 1))))
+
+#define va_end(ap) \
+    (ap = (va_list)0)
+
 i32 UserAPI::syscall(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3) {
     i32 result;
     
@@ -26,7 +39,7 @@ i32 UserAPI::syscall(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3) {
 // Enhanced print functions
 i32 UserAPI::print(const char* text) {
     if (!text) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-    return syscall(static_cast<u32>(SystemCall::WRITE_COLORED), (u32)text, Colors::DEFAULT);
+    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, Colors::DEFAULT);
 }
 
 i32 UserAPI::println(const char* text) {
@@ -59,13 +72,13 @@ i32 UserAPI::println(const char* text) {
     buffer[textLen] = '\n';
     buffer[textLen + 1] = '\0';
     
-    // Send as single message
-    return syscall(static_cast<u32>(SystemCall::WRITE_COLORED), (u32)buffer, Colors::DEFAULT);
+    // Send as single message using printf-style output
+    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)buffer, Colors::DEFAULT);
 }
 
 i32 UserAPI::print_colored(const char* text, u16 color) {
     if (!text) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-    return syscall(static_cast<u32>(SystemCall::WRITE_COLORED), (u32)text, color);
+    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, color);
 }
 
 i32 UserAPI::write_colored(const char* text, u16 color) {
@@ -98,6 +111,231 @@ void UserAPI::exit() {
     while (true) {
         asm volatile("hlt");
     }
+}
+
+/**
+ * @brief Helper function to get string length
+ */
+static u32 user_strlen(const char* str) {
+    if (!str) return 0;
+    u32 len = 0;
+    while (str[len] != '\0') {
+        len++;
+    }
+    return len;
+}
+
+/**
+ * @brief Helper function to copy string
+ */
+static void user_strcpy(char* dest, const char* src, u32 maxLen) {
+    if (!dest || !src) return;
+    u32 i = 0;
+    while (src[i] != '\0' && i < maxLen - 1) {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+/**
+ * @brief Helper function to append string
+ */
+static void user_strcat(char* dest, const char* src, u32 maxLen) {
+    if (!dest || !src) return;
+    u32 destLen = user_strlen(dest);
+    u32 i = 0;
+    while (src[i] != '\0' && destLen + i < maxLen - 1) {
+        dest[destLen + i] = src[i];
+        i++;
+    }
+    dest[destLen + i] = '\0';
+}
+
+/**
+ * @brief Convert number to decimal string
+ */
+static void user_number_to_decimal(char* buffer, u32 bufferSize, u32 number) {
+    if (!buffer || bufferSize == 0) return;
+    
+    if (number == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
+    }
+    
+    // Convert number to string (reverse order)
+    char temp[16];
+    u32 i = 0;
+    while (number > 0 && i < 15) {
+        temp[i++] = '0' + (number % 10);
+        number /= 10;
+    }
+    
+    // Reverse and copy to buffer
+    u32 len = (i < bufferSize - 1) ? i : bufferSize - 1;
+    for (u32 j = 0; j < len; j++) {
+        buffer[j] = temp[len - 1 - j];
+    }
+    buffer[len] = '\0';
+}
+
+/**
+ * @brief Convert number to hex string
+ */
+static void user_number_to_hex(char* buffer, u32 bufferSize, u32 number, bool uppercase) {
+    if (!buffer || bufferSize == 0) return;
+    
+    if (number == 0) {
+        buffer[0] = '0';
+        buffer[1] = '\0';
+        return;
+    }
+    
+    const char* digits = uppercase ? "0123456789ABCDEF" : "0123456789abcdef";
+    
+    // Convert number to hex string (reverse order)
+    char temp[16];
+    u32 i = 0;
+    while (number > 0 && i < 15) {
+        temp[i++] = digits[number % 16];
+        number /= 16;
+    }
+    
+    // Reverse and copy to buffer
+    u32 len = (i < bufferSize - 1) ? i : bufferSize - 1;
+    for (u32 j = 0; j < len; j++) {
+        buffer[j] = temp[len - 1 - j];
+    }
+    buffer[len] = '\0';
+}
+
+/**
+ * @brief Format a single argument and append to buffer
+ */
+static u32 user_format_argument(char* buffer, u32 bufferSize, u32 currentLen, char specifier, va_list& args) {
+    if (currentLen >= bufferSize - 1) return currentLen;
+    
+    char temp[32];
+    
+    switch (specifier) {
+        case 'd': {
+            // Signed decimal integer
+            i32 value = va_arg(args, int);
+            bool negative = false;
+            u32 absValue;
+            
+            if (value < 0) {
+                negative = true;
+                absValue = static_cast<u32>(-value);
+            } else {
+                absValue = static_cast<u32>(value);
+            }
+            
+            user_number_to_decimal(temp, sizeof(temp), absValue);
+            
+            if (negative && currentLen < bufferSize - 1) {
+                buffer[currentLen++] = '-';
+            }
+            
+            user_strcat(buffer, temp, bufferSize);
+            return user_strlen(buffer);
+        }
+        
+        case 'u': {
+            // Unsigned decimal integer
+            u32 value = va_arg(args, u32);
+            user_number_to_decimal(temp, sizeof(temp), value);
+            user_strcat(buffer, temp, bufferSize);
+            return user_strlen(buffer);
+        }
+        
+        case 'x': {
+            // Lowercase hexadecimal
+            u32 value = va_arg(args, u32);
+            user_number_to_hex(temp, sizeof(temp), value, false);
+            user_strcat(buffer, temp, bufferSize);
+            return user_strlen(buffer);
+        }
+        
+        case 'X': {
+            // Uppercase hexadecimal
+            u32 value = va_arg(args, u32);
+            user_number_to_hex(temp, sizeof(temp), value, true);
+            user_strcat(buffer, temp, bufferSize);
+            return user_strlen(buffer);
+        }
+        
+        case 's': {
+            // String
+            const char* str = va_arg(args, const char*);
+            if (str) {
+                user_strcat(buffer, str, bufferSize);
+            } else {
+                user_strcat(buffer, "(null)", bufferSize);
+            }
+            return user_strlen(buffer);
+        }
+        
+        case 'c': {
+            // Character
+            char value = static_cast<char>(va_arg(args, int));
+            if (currentLen < bufferSize - 1) {
+                buffer[currentLen] = value;
+                buffer[currentLen + 1] = '\0';
+                return currentLen + 1;
+            }
+            return currentLen;
+        }
+        
+        default:
+            // Unknown specifier, just add the character
+            if (currentLen < bufferSize - 1) {
+                buffer[currentLen] = specifier;
+                buffer[currentLen + 1] = '\0';
+                return currentLen + 1;
+            }
+            return currentLen;
+    }
+}
+
+i32 UserAPI::printf(const char* format, ...) {
+    if (!format) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+    
+    constexpr u32 BUFFER_SIZE = 512;
+    char buffer[BUFFER_SIZE];
+    buffer[0] = '\0';
+    
+    va_list args;
+    va_start(args, format);
+    
+    u32 bufferLen = 0;
+    
+    for (u32 i = 0; format[i] != '\0' && bufferLen < BUFFER_SIZE - 1; i++) {
+        if (format[i] == '%' && format[i + 1] != '\0') {
+            // Format specifier
+            char specifier = format[i + 1];
+            if (specifier == '%') {
+                // Escaped percent sign
+                buffer[bufferLen++] = '%';
+                buffer[bufferLen] = '\0';
+                i++; // Skip the second %
+            } else {
+                // Process format specifier
+                bufferLen = user_format_argument(buffer, BUFFER_SIZE, bufferLen, specifier, args);
+                i++; // Skip the format character
+            }
+        } else {
+            // Regular character
+            buffer[bufferLen++] = format[i];
+            buffer[bufferLen] = '\0';
+        }
+    }
+    
+    va_end(args);
+    
+    // Output the formatted string using existing print_colored function
+    return print_colored(buffer, Colors::DEFAULT);
 }
 
 } // namespace kira::usermode 

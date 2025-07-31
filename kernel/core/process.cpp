@@ -611,7 +611,7 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     
     // Map multiple pages for the user program to handle code that spans page boundaries
     u32 userTextAddr = USER_TEXT_START;
-    u32 numPagesToMap = 4; // Map 4 pages (16KB) to handle typical user program size
+    u32 numPagesToMap = 12; // Map 12 pages (48KB) to handle larger user programs like the shell
     
     for (u32 i = 0; i < numPagesToMap; i++) {
         u32 userVirtAddr = userTextAddr + (i * PAGE_SIZE);
