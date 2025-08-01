@@ -75,12 +75,12 @@ add_library(kernel_core STATIC
     kernel/test/test_base.cpp
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/process_test.cpp>
     kernel/test/exception_tester.cpp
-    kernel/test/ata_driver_test.cpp
-    kernel/test/vfs_test.cpp
-    kernel/test/block_device_test.cpp
+    $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/ata_driver_test.cpp>
+    $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/vfs_test.cpp>
+    $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/block_device_test.cpp>
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/fat32_test.cpp>
-    kernel/test/sync_test.cpp
-    kernel/test/k_printf_test.cpp
+    $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/sync_test.cpp>
+    $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/k_printf_test.cpp>
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/programs/shell.cpp

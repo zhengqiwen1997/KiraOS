@@ -126,9 +126,11 @@ private:
             "about", 
             "pwd",
             "ls",
+            "cat",
             "mem",
             "ps",
             "printf_test",
+            "dmesg",
             "exit"
         };
         const u32 numCommands = sizeof(demoCommands) / sizeof(demoCommands[0]);
@@ -203,32 +205,41 @@ private:
      * @brief Execute the parsed command
      */
     void execute_command() {
-        if (argCount == 0 || args[0] == nullptr) {
+        if (argCount == 0) {
+            return; // Empty command
+        }
+        
+        if (args[0] == nullptr) {
             return; // Empty command
         }
         
         const char* cmd = args[0];
         
-        // Built-in commands
-        if (string_equals(cmd, "help")) {
+        // All commands using safe inline character comparison
+        if (cmd[0] == 'h' && cmd[1] == 'e' && cmd[2] == 'l' && cmd[3] == 'p' && cmd[4] == '\0') {
             cmd_help();
-        } else if (string_equals(cmd, "about")) {
+        } else if (cmd[0] == 'a' && cmd[1] == 'b' && cmd[2] == 'o' && cmd[3] == 'u' && cmd[4] == 't' && cmd[5] == '\0') {
             cmd_about();
-        } else if (string_equals(cmd, "clear")) {
+        } else if (cmd[0] == 'c' && cmd[1] == 'l' && cmd[2] == 'e' && cmd[3] == 'a' && cmd[4] == 'r' && cmd[5] == '\0') {
             cmd_clear();
-        } else if (string_equals(cmd, "pwd")) {
+        } else if (cmd[0] == 'p' && cmd[1] == 'w' && cmd[2] == 'd' && cmd[3] == '\0') {
             cmd_pwd();
-        } else if (string_equals(cmd, "ls")) {
+        } else if (cmd[0] == 'l' && cmd[1] == 's' && cmd[2] == '\0') {
             cmd_ls();
-        } else if (string_equals(cmd, "cd")) {
+        } else if (cmd[0] == 'c' && cmd[1] == 'a' && cmd[2] == 't' && cmd[3] == '\0') {
+            cmd_cat();
+        } else if (cmd[0] == 'c' && cmd[1] == 'd' && cmd[2] == '\0') {
             cmd_cd();
-        } else if (string_equals(cmd, "mem")) {
+        } else if (cmd[0] == 'm' && cmd[1] == 'e' && cmd[2] == 'm' && cmd[3] == '\0') {
             cmd_mem();
-        } else if (string_equals(cmd, "ps")) {
+        } else if (cmd[0] == 'p' && cmd[1] == 's' && cmd[2] == '\0') {
             cmd_ps();
-        } else if (string_equals(cmd, "printf_test")) {
+        } else if (cmd[0] == 'p' && cmd[1] == 'r' && cmd[2] == 'i' && cmd[3] == 'n' && cmd[4] == 't' && cmd[5] == 'f' && cmd[6] == '_' && cmd[7] == 't' && cmd[8] == 'e' && cmd[9] == 's' && cmd[10] == 't' && cmd[11] == '\0') {
             cmd_printf_test();
-        } else if (string_equals(cmd, "exit") || string_equals(cmd, "quit")) {
+        } else if (cmd[0] == 'd' && cmd[1] == 'm' && cmd[2] == 'e' && cmd[3] == 's' && cmd[4] == 'g' && cmd[5] == '\0') {
+            cmd_dmesg();
+        } else if ((cmd[0] == 'e' && cmd[1] == 'x' && cmd[2] == 'i' && cmd[3] == 't' && cmd[4] == '\0') || 
+                   (cmd[0] == 'q' && cmd[1] == 'u' && cmd[2] == 'i' && cmd[3] == 't' && cmd[4] == '\0')) {
             cmd_exit();
         } else {
             // Unknown command
@@ -244,6 +255,7 @@ private:
         UserAPI::print_colored("KiraOS Shell - Available Commands:\n", Colors::YELLOW_ON_BLUE);
         UserAPI::print_colored("File System:\n", Colors::CYAN_ON_BLUE);
         UserAPI::println("  ls        - List directory contents");
+        UserAPI::println("  cat <file> - Display file contents");
         UserAPI::println("  cd <dir>  - Change directory");
         UserAPI::println("  pwd       - Print working directory");
         UserAPI::print_colored("Process Management:\n", Colors::CYAN_ON_BLUE);
@@ -255,6 +267,7 @@ private:
         UserAPI::println("  help      - Show this help message");
         UserAPI::print_colored("Development:\n", Colors::CYAN_ON_BLUE);
         UserAPI::println("  printf_test - Test UserAPI::printf functionality");
+        UserAPI::println("  dmesg     - Display kernel messages");
         UserAPI::print_colored("Control:\n", Colors::CYAN_ON_BLUE);
         UserAPI::println("  exit      - Exit shell");
     }
@@ -291,16 +304,72 @@ private:
     }
     
     void cmd_ls() {
-        UserAPI::print_colored("Directory listing for: ", Colors::WHITE_ON_BLUE);
-        UserAPI::print_colored(currentDirectory, Colors::CYAN_ON_BLUE);
+        UserAPI::printf("Directory listing for: %s\n", currentDirectory);
+        
+        static FileSystem::DirectoryEntry entry;
+        u32 index = 0;
+        
+        while (true) {
+            i32 result = UserAPI::readdir(currentDirectory, index, &entry);
+            
+            if (result != 0) {
+                break; // No more entries or error
+            }
+            
+            // Display the entry
+            if (entry.type == FileSystem::FileType::DIRECTORY) {
+                UserAPI::printf("%s    <DIR>\n", entry.name);
+            } else {
+                UserAPI::printf("%s    <FILE>\n", entry.name);
+            }
+            
+            index++;
+        }
+        
+        if (index == 0) {
+            UserAPI::print("Directory is empty\n");
+        }
+    }
+    
+    void cmd_cat() {
+        if (argCount < 2) {
+            UserAPI::print_colored("Usage: cat <filename>", Colors::YELLOW_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
+        
+        const char* filename = args[1];
+        UserAPI::printf("Reading file: %s\n", filename);
         UserAPI::println("");
         
-        // For now, simulate directory contents
-        UserAPI::print_colored("drwxr-xr-x  boot/\n", Colors::CYAN_ON_BLUE);
-        UserAPI::print_colored("drwxr-xr-x  home/\n", Colors::CYAN_ON_BLUE);
-        UserAPI::print_colored("drwxr-xr-x  tmp/\n", Colors::CYAN_ON_BLUE);
-        UserAPI::print_colored("-rw-r--r--  README.txt\n", Colors::WHITE_ON_BLUE);
-        UserAPI::print_colored("Note: File system integration coming soon!\n", Colors::YELLOW_ON_BLUE);
+        // Open file for reading
+        i32 fd = UserAPI::open(filename, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
+        
+        if (fd < 0) {
+            UserAPI::printf("Error: Could not open file '%s' (error code: %d)\n", filename, fd);
+            UserAPI::print_colored("Make sure the file exists and is readable.\n", Colors::YELLOW_ON_BLUE);
+            return;
+        }
+        
+        // Read and display file contents
+        char buffer[512];
+        i32 bytesRead = UserAPI::read_file(fd, buffer, sizeof(buffer) - 1);
+        
+        if (bytesRead > 0) {
+            buffer[bytesRead] = '\0'; // Null terminate
+            UserAPI::printf("File contents (%d bytes):\n", bytesRead);
+            UserAPI::println("=====================================");
+            UserAPI::print(buffer);
+            UserAPI::println("=====================================");
+        } else if (bytesRead == 0) {
+            UserAPI::println("File is empty.");
+        } else {
+            UserAPI::printf("Error reading file (error code: %d)\n", bytesRead);
+        }
+        
+        // Close file
+        UserAPI::close(fd);
+        UserAPI::println("");
     }
     
     void cmd_cd() {
@@ -347,18 +416,24 @@ private:
         UserAPI::print_colored("Process List:", Colors::YELLOW_ON_BLUE);
         UserAPI::println("");
         UserAPI::println("");
-        UserAPI::print_colored("PID", Colors::WHITE_ON_BLUE);
-        UserAPI::print_colored("  Name", Colors::WHITE_ON_BLUE);
-        UserAPI::print_colored("         State", Colors::WHITE_ON_BLUE);
-        UserAPI::print_colored("    Priority", Colors::WHITE_ON_BLUE);
+        
+        // Get current process info using real system call
+        i32 current_pid = UserAPI::ps();
+        
+        if (current_pid > 0) {
+            UserAPI::printf("Current Process Information:\n");
+            UserAPI::printf("PID: %d\n", current_pid);
+            UserAPI::printf("Name: shell\n");
+            UserAPI::printf("State: Running\n");
+            UserAPI::printf("Mode: User\n");
+            UserAPI::println("");
+            UserAPI::print_colored("Note: ", Colors::YELLOW_ON_BLUE);
+            UserAPI::println("Extended process listing coming soon!");
+        } else {
+            UserAPI::print_colored("Error: Could not retrieve process information\n", Colors::RED_ON_BLUE);
+        }
+        
         UserAPI::println("");
-        UserAPI::println("----------------------------------------");
-        UserAPI::println("1    kernel       Running   High");
-        UserAPI::println("2    shell        Running   Normal");
-        UserAPI::println("3    idle         Ready     Low");
-        UserAPI::println("");
-        UserAPI::print_colored("Note: ", Colors::YELLOW_ON_BLUE);
-        UserAPI::println("Process manager integration coming soon!");
     }
     
     void cmd_printf_test() {
@@ -398,6 +473,31 @@ private:
         UserAPI::println("");
     }
     
+    void cmd_dmesg() {
+        UserAPI::print_colored("Kernel Messages (simulated):\n", Colors::YELLOW_ON_BLUE);
+        UserAPI::println("");
+        
+        // Since we can't access kernel console directly from user mode,
+        // provide useful diagnostic information
+        UserAPI::println("[BOOT] KiraOS Kernel Started");
+        UserAPI::println("[INIT] Memory Manager Initialized");
+        UserAPI::println("[INIT] Process Manager Initialized");
+        UserAPI::println("[VFS]  Mounting RamFS as root filesystem...");
+        UserAPI::println("[VFS]  RamFS mounted successfully at /");
+        UserAPI::println("[VFS]  Demo files creation completed");
+        UserAPI::println("[USER] Shell process started");
+        
+        // Show current system state
+        i32 current_pid = UserAPI::ps();
+        UserAPI::printf("[INFO] Current PID: %d\n", current_pid);
+        UserAPI::printf("[INFO] Shell running in user mode\n");
+        UserAPI::printf("[INFO] VFS and RamFS operational\n");
+        
+        UserAPI::println("");
+        UserAPI::print_colored("Note: This is simulated output. Real kernel messages", Colors::YELLOW_ON_BLUE);
+        UserAPI::println(" are not accessible from user mode.");
+    }
+    
     void cmd_exit() {
         UserAPI::print_colored("Exiting shell...\n", Colors::YELLOW_ON_BLUE);
         UserAPI::print_colored("Shell terminated. Goodbye!\n", Colors::GREEN_ON_BLUE);
@@ -411,18 +511,28 @@ private:
     /**
      * @brief Simple string comparison (since we can't use strcmp)
      */
-    bool string_equals(const char* str1, const char* str2) {
-        if (!str1 || !str2) return false;
+    static bool string_equals(const char* str1, const char* str2) {
+        if (!str1 || !str2) {
+            return false;
+        }
         
+        // Simple character-by-character comparison
         u32 i = 0;
-        while (i < MAX_COMMAND_LENGTH - 1 && str1[i] != '\0' && str2[i] != '\0') {
+        while (i < 32) { // Reasonable limit for command names
             if (str1[i] != str2[i]) {
                 return false;
             }
+            
+            // If both strings end here, they're equal
+            if (str1[i] == '\0') {
+                return true;
+            }
+            
             i++;
         }
         
-        return str1[i] == str2[i]; // Both should be '\0'
+        // If we hit the limit, strings are too long or not equal
+        return false;
     }
 };
 

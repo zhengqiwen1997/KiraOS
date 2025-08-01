@@ -1,11 +1,64 @@
 #include "fs/ramfs.hpp"
 #include "memory/memory_manager.hpp"
 #include "core/utils.hpp"
+#include "display/console.hpp"
+
+// External console reference from kernel namespace
+namespace kira::kernel {
+    extern kira::display::ScrollableConsole console;
+}
 
 namespace kira::fs {
 
 using namespace kira::system;
 using namespace kira::utils;
+using namespace kira::display;
+
+// Static memory pool to avoid dynamic allocation memory mapping issues
+static constexpr u32 MAX_STATIC_NODES = 64;
+static constexpr u32 NODE_SIZE = sizeof(RamFSNode);
+static u8 s_static_memory_pool[MAX_STATIC_NODES * NODE_SIZE];
+static bool s_node_pool_used[MAX_STATIC_NODES] = {false};
+static u32 s_next_node_index = 0;
+
+// Static node allocation helper
+static RamFSNode* allocate_static_node(u32 inode, FileType type, FileSystem* fs, const char* name) {
+    for (u32 i = 0; i < MAX_STATIC_NODES; i++) {
+        u32 index = (s_next_node_index + i) % MAX_STATIC_NODES;
+        if (!s_node_pool_used[index]) {
+            s_node_pool_used[index] = true;
+            s_next_node_index = (index + 1) % MAX_STATIC_NODES;
+            
+            // Calculate memory address for this node
+            void* memory = &s_static_memory_pool[index * NODE_SIZE];
+            
+            // Use placement new to initialize the pre-allocated memory
+            return new(memory) RamFSNode(inode, type, fs, name);
+        }
+    }
+    return nullptr; // Pool exhausted
+}
+
+static void free_static_node(RamFSNode* node) {
+    if (!node) return;
+    
+    // Find the node in our pool by checking memory range
+    u8* node_ptr = reinterpret_cast<u8*>(node);
+    u8* pool_start = s_static_memory_pool;
+    u8* pool_end = s_static_memory_pool + (MAX_STATIC_NODES * NODE_SIZE);
+    
+    if (node_ptr >= pool_start && node_ptr < pool_end) {
+        // Calculate index
+        u32 offset = node_ptr - pool_start;
+        u32 index = offset / NODE_SIZE;
+        
+        if (index < MAX_STATIC_NODES && s_node_pool_used[index]) {
+            s_node_pool_used[index] = false;
+            // Call destructor manually
+            node->~RamFSNode();
+        }
+    }
+}
 
 //=============================================================================
 // RamFSNode Implementation
@@ -40,10 +93,8 @@ RamFSNode::~RamFSNode() {
     if (m_type == FileType::DIRECTORY) {
         for (u32 i = 0; i < m_childCount; i++) {
             if (m_children[i]) {
-                // Manual cleanup instead of delete
-                m_children[i]->~RamFSNode();
-                auto& memMgr = MemoryManager::get_instance();
-                memMgr.free_physical_page(m_children[i]);
+                // Use static deallocation instead of physical page free
+                free_static_node(m_children[i]);
             }
         }
     }
@@ -125,23 +176,53 @@ FSResult RamFSNode::get_stat(FileStat& stat) {
 }
 
 FSResult RamFSNode::read_dir(u32 index, DirectoryEntry& entry) {
+    kira::kernel::console.add_message("[RAMFS] read_dir start", VGA_GREEN_ON_BLUE);
+    
     if (m_type != FileType::DIRECTORY) {
+        kira::kernel::console.add_message("[RAMFS] not directory", VGA_RED_ON_BLUE);
         return FSResult::NOT_DIRECTORY;
     }
     
+    kira::kernel::console.add_message("[RAMFS] checking index", VGA_GREEN_ON_BLUE);
+    
+    // Debug: show child count
+    char debugMsg[64];
+    kira::utils::number_to_decimal(debugMsg, m_childCount);
+    kira::kernel::console.add_message(debugMsg, VGA_WHITE_ON_BLUE);
+    
     if (index >= m_childCount) {
+        kira::kernel::console.add_message("[RAMFS] index out of range", VGA_RED_ON_BLUE);
         return FSResult::NOT_FOUND; // End of directory
     }
     
+    kira::kernel::console.add_message("[RAMFS] getting child", VGA_GREEN_ON_BLUE);
     RamFSNode* child = m_children[index];
     if (!child) {
+        kira::kernel::console.add_message("[RAMFS] child is null", VGA_RED_ON_BLUE);
         return FSResult::NOT_FOUND;
     }
     
-    strcpy_s(entry.name, child->get_name(), sizeof(entry.name));
+    kira::kernel::console.add_message("[RAMFS] getting child name", VGA_GREEN_ON_BLUE);
+    const char* child_name = child->get_name();
+    if (!child_name) {
+        kira::kernel::console.add_message("[RAMFS] child name null", VGA_RED_ON_BLUE);
+        return FSResult::NOT_FOUND;
+    }
+    
+    kira::kernel::console.add_message("[RAMFS] copying name", VGA_GREEN_ON_BLUE);
+    // Use safer manual string copy instead of strcpy_s
+    u32 i = 0;
+    while (i < sizeof(entry.name) - 1 && child_name[i] != '\0') {
+        entry.name[i] = child_name[i];
+        i++;
+    }
+    entry.name[i] = '\0';
+    
+    kira::kernel::console.add_message("[RAMFS] setting inode/type", VGA_GREEN_ON_BLUE);
     entry.inode = child->get_inode();
     entry.type = child->get_type();
     
+    kira::kernel::console.add_message("[RAMFS] read_dir success", VGA_GREEN_ON_BLUE);
     return FSResult::SUCCESS;
 }
 
@@ -165,17 +246,15 @@ FSResult RamFSNode::create_file(const char* name, FileType type) {
     }
     
     // Create new node
-    auto& memMgr = MemoryManager::get_instance();
-    void* memory = memMgr.allocate_physical_page();
-    if (!memory) {
-        return FSResult::NO_SPACE;
-    }
-    
     // Get next inode from filesystem
     RamFS* ramfs = static_cast<RamFS*>(m_filesystem);
     u32 inode = ramfs->allocate_inode();
     
-    RamFSNode* new_node = new(memory) RamFSNode(inode, type, m_filesystem, name);
+    // Use static allocation instead of dynamic
+    RamFSNode* new_node = allocate_static_node(inode, type, m_filesystem, name);
+    if (!new_node) {
+        return FSResult::NO_SPACE;
+    }
     new_node->set_parent(this);
     new_node->set_create_time(m_modifyTime + 1);
     
@@ -268,10 +347,8 @@ FSResult RamFSNode::add_child(RamFSNode* child) {
 FSResult RamFSNode::remove_child(const char* name) {
     for (u32 i = 0; i < m_childCount; i++) {
         if (m_children[i] && strcmp(m_children[i]->get_name(), name) == 0) {
-            // Manual cleanup instead of delete
-            m_children[i]->~RamFSNode();
-            auto& memMgr = MemoryManager::get_instance();
-            memMgr.free_physical_page(m_children[i]);
+            // Use static deallocation instead of physical page free
+            free_static_node(m_children[i]);
             
             // Shift remaining children
             for (u32 j = i; j < m_childCount - 1; j++) {
@@ -315,21 +392,26 @@ RamFS::~RamFS() {
 }
 
 FSResult RamFS::mount(const char* device) {
+    kira::kernel::console.add_message("[RAMFS] mount called", VGA_YELLOW_ON_BLUE);
+    
     if (m_mounted) {
+        kira::kernel::console.add_message("[RAMFS] already mounted", VGA_YELLOW_ON_BLUE);
         return FSResult::EXISTS;
     }
     
-    // Create root directory
-    auto& memMgr = MemoryManager::get_instance();
-    void* memory = memMgr.allocate_physical_page();
-    if (!memory) {
+    kira::kernel::console.add_message("[RAMFS] creating root directory", VGA_YELLOW_ON_BLUE);
+    // Create root directory using static allocation
+    kira::kernel::console.add_message("[RAMFS] allocating root node from static pool", VGA_YELLOW_ON_BLUE);
+    m_root = allocate_static_node(allocate_inode(), FileType::DIRECTORY, this, "/");
+    if (!m_root) {
+        kira::kernel::console.add_message("[RAMFS] ERROR: static node pool exhausted", VGA_RED_ON_BLUE);
         return FSResult::NO_SPACE;
     }
-    
-    m_root = new(memory) RamFSNode(allocate_inode(), FileType::DIRECTORY, this, "/");
     m_root->set_create_time(1);
     
+    kira::kernel::console.add_message("[RAMFS] setting mounted flag", VGA_YELLOW_ON_BLUE);
     m_mounted = true;
+    kira::kernel::console.add_message("[RAMFS] mount completed successfully", VGA_GREEN_ON_BLUE);
     return FSResult::SUCCESS;
 }
 
@@ -348,24 +430,31 @@ FSResult RamFS::unmount() {
 }
 
 FSResult RamFS::get_root(VNode*& root) {
-    if (!m_mounted || !m_root) {
+    kira::kernel::console.add_message("[RAMFS] get_root called", VGA_CYAN_ON_BLUE);
+    
+    if (!m_mounted) {
+        kira::kernel::console.add_message("[RAMFS] ERROR: not mounted", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
     
+    if (!m_root) {
+        kira::kernel::console.add_message("[RAMFS] ERROR: m_root is NULL", VGA_RED_ON_BLUE);
+        return FSResult::INVALID_PARAMETER;
+    }
+    
+    kira::kernel::console.add_message("[RAMFS] returning root vnode", VGA_GREEN_ON_BLUE);
     root = m_root;
     return FSResult::SUCCESS;
 }
 
 FSResult RamFS::create_vnode(u32 inode, FileType type, VNode*& vnode) {
-    auto& memMgr = MemoryManager::get_instance();
-    void* memory = memMgr.allocate_physical_page();
-    if (!memory) {
+    // Use static allocation instead of dynamic
+    RamFSNode* node = allocate_static_node(inode, type, this, "");
+    if (!node) {
         return FSResult::NO_SPACE;
     }
     
-    RamFSNode* node = new(memory) RamFSNode(inode, type, this, "");
     vnode = node;
-    
     return FSResult::SUCCESS;
 }
 
@@ -422,7 +511,7 @@ FSResult RamFS::resolve_parent_path(const char* path, RamFSNode*& parent, char* 
     if (!last_slash || last_slash == path) {
         // File is in root directory
         parent = m_root;
-        strcpy(filename, path + 1); // Skip leading slash
+        strcpy_s(filename, path + 1, 256); // Skip leading slash
     } else {
         // Copy parent path
         u32 parent_len = last_slash - path;
@@ -441,7 +530,7 @@ FSResult RamFS::resolve_parent_path(const char* path, RamFSNode*& parent, char* 
         }
         
         parent = static_cast<RamFSNode*>(parent_vnode);
-        strcpy(filename, last_slash + 1);
+        strcpy_s(filename, last_slash + 1, 256);
     }
     
     return FSResult::SUCCESS;

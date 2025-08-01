@@ -179,9 +179,14 @@ public:
     
     // Path resolution
     FSResult resolve_path(const char* path, VNode*& vnode);
+    
+    // Debug/status methods
+    bool is_root_mounted() const;
+    
+    // Constructor - made public for static allocation
+    VFS(); // Will provide explicit constructor
 
 private:
-    VFS() = default;
     static VFS* s_instance;
     
     // File descriptor management

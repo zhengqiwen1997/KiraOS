@@ -338,4 +338,46 @@ i32 UserAPI::printf(const char* format, ...) {
     return print_colored(buffer, Colors::DEFAULT);
 }
 
+// File system operations
+i32 UserAPI::open(const char* path, u32 flags) {
+    if (!path) return -2; // INVALID_PARAMETER
+    return syscall(static_cast<u32>(SystemCall::OPEN), (u32)path, flags);
+}
+
+i32 UserAPI::close(i32 fd) {
+    return syscall(static_cast<u32>(SystemCall::CLOSE), fd);
+}
+
+i32 UserAPI::read_file(i32 fd, void* buffer, u32 size) {
+    if (!buffer) return -2; // INVALID_PARAMETER
+    return syscall(static_cast<u32>(SystemCall::READ_FILE), fd, (u32)buffer, size);
+}
+
+i32 UserAPI::write_file(i32 fd, const void* buffer, u32 size) {
+    if (!buffer) return -2; // INVALID_PARAMETER
+    return syscall(static_cast<u32>(SystemCall::WRITE_FILE), fd, (u32)buffer, size);
+}
+
+i32 UserAPI::readdir(const char* path, u32 index, void* entry) {
+    if (!path || !entry) {
+        return -2; // INVALID_PARAMETER
+    }
+    
+    return syscall(static_cast<u32>(SystemCall::READDIR), (u32)path, index, (u32)entry);
+}
+
+i32 UserAPI::mkdir(const char* path) {
+    if (!path) return -2; // INVALID_PARAMETER
+    return syscall(static_cast<u32>(SystemCall::MKDIR), (u32)path);
+}
+
+// Process management operations
+i32 UserAPI::ps() {
+    return syscall(static_cast<u32>(SystemCall::PS));
+}
+
+i32 UserAPI::kill(u32 pid) {
+    return syscall(static_cast<u32>(SystemCall::KILL), pid);
+}
+
 } // namespace kira::usermode 

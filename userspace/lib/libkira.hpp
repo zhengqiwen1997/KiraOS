@@ -19,6 +19,34 @@ namespace Colors {
     constexpr u16 DEFAULT = WHITE_ON_BLUE;
 }
 
+// File system constants and structures
+namespace FileSystem {
+    // File types
+    enum class FileType : u8 {
+        REGULAR = 0,
+        DIRECTORY = 1,
+        DEVICE = 2,
+        SYMLINK = 3
+    };
+    
+    // Open flags
+    enum class OpenFlags : u32 {
+        READ_ONLY = 0x00,
+        WRITE_ONLY = 0x01,
+        READ_WRITE = 0x02,
+        CREATE = 0x40,
+        TRUNCATE = 0x200,
+        APPEND = 0x400
+    };
+    
+    // Directory entry structure (matches kernel VFS)
+    struct DirectoryEntry {
+        char name[256];     // File name
+        u32 inode;         // Inode number
+        FileType type;     // File type
+    } __attribute__((packed));
+}
+
 /**
  * @brief User mode system call interface
  * This is the userspace library (like libc) that provides system call wrappers
@@ -96,6 +124,70 @@ public:
      * @return Does not return
      */
     static void exit();
+    
+    // File system operations
+    /**
+     * @brief Open file or directory
+     * @param path Path to file or directory
+     * @param flags Open flags (read/write/create etc.)
+     * @return File descriptor on success, negative error code on failure
+     */
+    static i32 open(const char* path, u32 flags);
+    
+    /**
+     * @brief Close file descriptor
+     * @param fd File descriptor to close
+     * @return 0 on success, negative error code on failure
+     */
+    static i32 close(i32 fd);
+    
+    /**
+     * @brief Read from file
+     * @param fd File descriptor
+     * @param buffer Buffer to read into
+     * @param size Number of bytes to read
+     * @return Number of bytes read on success, negative error code on failure
+     */
+    static i32 read_file(i32 fd, void* buffer, u32 size);
+    
+    /**
+     * @brief Write to file
+     * @param fd File descriptor
+     * @param buffer Buffer to write from
+     * @param size Number of bytes to write
+     * @return Number of bytes written on success, negative error code on failure
+     */
+    static i32 write_file(i32 fd, const void* buffer, u32 size);
+    
+    /**
+     * @brief Read directory entry
+     * @param path Directory path
+     * @param index Entry index (0-based)
+     * @param entry Buffer to store directory entry
+     * @return 0 on success, negative error code on failure
+     */
+    static i32 readdir(const char* path, u32 index, void* entry);
+    
+    /**
+     * @brief Create directory
+     * @param path Path to new directory
+     * @return 0 on success, negative error code on failure
+     */
+    static i32 mkdir(const char* path);
+    
+    // Process management operations
+    /**
+     * @brief List processes (get current process info)
+     * @return Current process ID
+     */
+    static i32 ps();
+    
+    /**
+     * @brief Terminate process by PID
+     * @param pid Process ID to terminate
+     * @return 0 on success, negative error code on failure
+     */
+    static i32 kill(u32 pid);
 
 private:
     /**

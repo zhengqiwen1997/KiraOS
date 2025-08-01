@@ -1,14 +1,43 @@
 #include "fs/vfs.hpp"
 #include "memory/memory_manager.hpp"
 #include "core/utils.hpp"
+#include "display/console.hpp"
+
+// External console reference from kernel namespace (like other working files)
+namespace kira::kernel {
+    extern kira::display::ScrollableConsole console;
+}
 
 namespace kira::fs {
 
 using namespace kira::system;
 using namespace kira::utils;
+using namespace kira::display;
+
+// Safe string comparison without relying on strcmp
+static bool safe_string_equals(const char* str1, const char* str2) {
+    if (!str1 || !str2) {
+        return false;
+    }
+    
+    u32 i = 0;
+    while (i < 256) { // Reasonable safety limit
+        if (str1[i] != str2[i]) {
+            return false;
+        }
+        if (str1[i] == '\0') {
+            return true; // Both strings ended at the same position
+        }
+        i++;
+    }
+    return false; // Hit length limit, strings too long
+}
 
 // Static member definitions
 VFS* VFS::s_instance = nullptr;
+
+// Static VFS instance - use static allocation to avoid memory mapping issues
+static VFS s_static_vfs_instance;
 
 //=============================================================================
 // VNode Implementation
@@ -94,15 +123,48 @@ FSResult FileDescriptor::get_size(u32& size) const {
 // VFS Implementation
 //=============================================================================
 
-VFS& VFS::get_instance() {
-    if (!s_instance) {
-        // Allocate VFS instance using placement new
-        auto& memMgr = MemoryManager::get_instance();
-        void* memory = memMgr.allocate_physical_page();
-        if (memory) {
-            s_instance = new(memory) VFS();
-        }
+VFS::VFS() : m_filesystemCount(0), m_rootVnode(nullptr) {
+    kira::kernel::console.add_message("[VFS] Constructor called", VGA_CYAN_ON_BLUE);
+    
+    // Initialize file descriptor table
+    for (u32 i = 0; i < MAX_FILE_DESCRIPTORS; i++) {
+        m_fileDescriptors[i] = nullptr;
     }
+    
+    // Initialize filesystem table
+    for (u32 i = 0; i < MAX_FILESYSTEMS; i++) {
+        m_filesystems[i] = nullptr;
+    }
+    
+    kira::kernel::console.add_message("[VFS] Constructor completed - m_rootVnode set to nullptr", VGA_GREEN_ON_BLUE);
+}
+
+VFS& VFS::get_instance() {
+    kira::kernel::console.add_message("[VFS] get_instance called", VGA_MAGENTA_ON_BLUE);
+    
+    if (!s_instance) {
+        kira::kernel::console.add_message("[VFS] Using static VFS instance", VGA_GREEN_ON_BLUE);
+        
+        // Use static allocation instead of dynamic - this avoids memory mapping issues
+        s_instance = &s_static_vfs_instance;
+        
+        // Print the static instance address
+        char ptrBuffer[32];
+        kira::utils::number_to_hex(ptrBuffer, reinterpret_cast<u32>(s_instance));
+        kira::kernel::console.add_message("[VFS] Static VFS address:", VGA_GREEN_ON_BLUE);
+        kira::kernel::console.add_message(ptrBuffer, VGA_YELLOW_ON_BLUE);
+        
+        kira::kernel::console.add_message("[VFS] Static VFS instance ready", VGA_GREEN_ON_BLUE);
+    } else {
+        kira::kernel::console.add_message("[VFS] Using existing singleton", VGA_CYAN_ON_BLUE);
+    }
+    
+    // Print the s_instance pointer address for comparison
+    char currentBuffer[32];
+    kira::utils::number_to_hex(currentBuffer, reinterpret_cast<u32>(s_instance));
+    kira::kernel::console.add_message("[VFS] Current s_instance:", VGA_GREEN_ON_BLUE);
+    kira::kernel::console.add_message(currentBuffer, VGA_YELLOW_ON_BLUE);
+    
     return *s_instance;
 }
 
@@ -146,7 +208,7 @@ FSResult VFS::mount(const char* device, const char* mountpoint, const char* fsty
     // Find the requested file system type
     FileSystem* fs = nullptr;
     for (u32 i = 0; i < m_filesystemCount; i++) {
-        if (m_filesystems[i] && strcmp(m_filesystems[i]->get_name(), fstype) == 0) {
+        if (m_filesystems[i] && safe_string_equals(m_filesystems[i]->get_name(), fstype)) {
             fs = m_filesystems[i];
             break;
         }
@@ -163,11 +225,21 @@ FSResult VFS::mount(const char* device, const char* mountpoint, const char* fsty
     }
     
     // If this is the root mount, set it as root
-    if (strcmp(mountpoint, "/") == 0) {
+    if (mountpoint[0] == '/' && mountpoint[1] == '\0') {
+        kira::kernel::console.add_message("[VFS] Setting up root mount", VGA_CYAN_ON_BLUE);
         result = fs->get_root(m_rootVnode);
         if (result != FSResult::SUCCESS) {
+            kira::kernel::console.add_message("[VFS] ERROR: get_root failed", VGA_RED_ON_BLUE);
             fs->unmount();
             return result;
+        }
+        kira::kernel::console.add_message("[VFS] Root vnode set successfully", VGA_GREEN_ON_BLUE);
+        
+        // Debug: Verify m_rootVnode is not null
+        if (m_rootVnode) {
+            kira::kernel::console.add_message("[VFS] m_rootVnode is valid after setting", VGA_GREEN_ON_BLUE);
+        } else {
+            kira::kernel::console.add_message("[VFS] ERROR: m_rootVnode is NULL after setting!", VGA_RED_ON_BLUE);
         }
     }
     
@@ -181,7 +253,7 @@ FSResult VFS::unmount(const char* mountpoint) {
     
     // TODO: Implement unmounting for specific mount points
     // For now, just handle root unmount
-    if (strcmp(mountpoint, "/") == 0 && m_rootVnode) {
+    if (mountpoint[0] == '/' && mountpoint[1] == '\0' && m_rootVnode) {
         FileSystem* fs = m_rootVnode->get_filesystem();
         if (fs) {
             FSResult result = fs->unmount();
@@ -353,30 +425,71 @@ FSResult VFS::rmdir(const char* path) {
 }
 
 FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
-    if (!path) {
+    kira::kernel::console.add_message("[VFS] Starting readdir", VGA_YELLOW_ON_BLUE);
+
+    // Debug: Check m_rootVnode specifically
+    if (!m_rootVnode) {
+        kira::kernel::console.add_message("[VFS] ERROR: m_rootVnode is NULL!", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
     
+    kira::kernel::console.add_message("[VFS] m_rootVnode is valid", VGA_GREEN_ON_BLUE);
+
+    // Simple validation
+    if (!path) {
+        kira::kernel::console.add_message("[VFS] ERROR: path is NULL!", VGA_RED_ON_BLUE);
+        return FSResult::INVALID_PARAMETER;
+    }
+    
+    
     VNode* vnode = nullptr;
+    kira::kernel::console.add_message("[VFS] About to resolve path", VGA_YELLOW_ON_BLUE);
     FSResult result = resolve_path(path, vnode);
+    kira::kernel::console.add_message("[VFS] Path resolved", VGA_YELLOW_ON_BLUE);
+    
     if (result != FSResult::SUCCESS) {
         return result;
     }
     
+    kira::kernel::console.add_message("[VFS] Checking vnode type", VGA_YELLOW_ON_BLUE);
     if (vnode->get_type() != FileType::DIRECTORY) {
         return FSResult::NOT_DIRECTORY;
     }
     
-    return vnode->read_dir(index, entry);
+    kira::kernel::console.add_message("[VFS] About to call read_dir", VGA_YELLOW_ON_BLUE);
+    FSResult read_result = vnode->read_dir(index, entry);
+    kira::kernel::console.add_message("[VFS] read_dir completed", VGA_YELLOW_ON_BLUE);
+    
+    return read_result;
+}
+
+bool VFS::is_root_mounted() const {
+    kira::kernel::console.add_message("[VFS] Checking if root is mounted", VGA_CYAN_ON_BLUE);
+    
+    // With static allocation, this should work now
+    bool result = (m_rootVnode != nullptr);
+    
+    if (result) {
+        kira::kernel::console.add_message("[VFS] Root is mounted", VGA_GREEN_ON_BLUE);
+    } else {
+        kira::kernel::console.add_message("[VFS] Root NOT mounted", VGA_RED_ON_BLUE);
+    }
+    
+    return result;
 }
 
 FSResult VFS::resolve_path(const char* path, VNode*& vnode) {
+    kira::kernel::console.add_message("[VFS] resolve_path start", VGA_CYAN_ON_BLUE);
+    
     if (!path || !m_rootVnode) {
+        kira::kernel::console.add_message("[VFS] invalid params", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
     
-    // Handle root path
-    if (strcmp(path, "/") == 0) {
+    kira::kernel::console.add_message("[VFS] checking root path", VGA_CYAN_ON_BLUE);
+    // Handle root path - safe comparison without strcmp
+    if (path[0] == '/' && path[1] == '\0') {
+        kira::kernel::console.add_message("[VFS] is root path", VGA_CYAN_ON_BLUE);
         vnode = m_rootVnode;
         return FSResult::SUCCESS;
     }
