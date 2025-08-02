@@ -20,7 +20,8 @@ class KiraShell {
 private:
     static constexpr u32 MAX_COMMAND_LENGTH = 256;
     static constexpr u32 MAX_ARGS = 16;
-    
+    u32 commandIndex = 0;
+    bool finished = false;
     char currentDirectory[MAX_COMMAND_LENGTH];
     char commandBuffer[MAX_COMMAND_LENGTH];
     char* args[MAX_ARGS];
@@ -86,7 +87,6 @@ private:
     void display_prompt() {
         // Build complete prompt as single string since console stores one color per line
         // Current limitation: console system supports ONE color per line only
-        
         char promptBuffer[64];
         u32 pos = 0;
         
@@ -103,7 +103,6 @@ private:
                 promptBuffer[pos++] = str[i];
             }
         }
-        
         // Print complete prompt in green (single color for entire line)
         UserAPI::print(promptBuffer);
     }
@@ -113,14 +112,11 @@ private:
      * @return true if command was read successfully
      */
     bool read_command() {
-        // Simple demo sequence - run each command once then exit
-        static u32 commandIndex = 0;
-        static bool finished = false;
+        // Simple demo sequence - run each command once then exit        
         
         if (finished) {
             return false;
         }
-        
         const char* demoCommands[] = {
             "help",
             "about", 
@@ -134,6 +130,7 @@ private:
             "exit"
         };
         const u32 numCommands = sizeof(demoCommands) / sizeof(demoCommands[0]);
+        
         
         if (commandIndex < numCommands) {
             // Copy demo command to buffer
@@ -216,36 +213,39 @@ private:
         const char* cmd = args[0];
         
         // All commands using safe inline character comparison
-        if (cmd[0] == 'h' && cmd[1] == 'e' && cmd[2] == 'l' && cmd[3] == 'p' && cmd[4] == '\0') {
+        // if (cmd[0] == 'h') {
+        //     cmd_help();
+        // }
+        if (string_equals(cmd, "help")) {
             cmd_help();
-        } else if (cmd[0] == 'a' && cmd[1] == 'b' && cmd[2] == 'o' && cmd[3] == 'u' && cmd[4] == 't' && cmd[5] == '\0') {
+        } else if (string_equals(cmd, "about")) {
             cmd_about();
-        } else if (cmd[0] == 'c' && cmd[1] == 'l' && cmd[2] == 'e' && cmd[3] == 'a' && cmd[4] == 'r' && cmd[5] == '\0') {
+    
+        } else if (string_equals(cmd, "clear")) {
             cmd_clear();
-        } else if (cmd[0] == 'p' && cmd[1] == 'w' && cmd[2] == 'd' && cmd[3] == '\0') {
+        } else if (string_equals(cmd, "pwd")) {
             cmd_pwd();
-        } else if (cmd[0] == 'l' && cmd[1] == 's' && cmd[2] == '\0') {
+        } else if (string_equals(cmd, "ls")) {
             cmd_ls();
-        } else if (cmd[0] == 'c' && cmd[1] == 'a' && cmd[2] == 't' && cmd[3] == '\0') {
-            cmd_cat();
-        } else if (cmd[0] == 'c' && cmd[1] == 'd' && cmd[2] == '\0') {
-            cmd_cd();
-        } else if (cmd[0] == 'm' && cmd[1] == 'e' && cmd[2] == 'm' && cmd[3] == '\0') {
-            cmd_mem();
-        } else if (cmd[0] == 'p' && cmd[1] == 's' && cmd[2] == '\0') {
-            cmd_ps();
-        } else if (cmd[0] == 'p' && cmd[1] == 'r' && cmd[2] == 'i' && cmd[3] == 'n' && cmd[4] == 't' && cmd[5] == 'f' && cmd[6] == '_' && cmd[7] == 't' && cmd[8] == 'e' && cmd[9] == 's' && cmd[10] == 't' && cmd[11] == '\0') {
-            cmd_printf_test();
-        } else if (cmd[0] == 'd' && cmd[1] == 'm' && cmd[2] == 'e' && cmd[3] == 's' && cmd[4] == 'g' && cmd[5] == '\0') {
-            cmd_dmesg();
-        } else if ((cmd[0] == 'e' && cmd[1] == 'x' && cmd[2] == 'i' && cmd[3] == 't' && cmd[4] == '\0') || 
-                   (cmd[0] == 'q' && cmd[1] == 'u' && cmd[2] == 'i' && cmd[3] == 't' && cmd[4] == '\0')) {
+        // } else if (string_equals(cmd, "cat")) {
+        //     cmd_cat();
+        // } else if (string_equals(cmd, "cd")) {
+        //     cmd_cd();
+        // } else if (string_equals(cmd, "mem")) {
+        //     cmd_mem();
+        // } else if (string_equals(cmd, "ps")) {
+        //     cmd_ps();
+        // } else if (string_equals(cmd, "printf_test")) {
+        //     cmd_printf_test();
+        // } else if (string_equals(cmd, "dmesg")) {
+        //     cmd_dmesg();
+        } else if (string_equals(cmd, "exit")) {
             cmd_exit();
         } else {
-            // Unknown command
-            UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
-            UserAPI::println(cmd);
-            UserAPI::print_colored("Type 'help' for available commands\n", Colors::YELLOW_ON_BLUE);
+        //     // Unknown command
+        //     UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
+        //     UserAPI::println(cmd);
+        //     UserAPI::print_colored("Type 'help' for available commands\n", Colors::YELLOW_ON_BLUE);
         }
     }
     
@@ -331,172 +331,172 @@ private:
         }
     }
     
-    void cmd_cat() {
-        if (argCount < 2) {
-            UserAPI::print_colored("Usage: cat <filename>", Colors::YELLOW_ON_BLUE);
-            UserAPI::println("");
-            return;
-        }
+    // void cmd_cat() {
+    //     if (argCount < 2) {
+    //         UserAPI::print_colored("Usage: cat <filename>", Colors::YELLOW_ON_BLUE);
+    //         UserAPI::println("");
+    //         return;
+    //     }
         
-        const char* filename = args[1];
-        UserAPI::printf("Reading file: %s\n", filename);
-        UserAPI::println("");
+    //     const char* filename = args[1];
+    //     UserAPI::printf("Reading file: %s\n", filename);
+    //     UserAPI::println("");
         
-        // Open file for reading
-        i32 fd = UserAPI::open(filename, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
+    //     // Open file for reading
+    //     i32 fd = UserAPI::open(filename, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
         
-        if (fd < 0) {
-            UserAPI::printf("Error: Could not open file '%s' (error code: %d)\n", filename, fd);
-            UserAPI::print_colored("Make sure the file exists and is readable.\n", Colors::YELLOW_ON_BLUE);
-            return;
-        }
+    //     if (fd < 0) {
+    //         UserAPI::printf("Error: Could not open file '%s' (error code: %d)\n", filename, fd);
+    //         UserAPI::print_colored("Make sure the file exists and is readable.\n", Colors::YELLOW_ON_BLUE);
+    //         return;
+    //     }
         
-        // Read and display file contents
-        char buffer[512];
-        i32 bytesRead = UserAPI::read_file(fd, buffer, sizeof(buffer) - 1);
+    //     // Read and display file contents
+    //     char buffer[512];
+    //     i32 bytesRead = UserAPI::read_file(fd, buffer, sizeof(buffer) - 1);
         
-        if (bytesRead > 0) {
-            buffer[bytesRead] = '\0'; // Null terminate
-            UserAPI::printf("File contents (%d bytes):\n", bytesRead);
-            UserAPI::println("=====================================");
-            UserAPI::print(buffer);
-            UserAPI::println("=====================================");
-        } else if (bytesRead == 0) {
-            UserAPI::println("File is empty.");
-        } else {
-            UserAPI::printf("Error reading file (error code: %d)\n", bytesRead);
-        }
+    //     if (bytesRead > 0) {
+    //         buffer[bytesRead] = '\0'; // Null terminate
+    //         UserAPI::printf("File contents (%d bytes):\n", bytesRead);
+    //         UserAPI::println("=====================================");
+    //         UserAPI::print(buffer);
+    //         UserAPI::println("=====================================");
+    //     } else if (bytesRead == 0) {
+    //         UserAPI::println("File is empty.");
+    //     } else {
+    //         UserAPI::printf("Error reading file (error code: %d)\n", bytesRead);
+    //     }
         
-        // Close file
-        UserAPI::close(fd);
-        UserAPI::println("");
-    }
+    //     // Close file
+    //     UserAPI::close(fd);
+    //     UserAPI::println("");
+    // }
     
-    void cmd_cd() {
-        if (argCount < 2) {
-            UserAPI::print_colored("Usage: cd <directory>", Colors::YELLOW_ON_BLUE);
-            UserAPI::println("");
-            return;
-        }
+    // void cmd_cd() {
+    //     if (argCount < 2) {
+    //         UserAPI::print_colored("Usage: cd <directory>", Colors::YELLOW_ON_BLUE);
+    //         UserAPI::println("");
+    //         return;
+    //     }
         
-        const char* newDir = args[1];
+    //     const char* newDir = args[1];
         
-        // For now, simulate directory changes
-        // This will be replaced with actual VFS navigation
-        if (string_equals(newDir, "/")) {
-            currentDirectory[0] = '/';
-            currentDirectory[1] = '\0';
-            UserAPI::print_colored("Changed to root directory", Colors::GREEN_ON_BLUE);
-            UserAPI::println("");
-        } else if (string_equals(newDir, "..")) {
-            UserAPI::print_colored("Parent directory navigation coming soon!", Colors::YELLOW_ON_BLUE);
-            UserAPI::println("");
-        } else {
-            UserAPI::print_colored("Directory navigation with VFS integration coming soon!", Colors::YELLOW_ON_BLUE);
-            UserAPI::println("");
-            UserAPI::print_colored("Target directory: ", Colors::WHITE_ON_BLUE);
-            UserAPI::println(newDir);
-        }
-    }
+    //     // For now, simulate directory changes
+    //     // This will be replaced with actual VFS navigation
+    //     if (string_equals(newDir, "/")) {
+    //         currentDirectory[0] = '/';
+    //         currentDirectory[1] = '\0';
+    //         UserAPI::print_colored("Changed to root directory", Colors::GREEN_ON_BLUE);
+    //         UserAPI::println("");
+    //     } else if (string_equals(newDir, "..")) {
+    //         UserAPI::print_colored("Parent directory navigation coming soon!", Colors::YELLOW_ON_BLUE);
+    //         UserAPI::println("");
+    //     } else {
+    //         UserAPI::print_colored("Directory navigation with VFS integration coming soon!", Colors::YELLOW_ON_BLUE);
+    //         UserAPI::println("");
+    //         UserAPI::print_colored("Target directory: ", Colors::WHITE_ON_BLUE);
+    //         UserAPI::println(newDir);
+    //     }
+    // }
     
-    void cmd_mem() {
-        UserAPI::print_colored("Memory Information:", Colors::YELLOW_ON_BLUE);
-        UserAPI::println("");
-        UserAPI::println("");
-        UserAPI::println("Total RAM: 64MB (simulated)");
-        UserAPI::println("Kernel Memory: 8MB"); 
-        UserAPI::println("User Memory: 56MB");
-        UserAPI::println("Free Memory: 48MB");
-        UserAPI::println("");
-        UserAPI::print_colored("Note: ", Colors::YELLOW_ON_BLUE);
-        UserAPI::println("Real memory statistics coming soon!");
-    }
+    // void cmd_mem() {
+    //     UserAPI::print_colored("Memory Information:", Colors::YELLOW_ON_BLUE);
+    //     UserAPI::println("");
+    //     UserAPI::println("");
+    //     UserAPI::println("Total RAM: 64MB (simulated)");
+    //     UserAPI::println("Kernel Memory: 8MB"); 
+    //     UserAPI::println("User Memory: 56MB");
+    //     UserAPI::println("Free Memory: 48MB");
+    //     UserAPI::println("");
+    //     UserAPI::print_colored("Note: ", Colors::YELLOW_ON_BLUE);
+    //     UserAPI::println("Real memory statistics coming soon!");
+    // }
     
-    void cmd_ps() {
-        UserAPI::print_colored("Process List:", Colors::YELLOW_ON_BLUE);
-        UserAPI::println("");
-        UserAPI::println("");
+    // void cmd_ps() {
+    //     UserAPI::print_colored("Process List:", Colors::YELLOW_ON_BLUE);
+    //     UserAPI::println("");
+    //     UserAPI::println("");
         
-        // Get current process info using real system call
-        i32 current_pid = UserAPI::ps();
+    //     // Get current process info using real system call
+    //     i32 current_pid = UserAPI::ps();
         
-        if (current_pid > 0) {
-            UserAPI::printf("Current Process Information:\n");
-            UserAPI::printf("PID: %d\n", current_pid);
-            UserAPI::printf("Name: shell\n");
-            UserAPI::printf("State: Running\n");
-            UserAPI::printf("Mode: User\n");
-            UserAPI::println("");
-            UserAPI::print_colored("Note: ", Colors::YELLOW_ON_BLUE);
-            UserAPI::println("Extended process listing coming soon!");
-        } else {
-            UserAPI::print_colored("Error: Could not retrieve process information\n", Colors::RED_ON_BLUE);
-        }
+    //     if (current_pid > 0) {
+    //         UserAPI::printf("Current Process Information:\n");
+    //         UserAPI::printf("PID: %d\n", current_pid);
+    //         UserAPI::printf("Name: shell\n");
+    //         UserAPI::printf("State: Running\n");
+    //         UserAPI::printf("Mode: User\n");
+    //         UserAPI::println("");
+    //         UserAPI::print_colored("Note: ", Colors::YELLOW_ON_BLUE);
+    //         UserAPI::println("Extended process listing coming soon!");
+    //     } else {
+    //         UserAPI::print_colored("Error: Could not retrieve process information\n", Colors::RED_ON_BLUE);
+    //     }
         
-        UserAPI::println("");
-    }
+    //     UserAPI::println("");
+    // }
     
-    void cmd_printf_test() {
-        UserAPI::print_colored("UserAPI::printf Test Suite:", Colors::YELLOW_ON_BLUE);
-        UserAPI::println("");
-        UserAPI::println("");
+    // void cmd_printf_test() {
+    //     UserAPI::print_colored("UserAPI::printf Test Suite:", Colors::YELLOW_ON_BLUE);
+    //     UserAPI::println("");
+    //     UserAPI::println("");
         
-        // Test basic string formatting
-        UserAPI::printf("Simple string: %s\n", "Hello, KiraOS!");
+    //     // Test basic string formatting
+    //     UserAPI::printf("Simple string: %s\n", "Hello, KiraOS!");
         
-        // Test signed integers
-        UserAPI::printf("Signed integers: %d, %d, %d\n", 42, -123, 0);
+    //     // Test signed integers
+    //     UserAPI::printf("Signed integers: %d, %d, %d\n", 42, -123, 0);
         
-        // Test unsigned integers
-        UserAPI::printf("Unsigned integers: %u, %u\n", 3456, 0xDEADBEEF);
+    //     // Test unsigned integers
+    //     UserAPI::printf("Unsigned integers: %u, %u\n", 3456, 0xDEADBEEF);
         
-        // Test hexadecimal (lowercase)
-        UserAPI::printf("Hex lowercase: 0x%x, 0x%x\n", 255, 4096);
+    //     // Test hexadecimal (lowercase)
+    //     UserAPI::printf("Hex lowercase: 0x%x, 0x%x\n", 255, 4096);
         
-        // Test hexadecimal (uppercase)
-        UserAPI::printf("Hex uppercase: 0x%X, 0x%X\n", 255, 4096);
+    //     // Test hexadecimal (uppercase)
+    //     UserAPI::printf("Hex uppercase: 0x%X, 0x%X\n", 255, 4096);
         
-        // Test character
-        UserAPI::printf("Characters: '%c', '%c', '%c'\n", 'A', 'B', '!');
+    //     // Test character
+    //     UserAPI::printf("Characters: '%c', '%c', '%c'\n", 'A', 'B', '!');
         
-        // Test mixed formatting
-        UserAPI::printf("Mixed: Process %s has PID %d (0x%X)\n", "shell", 42, 42);
+    //     // Test mixed formatting
+    //     UserAPI::printf("Mixed: Process %s has PID %d (0x%X)\n", "shell", 42, 42);
         
-        // Test percent escape
-        UserAPI::printf("Percentage: 100%% complete\n");
+    //     // Test percent escape
+    //     UserAPI::printf("Percentage: 100%% complete\n");
         
-        // Test null string handling
-        UserAPI::printf("Null string: '%s'\n", (const char*)0);
+    //     // Test null string handling
+    //     UserAPI::printf("Null string: '%s'\n", (const char*)0);
         
-        UserAPI::println("");
-        UserAPI::print_colored("printf test completed!", Colors::GREEN_ON_BLUE);
-        UserAPI::println("");
-    }
+    //     UserAPI::println("");
+    //     UserAPI::print_colored("printf test completed!", Colors::GREEN_ON_BLUE);
+    //     UserAPI::println("");
+    // }
     
-    void cmd_dmesg() {
-        UserAPI::print_colored("Kernel Messages (simulated):\n", Colors::YELLOW_ON_BLUE);
-        UserAPI::println("");
+    // void cmd_dmesg() {
+    //     UserAPI::print_colored("Kernel Messages (simulated):\n", Colors::YELLOW_ON_BLUE);
+    //     UserAPI::println("");
         
-        // Since we can't access kernel console directly from user mode,
-        // provide useful diagnostic information
-        UserAPI::println("[BOOT] KiraOS Kernel Started");
-        UserAPI::println("[INIT] Memory Manager Initialized");
-        UserAPI::println("[INIT] Process Manager Initialized");
-        UserAPI::println("[VFS]  Mounting RamFS as root filesystem...");
-        UserAPI::println("[VFS]  RamFS mounted successfully at /");
-        UserAPI::println("[VFS]  Demo files creation completed");
-        UserAPI::println("[USER] Shell process started");
+    //     // Since we can't access kernel console directly from user mode,
+    //     // provide useful diagnostic information
+    //     UserAPI::println("[BOOT] KiraOS Kernel Started");
+    //     UserAPI::println("[INIT] Memory Manager Initialized");
+    //     UserAPI::println("[INIT] Process Manager Initialized");
+    //     UserAPI::println("[VFS]  Mounting RamFS as root filesystem...");
+    //     UserAPI::println("[VFS]  RamFS mounted successfully at /");
+    //     UserAPI::println("[VFS]  Demo files creation completed");
+    //     UserAPI::println("[USER] Shell process started");
         
-        // Show current system state
-        i32 current_pid = UserAPI::ps();
-        UserAPI::printf("[INFO] Current PID: %d\n", current_pid);
-        UserAPI::printf("[INFO] Shell running in user mode\n");
-        UserAPI::printf("[INFO] VFS and RamFS operational\n");
+    //     // Show current system state
+    //     i32 current_pid = UserAPI::ps();
+    //     UserAPI::printf("[INFO] Current PID: %d\n", current_pid);
+    //     UserAPI::printf("[INFO] Shell running in user mode\n");
+    //     UserAPI::printf("[INFO] VFS and RamFS operational\n");
         
-        UserAPI::println("");
-        UserAPI::print_colored("Note: This is simulated output. Real kernel messages", Colors::YELLOW_ON_BLUE);
-        UserAPI::println(" are not accessible from user mode.");
-    }
+    //     UserAPI::println("");
+    //     UserAPI::print_colored("Note: This is simulated output. Real kernel messages", Colors::YELLOW_ON_BLUE);
+    //     UserAPI::println(" are not accessible from user mode.");
+    // }
     
     void cmd_exit() {
         UserAPI::print_colored("Exiting shell...\n", Colors::YELLOW_ON_BLUE);

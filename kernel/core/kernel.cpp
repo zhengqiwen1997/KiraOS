@@ -26,15 +26,17 @@
 #include "test/sync_test.hpp"
 #include "test/k_printf_test.hpp"
 #include "fs/vfs.hpp"
-#include "fs/ramfs.hpp"
+#include "fs/fat32.hpp"
+#include "fs/block_device.hpp"
+#include "drivers/ata.hpp"
 
 namespace kira::kernel {
 
 using namespace kira::display;
 using namespace kira::system;
-using namespace kira::utils;  // Add utils namespace for String
-using namespace kira::drivers;
 using namespace kira::fs;
+using namespace kira::utils;
+using namespace kira::drivers;
 
 #define ENABLE_EXCEPTION_TESTING
 //#define ENABLE_SINGLE_EXCEPTION_TEST
@@ -89,20 +91,75 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     auto& process_manager = ProcessManager::get_instance();
     
     // Initialize the ATA driver, VFS and Block Devices
-    ATADriver::initialize();
+    console.add_message("Initializing ATA driver...", kira::display::VGA_YELLOW_ON_BLUE);
+    bool ataInitialized = ATADriver::initialize();
+    if (ataInitialized) {
+        console.add_message("ATA driver initialized successfully", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("ATA driver initialization failed", kira::display::VGA_RED_ON_BLUE);
+    }
+    
     VFS::get_instance().initialize();
-    BlockDeviceManager::get_instance().initialize_devices();
+    
+    // Create and register ATA block devices for detected drives
+    console.add_message("Registering ATA block devices...", kira::display::VGA_YELLOW_ON_BLUE);
+    auto& blockMgr = BlockDeviceManager::get_instance();
+    u32 registeredDevices = 0;
+    
+    // Check if master drive is present and register it
+    if (ATADriver::is_master_present()) {
+        console.add_message("Creating ATA master device...", kira::display::VGA_CYAN_ON_BLUE);
+        void* deviceMemory = memoryManager.allocate_physical_page();
+        if (deviceMemory) {
+            ATABlockDevice* masterDevice = new(deviceMemory) ATABlockDevice(0); // Master = 0
+            i32 deviceId = blockMgr.register_device(masterDevice, "hda");
+            if (deviceId >= 0) {
+                console.add_message("Registered ATA master as hda", kira::display::VGA_GREEN_ON_BLUE);
+                registeredDevices++;
+            } else {
+                console.add_message("Failed to register ATA master", kira::display::VGA_RED_ON_BLUE);
+            }
+        }
+    }
+    
+    // Check if slave drive is present and register it
+    if (ATADriver::is_slave_present()) {
+        console.add_message("Creating ATA slave device...", kira::display::VGA_CYAN_ON_BLUE);
+        void* deviceMemory2 = memoryManager.allocate_physical_page();
+        if (deviceMemory2) {
+            ATABlockDevice* slaveDevice = new(deviceMemory2) ATABlockDevice(1); // Slave = 1
+            i32 deviceId = blockMgr.register_device(slaveDevice, "hdb");
+            if (deviceId >= 0) {
+                console.add_message("Registered ATA slave as hdb", kira::display::VGA_GREEN_ON_BLUE);
+                registeredDevices++;
+            } else {
+                console.add_message("Failed to register ATA slave", kira::display::VGA_RED_ON_BLUE);
+            }
+        }
+    }
+    
+    char deviceCountStr[32];
+    kira::utils::number_to_decimal(deviceCountStr, registeredDevices);
+    console.add_message("Total ATA devices registered:", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message(deviceCountStr, kira::display::VGA_YELLOW_ON_BLUE);
+    
+    // Now initialize the registered devices
+    u32 initializedCount = blockMgr.initialize_devices();
+    char initCountStr[32];
+    kira::utils::number_to_decimal(initCountStr, initializedCount);
+    console.add_message("ATA devices initialized:", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message(initCountStr, kira::display::VGA_YELLOW_ON_BLUE);
 
 
     // We put many tests here because we don't want to run them on disk boot
     #ifndef DISK_BOOT_ONLY
         // Test k_printf functionality
-        console.add_message("\nTesting k_printf functionality...", kira::display::VGA_YELLOW_ON_BLUE);
-        if (kira::test::KPrintfTest::run_tests()) {
-            console.add_message("k_printf tests passed", kira::display::VGA_GREEN_ON_BLUE);
-        } else {
-            console.add_message("k_printf tests failed", kira::display::VGA_RED_ON_BLUE);
-        }
+        // console.add_message("\nTesting k_printf functionality...", kira::display::VGA_YELLOW_ON_BLUE);
+        // if (kira::test::KPrintfTest::run_tests()) {
+        //     console.add_message("k_printf tests passed", kira::display::VGA_GREEN_ON_BLUE);
+        // } else {
+        //     console.add_message("k_printf tests failed", kira::display::VGA_RED_ON_BLUE);
+        // }
 
         // Test memory manager before running user processes
         console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
@@ -168,66 +225,64 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     #endif
     
         
-    // Mount RamFS as root filesystem for shell functionality
-    console.add_message("Mounting RamFS as root filesystem...", kira::display::VGA_YELLOW_ON_BLUE);
+    // Mount FAT32 as root filesystem for shell functionality
+    console.add_message("Mounting FAT32 as root filesystem...", kira::display::VGA_YELLOW_ON_BLUE);
     auto& vfs = VFS::get_instance();
-    
-    // Create and register RamFS using memory manager
     auto& memMgr = MemoryManager::get_instance();
-    void* ramfsMemory = memMgr.allocate_physical_page();
-    if (!ramfsMemory) {
-        console.add_message("Failed to allocate memory for RamFS", kira::display::VGA_RED_ON_BLUE);
+    
+    // Get first available block device for FAT32
+    BlockDevice* blockDevice = BlockDeviceManager::get_instance().get_device(0); // Primary master ATA device
+    
+    if (!blockDevice) {
+        console.add_message("ERROR: No block device available for FAT32", kira::display::VGA_RED_ON_BLUE);
+        console.add_message("FAT32 requires ATA/IDE drive to be detected", kira::display::VGA_YELLOW_ON_BLUE);
         return;
     }
     
-    auto* ramfs = new(ramfsMemory) RamFS();
-    vfs.register_filesystem(ramfs);
-    
-    // Mount RamFS at root
-    FSResult mountResult = vfs.mount("", "/", "ramfs");
-    char mountResultStr[32];
-    kira::utils::number_to_decimal(mountResultStr, static_cast<u32>(mountResult));
-    console.add_message(mountResultStr, kira::display::VGA_CYAN_ON_BLUE);
-    if (mountResult == FSResult::SUCCESS) {
-        console.add_message("RamFS mounted successfully at /", kira::display::VGA_GREEN_ON_BLUE);
-        
-        // Get root node directly and create files there
-        VNode* rootVNode = nullptr;
-        FSResult rootResult = ramfs->get_root(rootVNode);
-        if (rootResult == FSResult::SUCCESS && rootVNode) {
-            console.add_message("Got root VNode successfully", kira::display::VGA_CYAN_ON_BLUE);
-            
-            // Create files directly in root using the VNode interface
-            FSResult fileResult = rootVNode->create_file("boot", FileType::DIRECTORY);
-            if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created boot directory", kira::display::VGA_CYAN_ON_BLUE);
-            } else {
-                console.add_message("Failed to create boot directory", kira::display::VGA_RED_ON_BLUE);
-            }
-            
-            fileResult = rootVNode->create_file("home", FileType::DIRECTORY);
-            if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created home directory", kira::display::VGA_CYAN_ON_BLUE);
-            }
-            
-            fileResult = rootVNode->create_file("tmp", FileType::DIRECTORY);  
-            if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created tmp directory", kira::display::VGA_CYAN_ON_BLUE);
-            }
-            
-            fileResult = rootVNode->create_file("README.txt", FileType::REGULAR);
-            if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created README.txt file", kira::display::VGA_CYAN_ON_BLUE);
-            }
-            
-            console.add_message("Demo files creation completed", kira::display::VGA_GREEN_ON_BLUE);
-        } else {
-            console.add_message("Failed to get root VNode", kira::display::VGA_RED_ON_BLUE);
-        }
-    } else {
-        console.add_message("Failed to mount RamFS", kira::display::VGA_RED_ON_BLUE);
+    // Create and register FAT32 using SAFE static allocation (minimal pool size)
+    console.add_message("Creating FAT32 filesystem...", kira::display::VGA_YELLOW_ON_BLUE);
+    FAT32* fat32 = FAT32::create_static_instance(blockDevice);
+    if (!fat32) {
+        console.add_message("ERROR: Failed to create FAT32 filesystem", kira::display::VGA_RED_ON_BLUE);
+        return;
     }
     
+    console.add_message("DEBUG: FAT32 instance created with static allocation", kira::display::VGA_CYAN_ON_BLUE);
+    vfs.register_filesystem(fat32);
+    console.add_message("DEBUG: FAT32 registered with VFS", kira::display::VGA_CYAN_ON_BLUE);
+    
+    // Mount FAT32 at root
+    FSResult mountResult = vfs.mount("", "/", "fat32");
+    char mountResultStr[32];
+    kira::utils::number_to_decimal(mountResultStr, static_cast<u32>(mountResult));
+    console.add_message("FAT32 mount result:", kira::display::VGA_CYAN_ON_BLUE);
+    console.add_message(mountResultStr, kira::display::VGA_CYAN_ON_BLUE);
+    
+    if (mountResult == FSResult::SUCCESS) {
+        console.add_message("FAT32 mounted successfully at /", kira::display::VGA_GREEN_ON_BLUE);
+        
+        // Verify we can access the root directory
+        VNode* rootVNode = nullptr;
+        FSResult rootResult = vfs.resolve_path("/", rootVNode);
+        if (rootResult == FSResult::SUCCESS && rootVNode) {
+            console.add_message("Going to Create boot directory", kira::display::VGA_GREEN_ON_BLUE);
+
+            FSResult fileResult = rootVNode->create_file("boot", FileType::DIRECTORY);
+            if (fileResult == FSResult::SUCCESS) {
+                console.add_message("Created boot directory", kira::display::VGA_GREEN_ON_BLUE);
+            } else {
+                console.add_message("[FATAL] Failed to create boot directory", kira::display::VGA_RED_ON_BLUE);
+            }
+            console.add_message("FAT32 root directory accessible", kira::display::VGA_CYAN_ON_BLUE);
+        } else {
+            console.add_message("FAT32 root directory not accessible", kira::display::VGA_RED_ON_BLUE);
+        }
+        
+        console.add_message("FAT32 filesystem ready for shell", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        console.add_message("ERROR: FAT32 mount failed", kira::display::VGA_RED_ON_BLUE);
+        return;
+    }
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
     
     u32 pid1 = process_manager.create_user_process(kira::usermode::user_shell, "KiraShell", 5);

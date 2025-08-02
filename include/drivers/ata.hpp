@@ -72,7 +72,9 @@ public:
      */
     static bool get_drive_info(DriveType drive, void* info);
     
-
+    // Drive presence getters
+    static bool is_master_present() { return master_present; }
+    static bool is_slave_present() { return slave_present; }
     
 private:
     // Primary ATA channel I/O ports

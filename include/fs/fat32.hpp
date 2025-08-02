@@ -168,6 +168,10 @@ private:
 public:
     u32 allocate_inode() { return m_nextInode++; }
     
+    // Static allocation factory to avoid memory mapping issues
+    static FAT32* create_static_instance(BlockDevice* blockDevice);
+    static void destroy_static_instance(FAT32* fs);
+    
     // FAT32 specific operations
     FSResult read_file_data(u32 firstCluster, u32 offset, u32 size, void* buffer);
     FSResult write_file_data(u32 firstCluster, u32 offset, u32 size, const void* buffer);

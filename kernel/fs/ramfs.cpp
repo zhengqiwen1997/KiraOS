@@ -14,50 +14,23 @@ using namespace kira::system;
 using namespace kira::utils;
 using namespace kira::display;
 
+// TEMPORARY: Static memory pools disabled to debug kernel crash
 // Static memory pool to avoid dynamic allocation memory mapping issues
-static constexpr u32 MAX_STATIC_NODES = 64;
-static constexpr u32 NODE_SIZE = sizeof(RamFSNode);
-static u8 s_static_memory_pool[MAX_STATIC_NODES * NODE_SIZE];
-static bool s_node_pool_used[MAX_STATIC_NODES] = {false};
-static u32 s_next_node_index = 0;
+//static constexpr u32 MAX_STATIC_NODES = 4;
+//static constexpr u32 NODE_SIZE = sizeof(RamFSNode);
+//static u8 s_static_memory_pool[MAX_STATIC_NODES * NODE_SIZE];
+//static bool s_node_pool_used[MAX_STATIC_NODES] = {false};
+//static u32 s_next_node_index = 0;
 
-// Static node allocation helper
+// TEMPORARY: Static node allocation disabled - fallback to dynamic
 static RamFSNode* allocate_static_node(u32 inode, FileType type, FileSystem* fs, const char* name) {
-    for (u32 i = 0; i < MAX_STATIC_NODES; i++) {
-        u32 index = (s_next_node_index + i) % MAX_STATIC_NODES;
-        if (!s_node_pool_used[index]) {
-            s_node_pool_used[index] = true;
-            s_next_node_index = (index + 1) % MAX_STATIC_NODES;
-            
-            // Calculate memory address for this node
-            void* memory = &s_static_memory_pool[index * NODE_SIZE];
-            
-            // Use placement new to initialize the pre-allocated memory
-            return new(memory) RamFSNode(inode, type, fs, name);
-        }
-    }
-    return nullptr; // Pool exhausted
+    // DISABLED: Return nullptr to force dynamic allocation fallback
+    return nullptr;
 }
 
 static void free_static_node(RamFSNode* node) {
-    if (!node) return;
-    
-    // Find the node in our pool by checking memory range
-    u8* node_ptr = reinterpret_cast<u8*>(node);
-    u8* pool_start = s_static_memory_pool;
-    u8* pool_end = s_static_memory_pool + (MAX_STATIC_NODES * NODE_SIZE);
-    
-    if (node_ptr >= pool_start && node_ptr < pool_end) {
-        // Calculate index
-        u32 offset = node_ptr - pool_start;
-        u32 index = offset / NODE_SIZE;
-        
-        if (index < MAX_STATIC_NODES && s_node_pool_used[index]) {
-            s_node_pool_used[index] = false;
-            // Call destructor manually
-            node->~RamFSNode();
-        }
-    }
+    // DISABLED: Static allocation disabled
+    return;
 }
 
 //=============================================================================
@@ -183,7 +156,7 @@ FSResult RamFSNode::read_dir(u32 index, DirectoryEntry& entry) {
         return FSResult::NOT_DIRECTORY;
     }
     
-    kira::kernel::console.add_message("[RAMFS] checking index", VGA_GREEN_ON_BLUE);
+    kira::kernel::console.add_message("[RAMFS] checking child count", VGA_GREEN_ON_BLUE);
     
     // Debug: show child count
     char debugMsg[64];

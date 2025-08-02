@@ -2,12 +2,20 @@
 #include "drivers/ata.hpp"
 #include "memory/memory_manager.hpp"
 #include "core/utils.hpp"
+#include "display/console.hpp"
+
+// External console reference from kernel namespace
+namespace kira::kernel {
+    extern kira::display::ScrollableConsole console;
+}
+
 
 namespace kira::fs {
 
 using namespace kira::system;
 using namespace kira::drivers;
 using namespace kira::utils;
+using namespace kira::display;
 
 // Static member definitions
 BlockDeviceManager* BlockDeviceManager::s_instance = nullptr;
@@ -97,19 +105,28 @@ FSResult ATABlockDevice::read_blocks(u32 blockNum, u32 blockCount, void* buffer)
 }
 
 FSResult ATABlockDevice::write_blocks(u32 blockNum, u32 blockCount, const void* buffer) {
+    kira::kernel::console.add_message("[ATABlockDevice] write_blocks start", VGA_GREEN_ON_BLUE);
     if (!m_initialized) {
+        kira::kernel::console.add_message("[ATABlockDevice] not initialized", VGA_RED_ON_BLUE);
+
         return FSResult::IO_ERROR;
     }
+    
 
     if (m_readOnly) {
+        kira::kernel::console.add_message("[ATABlockDevice] read only", VGA_RED_ON_BLUE);
         return FSResult::PERMISSION_DENIED;
     }
 
     if (!buffer || blockCount == 0) {
+        kira::kernel::console.add_message("[ATABlockDevice] invalid parameter", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
 
+    k_printf("blockNum: %d, blockCount: %d, m_blockCount: %d\n", blockNum, blockCount, m_blockCount);
+
     if (blockNum + blockCount > m_blockCount) {
+        kira::kernel::console.add_message("[ATABlockDevice] invalid blockNum + blockCount > m_blockCoun", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
 

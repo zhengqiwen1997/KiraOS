@@ -456,9 +456,9 @@ FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
         return FSResult::NOT_DIRECTORY;
     }
     
-    kira::kernel::console.add_message("[VFS] About to call read_dir", VGA_YELLOW_ON_BLUE);
+    kira::kernel::console.add_message("[VFS] About to call vnode read_dir", VGA_YELLOW_ON_BLUE);
     FSResult read_result = vnode->read_dir(index, entry);
-    kira::kernel::console.add_message("[VFS] read_dir completed", VGA_YELLOW_ON_BLUE);
+    kira::kernel::console.add_message("[VFS] vnode read_dir completed", VGA_YELLOW_ON_BLUE);
     
     return read_result;
 }
@@ -468,12 +468,6 @@ bool VFS::is_root_mounted() const {
     
     // With static allocation, this should work now
     bool result = (m_rootVnode != nullptr);
-    
-    if (result) {
-        kira::kernel::console.add_message("[VFS] Root is mounted", VGA_GREEN_ON_BLUE);
-    } else {
-        kira::kernel::console.add_message("[VFS] Root NOT mounted", VGA_RED_ON_BLUE);
-    }
     
     return result;
 }

@@ -603,6 +603,7 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     }
     
     auto& memoryManager = MemoryManager::get_instance();
+    char debugMsg[64]; // Declare once for the entire function
     
     // Map user program code - for embedded functions, we need to map the kernel code pages
     // where the function resides into user space
@@ -611,7 +612,7 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     
     // Map multiple pages for the user program to handle code that spans page boundaries
     u32 userTextAddr = USER_TEXT_START;
-    u32 numPagesToMap = 12; // Map 12 pages (48KB) to handle larger user programs like the shell
+    u32 numPagesToMap = 20; // Map 20 pages (80KB) to handle larger user programs like the shell
     
     for (u32 i = 0; i < numPagesToMap; i++) {
         u32 userVirtAddr = userTextAddr + (i * PAGE_SIZE);
@@ -629,15 +630,31 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     }
     
     // Map additional kernel pages that might contain string literals and data
-    // Map a range of kernel pages around the function to include data/rodata sections
-    u32 kernelStart = 0x100000; // 1MB - typical kernel start
-    u32 kernelEnd = 0x400000;   // 4MB - should cover most kernel data
+    // Map a MUCH larger range of kernel pages to include ALL kernel code/data
+    u32 kernelStart = 0x100000; // 1MB - typical kernel start  
+    u32 kernelEnd = 0x800000;   // 8MB - expanded to cover full kernel with FAT32 code
     
+    kira::kernel::console.add_message("[PROCESS] Mapping kernel memory range:", kira::display::VGA_YELLOW_ON_BLUE);
+    kira::utils::number_to_hex(debugMsg, kernelStart);
+    kira::kernel::console.add_message("[PROCESS] kernelStart:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    kira::utils::number_to_hex(debugMsg, kernelEnd);
+    kira::kernel::console.add_message("[PROCESS] kernelEnd:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    u32 pagesMapped = 0;
     for (u32 addr = kernelStart; addr < kernelEnd; addr += PAGE_SIZE) {
         // Map kernel pages to user space (writable for static variables)
         // This allows user programs to access string literals and static data in kernel memory
-        process->addressSpace->map_page(addr, addr, true, true);
+        if (process->addressSpace->map_page(addr, addr, true, true)) {
+            pagesMapped++;
+        }
     }
+    
+    kira::utils::number_to_decimal(debugMsg, pagesMapped);
+    kira::kernel::console.add_message("[PROCESS] Kernel pages mapped:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
     
     // Map console object and its buffers (needed for console.add_message calls)
     // The console is a global object in kernel memory, so we need to map it
@@ -675,6 +692,45 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     u32 functionOffset = functionAddr - functionPage;
     process->context.eip = userTextAddr + functionOffset;
     process->context.userEsp = userStackVirtTop - 16; // Leave some space at top
+    
+    // DEBUG: Print critical user mode setup values
+    kira::kernel::console.add_message("[PROCESS] User mode setup debug:", kira::display::VGA_YELLOW_ON_BLUE);
+    kira::utils::number_to_hex(debugMsg, functionAddr);
+    kira::kernel::console.add_message("[PROCESS] functionAddr:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    kira::utils::number_to_hex(debugMsg, functionPage);
+    kira::kernel::console.add_message("[PROCESS] functionPage:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    kira::utils::number_to_hex(debugMsg, functionOffset);
+    kira::kernel::console.add_message("[PROCESS] functionOffset:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    kira::utils::number_to_hex(debugMsg, userTextAddr);
+    kira::kernel::console.add_message("[PROCESS] userTextAddr:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    kira::utils::number_to_hex(debugMsg, process->context.eip);
+    kira::kernel::console.add_message("[PROCESS] final EIP:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    kira::utils::number_to_hex(debugMsg, process->context.userEsp);
+    kira::kernel::console.add_message("[PROCESS] final ESP:", kira::display::VGA_CYAN_ON_BLUE);
+    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    
+    // DEBUG: Show memory addresses of critical shell functions to check if they're mapped
+    
+    // Check if user shell function is in mapped range
+    u32 shellAddr = reinterpret_cast<u32>(function);
+    if (shellAddr >= kernelStart && shellAddr < kernelEnd) {
+        kira::kernel::console.add_message("[PROCESS] Shell function is in mapped range", kira::display::VGA_GREEN_ON_BLUE);
+    } else {
+        kira::kernel::console.add_message("[PROCESS] WARNING: Shell function outside mapped range!", kira::display::VGA_RED_ON_BLUE);
+        kira::utils::number_to_hex(debugMsg, shellAddr);
+        kira::kernel::console.add_message("[PROCESS] Shell addr:", kira::display::VGA_RED_ON_BLUE);
+        kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
+    }
     
     return true;
 }
