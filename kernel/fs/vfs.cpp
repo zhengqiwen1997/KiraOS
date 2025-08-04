@@ -425,7 +425,6 @@ FSResult VFS::rmdir(const char* path) {
 }
 
 FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
-    kira::kernel::console.add_message("[VFS] Starting readdir", VGA_YELLOW_ON_BLUE);
 
     // Debug: Check m_rootVnode specifically
     if (!m_rootVnode) {
@@ -433,8 +432,6 @@ FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    kira::kernel::console.add_message("[VFS] m_rootVnode is valid", VGA_GREEN_ON_BLUE);
-
     // Simple validation
     if (!path) {
         kira::kernel::console.add_message("[VFS] ERROR: path is NULL!", VGA_RED_ON_BLUE);
@@ -443,22 +440,17 @@ FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
     
     
     VNode* vnode = nullptr;
-    kira::kernel::console.add_message("[VFS] About to resolve path", VGA_YELLOW_ON_BLUE);
     FSResult result = resolve_path(path, vnode);
-    kira::kernel::console.add_message("[VFS] Path resolved", VGA_YELLOW_ON_BLUE);
     
     if (result != FSResult::SUCCESS) {
         return result;
     }
     
-    kira::kernel::console.add_message("[VFS] Checking vnode type", VGA_YELLOW_ON_BLUE);
     if (vnode->get_type() != FileType::DIRECTORY) {
         return FSResult::NOT_DIRECTORY;
     }
     
-    kira::kernel::console.add_message("[VFS] About to call vnode read_dir", VGA_YELLOW_ON_BLUE);
     FSResult read_result = vnode->read_dir(index, entry);
-    kira::kernel::console.add_message("[VFS] vnode read_dir completed", VGA_YELLOW_ON_BLUE);
     
     return read_result;
 }

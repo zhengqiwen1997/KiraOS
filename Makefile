@@ -40,16 +40,13 @@ QEMU_ELF_FLAGS = -kernel kernel.elf \
                  -no-reboot \
                  -no-shutdown \
                  -serial file:../$(SERIAL_LOG) \
-                 -drive file=../$(BUILD_DIR)/test_disk.img,format=raw,if=ide,index=0,media=disk
+                 -drive file=../test_fat32.img,format=raw,index=0,media=disk
 
-# QEMU flags for simple ELF kernel boot (no serial logging)
+# QEMU flags for simple ELF kernel boot (with FAT32 filesystem and console)
 QEMU_ELF_SIMPLE_FLAGS = -kernel kernel.elf \
-                        -cpu max \
-                        -smp 1 \
                         -m 256M \
-                        -no-reboot \
-                        -no-shutdown \
-                        -drive file=../$(BUILD_DIR)/test_disk.img,format=raw,if=ide,index=0,media=disk
+                        -drive file=../test_fat32.img,format=raw,index=0,media=disk \
+                        -serial stdio
 
 #=============================================================================
 # Build Targets
@@ -128,36 +125,49 @@ $(DISK_IMAGE): $(STAGE1_BIN) $(STAGE2_BIN) $(CMAKE_BUILD_DIR)-disk/kernel.elf
 # Run Targets
 #=============================================================================
 
-# Create test disk image for ELF kernel runs
-$(BUILD_DIR)/test_disk.img: | $(BUILD_DIR)
-	@echo "Creating test disk image..."
-	@$(DD) if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
-	@echo "  ✓ Test disk image created: $@"
+# Create FAT32 disk image with test files for KiraOS
+test_fat32.img:
+	@echo "Creating FAT32 disk image with test files..."
+	@if [ ! -f test_fat32.img ]; then \
+		echo "  Running disk creation script..."; \
+		./create_disk.sh; \
+	else \
+		echo "  ✓ FAT32 disk image already exists: test_fat32.img"; \
+	fi
 
-# Run KiraOS using ELF kernel (simple and reliable)
-run: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img
-	@echo "Starting KiraOS..."
+# Legacy test disk image (kept for compatibility)
+$(BUILD_DIR)/test_disk.img: | $(BUILD_DIR)
+	@echo "Creating legacy test disk image..."
+	@$(DD) if=/dev/zero of=$@ bs=512 count=2880 2>/dev/null
+	@echo "  ✓ Legacy test disk image created: $@"
+
+# Run KiraOS using ELF kernel with FAT32 filesystem
+run: $(CPP_KERNEL_ELF) test_fat32.img
+	@echo "Starting KiraOS with FAT32 filesystem..."
+	@echo "💡 Try these commands in KiraOS shell: ls, cat HELLO.TXT, cd BOOT, help"
 	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
 
 # Run KiraOS with serial logging and monitor
-run-with-log: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
-	@echo "Starting KiraOS with serial logging..."
+run-with-log: $(CPP_KERNEL_ELF) test_fat32.img | $(BUILD_DIR)
+	@echo "Starting KiraOS with FAT32 filesystem and serial logging..."
 	@echo "Note: Serial output will be saved to build/serial.log"
+	@echo "💡 Try these commands in KiraOS shell: ls, cat HELLO.TXT, cd BOOT, help"
 	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
 
 # Run KiraOS simply (no serial logging) - kept for compatibility
-run-simple: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img
-	@echo "Starting KiraOS (simple mode)..."
+run-simple: $(CPP_KERNEL_ELF) test_fat32.img
+	@echo "Starting KiraOS with FAT32 filesystem (simple mode)..."
+	@echo "💡 Try these commands in KiraOS shell: ls, cat HELLO.TXT, cd BOOT, help"
 	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_SIMPLE_FLAGS)
 
 # Run with graphics disabled (serial output only)
-run-headless: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
-	@echo "Starting KiraOS in headless mode..."
+run-headless: $(CPP_KERNEL_ELF) test_fat32.img | $(BUILD_DIR)
+	@echo "Starting KiraOS with FAT32 filesystem in headless mode..."
 	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -nographic
 
 # Run in debug mode with GDB server
-debug: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
-	@echo "Starting KiraOS in debug mode..."
+debug: $(CPP_KERNEL_ELF) test_fat32.img | $(BUILD_DIR)
+	@echo "Starting KiraOS with FAT32 filesystem in debug mode..."
 	@echo "Connect GDB with: target remote localhost:1234"
 	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio -s -S
 
@@ -165,9 +175,15 @@ debug: $(CPP_KERNEL_ELF) $(BUILD_DIR)/test_disk.img | $(BUILD_DIR)
 disk: clean-disk $(DISK_IMAGE)
 	@echo "Bootable disk image created: $(DISK_IMAGE)"
 
-# Run using legacy disk image method
-run-disk: disk
-	@echo "Starting KiraOS using disk image (legacy method)..."
+# Run KiraOS using ELF kernel with FAT32 disk (same as run but with monitor)
+run-disk: $(CPP_KERNEL_ELF) test_fat32.img | $(BUILD_DIR)
+	@echo "Starting KiraOS with FAT32 filesystem and monitor console..."
+	@echo "💡 Try these commands in KiraOS shell: ls, cat HELLO.TXT, cd BOOT, help"
+	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
+
+# Run using legacy custom bootloader method
+run-legacy-disk: disk
+	@echo "Starting KiraOS using legacy disk image (custom bootloader)..."
 	@$(QEMU) $(QEMU_DISK_FLAGS) -monitor stdio
 
 # Clean and recreate disk image
@@ -201,19 +217,30 @@ help:
 	@echo ""
 	@echo "Build targets:"
 	@echo "  all          - Build ELF kernel (default)"
-	@echo "  disk         - Create bootable disk image"
+	@echo "  disk         - Create bootable disk image (legacy)"
+	@echo "  test_fat32.img - Create FAT32 disk image with test files"
 	@echo "  clean        - Remove all build files"
 	@echo ""
-	@echo "Run targets:"
-	@echo "  run          - Run KiraOS (simple, no logging)"
+	@echo "Run targets (with FAT32 filesystem):"
+	@echo "  run          - Run KiraOS with FAT32 disk (recommended)"
 	@echo "  run-with-log - Run KiraOS with serial logging"
 	@echo "  run-simple   - Run KiraOS simply (alias for run)"
 	@echo "  run-headless - Run KiraOS without graphics"
-	@echo "  run-disk     - Run KiraOS using disk image (legacy)"
+	@echo "  run-disk     - Run KiraOS with FAT32 disk and monitor"
 	@echo "  debug        - Run with GDB server (port 1234)"
+	@echo ""
+	@echo "Legacy targets:"
+	@echo "  run-legacy-disk - Run KiraOS using custom bootloader"
+	@echo ""
+	@echo "🎮 KiraOS Shell Commands:"
+	@echo "  ls           - List files and directories"
+	@echo "  cat FILE     - Read file contents"
+	@echo "  cd DIR       - Change directory"
+	@echo "  pwd          - Show current directory"
+	@echo "  help         - Show available commands"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  log          - Show serial port output"
 	@echo "  help         - Show this help message"
 
-.PHONY: all disk run run-with-log run-simple run-headless run-disk debug log clean help 
+.PHONY: all disk test_fat32.img run run-with-log run-simple run-headless run-disk run-legacy-disk debug log clean help 

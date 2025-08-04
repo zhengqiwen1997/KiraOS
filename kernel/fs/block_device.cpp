@@ -82,9 +82,11 @@ FSResult ATABlockDevice::read_blocks(u32 blockNum, u32 blockCount, void* buffer)
     u32 blocksRemaining = blockCount;
     u32 currentBlock = blockNum;
 
+    k_printf("[ATABlockDevice] blocksRemaining: %d, m_blockCount: %d\n", blocksRemaining, m_blockCount);
+
     while (blocksRemaining > 0) {
         u32 blocksToRead = (blocksRemaining > 255) ? 255 : blocksRemaining;
-        
+        k_printf("[ATABlockDevice] blocksToRead: %d, currentBlock: %d\n", blocksToRead, currentBlock);
         bool success = ATADriver::read_sectors(
             ataDrive, 
             currentBlock, 

@@ -140,7 +140,13 @@ public:
     FSResult set_next_cluster(u32 cluster, u32 nextCluster);
     u32 allocate_cluster();
     FSResult free_cluster(u32 cluster);
-
+    u32 get_m_fatCacheSector() const { return m_fatCacheSector; }
+    u32 get_m_fatStartSector() const { return m_fatStartSector; }
+    u32 get_m_dataStartSector() const { return m_dataStartSector; }
+    u32 get_m_bytesPerCluster() const { return m_bytesPerCluster; }
+    u32 get_m_sectorsPerCluster() const { return m_sectorsPerCluster; }
+    u32 get_m_nextInode() const { return m_nextInode; }
+ 
 private:
     BlockDevice* m_device;
     FAT32Node* m_root;

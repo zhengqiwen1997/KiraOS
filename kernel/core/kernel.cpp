@@ -83,8 +83,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     auto& virtualMemoryManager = VirtualMemoryManager::get_instance();
     virtualMemoryManager.initialize();
 
+    // DEBUG: Add message after VirtualMemoryManager
+    console.add_message("VirtualMemoryManager completed, getting MemoryManager...", kira::display::VGA_CYAN_ON_BLUE);
+
     // Initialize memory manager
     auto& memoryManager = MemoryManager::get_instance();
+    
+    // DEBUG: Add message after MemoryManager
+    console.add_message("MemoryManager singleton obtained successfully", kira::display::VGA_GREEN_ON_BLUE);
 
     // Initialize process management
     console.add_message("\nInitializing process management...", kira::display::VGA_YELLOW_ON_BLUE);
@@ -181,12 +187,12 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         }
 
         // Test ATA driver
-        console.add_message("\nInitializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
-        if (kira::test::ATADriverTest::run_tests()) {
-            console.add_message("ATA driver ready for file system", kira::display::VGA_GREEN_ON_BLUE);
-        } else {
-            console.add_message("ATA driver tests failed", kira::display::VGA_RED_ON_BLUE);
-        }
+        // console.add_message("\nInitializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
+        // if (kira::test::ATADriverTest::run_tests()) {
+        //     console.add_message("ATA driver ready for file system", kira::display::VGA_GREEN_ON_BLUE);
+        // } else {
+        //     console.add_message("ATA driver tests failed", kira::display::VGA_RED_ON_BLUE);
+        // }
 
         // Test VFS - DISABLED: conflicts with shell RamFS mounting
         console.add_message("\nVFS Test skipped (conflicts with shell filesystem)", kira::display::VGA_YELLOW_ON_BLUE);
@@ -246,6 +252,9 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         console.add_message("ERROR: Failed to create FAT32 filesystem", kira::display::VGA_RED_ON_BLUE);
         return;
     }
+
+    u32 mfatCacheSector = fat32->get_m_fatCacheSector();
+    k_printf("[FAT32] get_m_fatCacheSector: %d\n", mfatCacheSector);
     
     console.add_message("DEBUG: FAT32 instance created with static allocation", kira::display::VGA_CYAN_ON_BLUE);
     vfs.register_filesystem(fat32);
@@ -267,12 +276,14 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         if (rootResult == FSResult::SUCCESS && rootVNode) {
             console.add_message("Going to Create boot directory", kira::display::VGA_GREEN_ON_BLUE);
 
-            FSResult fileResult = rootVNode->create_file("boot", FileType::DIRECTORY);
-            if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created boot directory", kira::display::VGA_GREEN_ON_BLUE);
-            } else {
-                console.add_message("[FATAL] Failed to create boot directory", kira::display::VGA_RED_ON_BLUE);
-            }
+            // FSResult fileResult = rootVNode->create_file("NNN", FileType::DIRECTORY);
+            // if (fileResult == FSResult::SUCCESS) {
+            //     console.add_message("Created NNN directory", kira::display::VGA_GREEN_ON_BLUE);
+            //     console.add_message("NNN", kira::display::VGA_GREEN_ON_BLUE);
+
+            // } else {
+            //     console.add_message("[FATAL] Failed to create NNN directory", kira::display::VGA_RED_ON_BLUE);
+            // }
             console.add_message("FAT32 root directory accessible", kira::display::VGA_CYAN_ON_BLUE);
         } else {
             console.add_message("FAT32 root directory not accessible", kira::display::VGA_RED_ON_BLUE);
@@ -284,7 +295,8 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         return;
     }
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
-    
+    k_printf("[FAT32] get_m_fatCacheSector 2: %d\n", mfatCacheSector);
+
     u32 pid1 = process_manager.create_user_process(kira::usermode::user_shell, "KiraShell", 5);
     if (pid1) {
         char pidMsg[64];
@@ -300,10 +312,12 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         
         // Enable timer-driven scheduling before starting the scheduler
         ProcessManager::enable_timer_scheduling();
-        
+        k_printf("[FAT32] get_m_fatCacheSector 3: %d\n", mfatCacheSector);
+
         // Start the process scheduler - this will run the user process and enter idle loop
         process_manager.schedule();
-        
+        k_printf("[FAT32] get_m_fatCacheSector 4: %d\n", mfatCacheSector);
+
         // The schedule() call above should not return in normal operation
         // If we get here, something went wrong
         console.add_message("ERROR: Scheduler returned unexpectedly", kira::display::VGA_RED_ON_BLUE);

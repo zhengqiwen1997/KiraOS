@@ -190,9 +190,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 static_cast<i32>(SyscallResult::IO_ERROR);
         }
         
-        case SystemCall::READDIR: {
-            kira::kernel::console.add_message("[SYSCALL] READDIR called", kira::display::VGA_MAGENTA_ON_BLUE);
-            
+        case SystemCall::READDIR: {            
             // Read directory entry
             // arg1 = path pointer, arg2 = index, arg3 = entry buffer pointer
             const char* path = reinterpret_cast<const char*>(arg1);
@@ -229,10 +227,9 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             }
             
             // Use kernel-space buffer to avoid user-space pointer dereferencing issue
-            kira::kernel::console.add_message("[SYSCALL] Creating kernel DirectoryEntry", kira::display::VGA_CYAN_ON_BLUE);
             kira::fs::DirectoryEntry kernelEntry;
             
-            kira::kernel::console.add_message("[SYSCALL] About to call vfs.readdir", kira::display::VGA_MAGENTA_ON_BLUE);
+
             kira::fs::FSResult result = vfs.readdir(path, index, kernelEntry);
             
             if (result == kira::fs::FSResult::SUCCESS) {
@@ -247,7 +244,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 kira::kernel::console.add_message("[SYSCALL] SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
                 return static_cast<i32>(SyscallResult::SUCCESS);
             } else if (result == kira::fs::FSResult::NOT_FOUND) {
-                kira::kernel::console.add_message("[SYSCALL] NOT_FOUND", kira::display::VGA_YELLOW_ON_BLUE);
+                // kira::kernel::console.add_message("[SYSCALL] NOT_FOUND", kira::display::VGA_YELLOW_ON_BLUE);
                 return static_cast<i32>(SyscallResult::FILE_NOT_FOUND); // No more entries
             } else {
                 return static_cast<i32>(SyscallResult::IO_ERROR);

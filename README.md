@@ -4,6 +4,8 @@ KiraOS is a self-made operating system written in C++ for fun and study. It feat
 
 ## Key Features
 
+- ✅ **FAT32 Filesystem**: Full read/write support with VFS abstraction layer
+- ✅ **Interactive Shell**: Complete user-space shell with file operations (`ls`, `cat`, `cd`, etc.)
 - ✅ **Virtual Memory**: Full paging support with per-process address spaces
 - ✅ **System Calls**: INT 0x80 interface for user-kernel communication
 - ✅ **Ring 3 User Mode**: Hardware-enforced privilege separation with memory isolation
@@ -17,11 +19,17 @@ KiraOS is a self-made operating system written in C++ for fun and study. It feat
 ## Quick Start
 
 ```bash
-# Build ELF kernel (default - includes all tests)
+# Build and run KiraOS - ELF with FAT32 filesystem (one command!)
+make run
+
+# Build ELF kernel separately
 make clean && make
 
-# Run ELF kernel (recommended for development)
-make run
+# Create FAT32 disk image with test files
+make test_fat32.img
+
+# Run with serial logging
+make run-with-log
 
 # Create bootable disk image
 make disk
@@ -46,17 +54,22 @@ KiraOS/
 │   ├── arch/x86/              # x86-specific code (GDT, TSS, assembly)
 │   ├── interrupts/            # Exception and IRQ handling
 │   ├── drivers/               # Timer, keyboard, ATA/IDE drivers
+│   ├── fs/                    # Filesystem implementations (VFS, FAT32, RamFS)
 │   ├── memory/                # Virtual memory, paging, physical allocation
 │   └── test/                  # Driver tests and validation
 ├── userspace/                 # User mode programs and libraries
-│   ├── programs/              # User applications
+│   ├── programs/              # User applications (shell, test programs)
 │   └── lib/                   # User mode libraries
 ├── include/                   # Kernel headers
 │   ├── drivers/               # Driver interfaces
+│   ├── fs/                    # Filesystem interfaces
 │   └── test/                  # Test framework headers
+├── tools/                     # Development and testing tools
+│   └── disk/                  # FAT32 disk image creation (cross-platform)
 ├── build/                     # Build output (disk images, logs)
 ├── cmake-build-elf/           # ELF kernel build directory (full tests)
 ├── cmake-build-disk/          # Disk kernel build directory (minimal)
+├── create_disk.sh             # Convenience script for disk creation
 ├── Makefile                   # Main build system
 └── CMakeLists.txt            # CMake configuration
 ```
