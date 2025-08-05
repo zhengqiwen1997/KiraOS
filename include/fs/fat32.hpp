@@ -146,6 +146,9 @@ public:
     u32 get_m_bytesPerCluster() const { return m_bytesPerCluster; }
     u32 get_m_sectorsPerCluster() const { return m_sectorsPerCluster; }
     u32 get_m_nextInode() const { return m_nextInode; }
+    
+    // Debug function to check BPB integrity
+    FSResult check_bpb_integrity();
  
 private:
     BlockDevice* m_device;

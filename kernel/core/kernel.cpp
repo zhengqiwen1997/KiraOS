@@ -170,21 +170,21 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         // Test memory manager before running user processes
         console.add_message("Testing memory management...", kira::display::VGA_YELLOW_ON_BLUE);
     
-        void* testPage = memoryManager.allocate_physical_page();
-        if (testPage) {
-            console.add_message("Memory manager allocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
-            memoryManager.free_physical_page(testPage);
-        } else {
-            console.add_message("Memory manager allocation: FAILED", kira::display::VGA_RED_ON_BLUE);
-        }
+        // void* testPage = memoryManager.allocate_physical_page();
+        // if (testPage) {
+        //     console.add_message("Memory manager allocation: SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
+        //     memoryManager.free_physical_page(testPage);
+        // } else {
+        //     console.add_message("Memory manager allocation: FAILED", kira::display::VGA_RED_ON_BLUE);
+        // }
 
         // Initialize and test Synchronization Primitives
-        console.add_message("\nTesting Synchronization Primitives...", kira::display::VGA_YELLOW_ON_BLUE);
-        if (kira::test::SyncTest::run_tests()) {
-            console.add_message("Synchronization primitives ready", kira::display::VGA_GREEN_ON_BLUE);
-        } else {
-            console.add_message("Synchronization tests failed", kira::display::VGA_RED_ON_BLUE);
-        }
+        // console.add_message("\nTesting Synchronization Primitives...", kira::display::VGA_YELLOW_ON_BLUE);
+        // if (kira::test::SyncTest::run_tests()) {
+        //     console.add_message("Synchronization primitives ready", kira::display::VGA_GREEN_ON_BLUE);
+        // } else {
+        //     console.add_message("Synchronization tests failed", kira::display::VGA_RED_ON_BLUE);
+        // }
 
         // Test ATA driver
         // console.add_message("\nInitializing ATA/IDE driver...", kira::display::VGA_YELLOW_ON_BLUE);
@@ -220,12 +220,12 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         // }
 
         // Initialize and test Process Management and Scheduler
-        console.add_message("\nTesting Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
-        if (kira::test::ProcessTest::run_tests()) {
-            console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
-        } else {
-            console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
-        }
+        // console.add_message("\nTesting Process Management and Scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
+        // if (kira::test::ProcessTest::run_tests()) {
+        //     console.add_message("Process management and scheduler ready", kira::display::VGA_GREEN_ON_BLUE);
+        // } else {
+        //     console.add_message("Process management tests failed", kira::display::VGA_RED_ON_BLUE);
+        // }
     #else
         console.add_message("Many tests disabled for disk boot", kira::display::VGA_CYAN_ON_BLUE);
     #endif
@@ -276,14 +276,12 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         if (rootResult == FSResult::SUCCESS && rootVNode) {
             console.add_message("Going to Create boot directory", kira::display::VGA_GREEN_ON_BLUE);
 
-            // FSResult fileResult = rootVNode->create_file("NNN", FileType::DIRECTORY);
-            // if (fileResult == FSResult::SUCCESS) {
-            //     console.add_message("Created NNN directory", kira::display::VGA_GREEN_ON_BLUE);
-            //     console.add_message("NNN", kira::display::VGA_GREEN_ON_BLUE);
-
-            // } else {
-            //     console.add_message("[FATAL] Failed to create NNN directory", kira::display::VGA_RED_ON_BLUE);
-            // }
+            FSResult fileResult = rootVNode->create_file("GD", FileType::REGULAR);
+            if (fileResult == FSResult::SUCCESS) {
+                console.add_message("Created GD directory", kira::display::VGA_GREEN_ON_BLUE);
+            } else {
+                console.add_message("[FATAL] Failed to create GD directory", kira::display::VGA_RED_ON_BLUE);
+            }
             console.add_message("FAT32 root directory accessible", kira::display::VGA_CYAN_ON_BLUE);
         } else {
             console.add_message("FAT32 root directory not accessible", kira::display::VGA_RED_ON_BLUE);

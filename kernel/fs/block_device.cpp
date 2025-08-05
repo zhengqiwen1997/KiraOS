@@ -82,11 +82,11 @@ FSResult ATABlockDevice::read_blocks(u32 blockNum, u32 blockCount, void* buffer)
     u32 blocksRemaining = blockCount;
     u32 currentBlock = blockNum;
 
-    k_printf("[ATABlockDevice] blocksRemaining: %d, m_blockCount: %d\n", blocksRemaining, m_blockCount);
+    // k_printf("[ATABlockDevice] blocksRemaining: %d, m_blockCount: %d\n", blocksRemaining, m_blockCount);
 
     while (blocksRemaining > 0) {
         u32 blocksToRead = (blocksRemaining > 255) ? 255 : blocksRemaining;
-        k_printf("[ATABlockDevice] blocksToRead: %d, currentBlock: %d\n", blocksToRead, currentBlock);
+        // k_printf("[ATABlockDevice] blocksToRead: %d, currentBlock: %d\n", blocksToRead, currentBlock);
         bool success = ATADriver::read_sectors(
             ataDrive, 
             currentBlock, 
@@ -107,7 +107,7 @@ FSResult ATABlockDevice::read_blocks(u32 blockNum, u32 blockCount, void* buffer)
 }
 
 FSResult ATABlockDevice::write_blocks(u32 blockNum, u32 blockCount, const void* buffer) {
-    kira::kernel::console.add_message("[ATABlockDevice] write_blocks start", VGA_GREEN_ON_BLUE);
+    // kira::kernel::console.add_message("[ATABlockDevice] write_blocks start", VGA_GREEN_ON_BLUE);
     if (!m_initialized) {
         kira::kernel::console.add_message("[ATABlockDevice] not initialized", VGA_RED_ON_BLUE);
 
@@ -125,7 +125,7 @@ FSResult ATABlockDevice::write_blocks(u32 blockNum, u32 blockCount, const void* 
         return FSResult::INVALID_PARAMETER;
     }
 
-    k_printf("blockNum: %d, blockCount: %d, m_blockCount: %d\n", blockNum, blockCount, m_blockCount);
+    // k_printf("blockNum: %d, blockCount: %d, m_blockCount: %d\n", blockNum, blockCount, m_blockCount);
 
     if (blockNum + blockCount > m_blockCount) {
         kira::kernel::console.add_message("[ATABlockDevice] invalid blockNum + blockCount > m_blockCoun", VGA_RED_ON_BLUE);

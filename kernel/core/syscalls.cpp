@@ -197,7 +197,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             u32 index = arg2;
             kira::fs::DirectoryEntry* entry = reinterpret_cast<kira::fs::DirectoryEntry*>(arg3);
             
-            kira::kernel::console.add_message("[SYSCALL] checking params", kira::display::VGA_MAGENTA_ON_BLUE);
+            // kira::kernel::console.add_message("[SYSCALL] checking params", kira::display::VGA_MAGENTA_ON_BLUE);
             if (!path || !entry) {
                 kira::kernel::console.add_message("[SYSCALL] null params", kira::display::VGA_RED_ON_BLUE);
                 return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
@@ -205,14 +205,14 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             
             // Debug: check path contents
             if (path[0] == '/' && path[1] == '\0') {
-                kira::kernel::console.add_message("[SYSCALL] path is root /", kira::display::VGA_CYAN_ON_BLUE);
+                // kira::kernel::console.add_message("[SYSCALL] path is root /", kira::display::VGA_CYAN_ON_BLUE);
             } else {
                 kira::kernel::console.add_message("[SYSCALL] path not root", kira::display::VGA_YELLOW_ON_BLUE);
             }
             
-            kira::kernel::console.add_message("[SYSCALL] calling VFS", kira::display::VGA_MAGENTA_ON_BLUE);
+            // kira::kernel::console.add_message("[SYSCALL] calling VFS", kira::display::VGA_MAGENTA_ON_BLUE);
             auto& vfs = kira::fs::VFS::get_instance();
-            kira::kernel::console.add_message("[SYSCALL] about to call readdir", kira::display::VGA_MAGENTA_ON_BLUE);
+            // kira::kernel::console.add_message("[SYSCALL] about to call readdir", kira::display::VGA_MAGENTA_ON_BLUE);
             
             // Test if VFS instance is valid
             kira::kernel::console.add_message("[SYSCALL] VFS instance OK", kira::display::VGA_MAGENTA_ON_BLUE);
@@ -233,12 +233,12 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             kira::fs::FSResult result = vfs.readdir(path, index, kernelEntry);
             
             if (result == kira::fs::FSResult::SUCCESS) {
-                kira::kernel::console.add_message("[SYSCALL] VFS success, copying to user", kira::display::VGA_GREEN_ON_BLUE);
+                // kira::kernel::console.add_message("[SYSCALL] VFS success, copying to user", kira::display::VGA_GREEN_ON_BLUE);
                 // Copy kernel entry to user space
                 *entry = kernelEntry;
                 kira::kernel::console.add_message("[SYSCALL] Copy to user completed", kira::display::VGA_GREEN_ON_BLUE);
             }
-            kira::kernel::console.add_message("[SYSCALL] VFS call completed", kira::display::VGA_MAGENTA_ON_BLUE);
+            // kira::kernel::console.add_message("[SYSCALL] VFS call completed", kira::display::VGA_MAGENTA_ON_BLUE);
             
             if (result == kira::fs::FSResult::SUCCESS) {
                 kira::kernel::console.add_message("[SYSCALL] SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
