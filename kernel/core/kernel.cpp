@@ -276,11 +276,11 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         if (rootResult == FSResult::SUCCESS && rootVNode) {
             console.add_message("Going to Create boot directory", kira::display::VGA_GREEN_ON_BLUE);
 
-            FSResult fileResult = rootVNode->create_file("GD", FileType::REGULAR);
+            FSResult fileResult = rootVNode->create_file("LOG", FileType::REGULAR);
             if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created GD directory", kira::display::VGA_GREEN_ON_BLUE);
+                console.add_message("Created LOG file", kira::display::VGA_GREEN_ON_BLUE);
             } else {
-                console.add_message("[FATAL] Failed to create GD directory", kira::display::VGA_RED_ON_BLUE);
+                console.add_message("[FATAL] Failed to create LOG file", kira::display::VGA_RED_ON_BLUE);
             }
             console.add_message("FAT32 root directory accessible", kira::display::VGA_CYAN_ON_BLUE);
         } else {

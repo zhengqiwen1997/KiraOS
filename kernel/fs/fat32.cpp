@@ -977,34 +977,39 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
         
         if (!foundFreeEntry) {
             // Move to next cluster in directory
-            k_printf("[FAT32 - create_file_in_directory] moving to next cluster\n");
-            FSResult nextResult = get_next_cluster(currentCluster, currentCluster);
-            if (nextResult != FSResult::SUCCESS) {
-                k_printf("[FAT32 - create_file_in_directory] get_next_cluster failed\n");
-                // Need to extend directory
+            k_printf("[FAT32] 🔄 No free entries in cluster %d, trying next cluster...\n", currentCluster);
+            u32 nextCluster;
+            FSResult nextResult = get_next_cluster(currentCluster, nextCluster);
+            if (nextResult == FSResult::SUCCESS) {
+                // Successfully found next cluster in chain - continue searching
+                k_printf("[FAT32] 🔄 Moving from cluster %d to cluster %d\n", currentCluster, nextCluster);
+                currentCluster = nextCluster;
+                // Continue to next iteration of while loop
+            } else {
+                // Reached end of directory chain - need to extend
+                k_printf("[FAT32] 🆕 Reached end of directory chain, extending...\n");
                 u32 newDirCluster = allocate_cluster();
-                    if (newDirCluster == 0) {
-                        k_printf("[FAT32 - create_file_in_directory] allocate_cluster failed: NO_SPACE\n");
-                        free_cluster(newCluster);
-                        memMgr.free_physical_page(clusterBuffer);
-                        return FSResult::NO_SPACE;
-                    }
+                if (newDirCluster == 0) {
+                    k_printf("[FAT32 - create_file_in_directory] allocate_cluster failed: NO_SPACE\n");
+                    free_cluster(newCluster);
+                    memMgr.free_physical_page(clusterBuffer);
+                    return FSResult::NO_SPACE;
+                }
                 
-                // Link new cluster to directory
+                // Link new cluster to directory chain
                 set_next_cluster(currentCluster, newDirCluster);
                 currentCluster = newDirCluster;
-                // targetSector = cluster_to_sector(currentCluster);
-                k_printf("[FAT32 - create_file_in_directory] after set_next_cluster: currentCluster: %d, newDirCluster: %d, targetSector: %d\n", currentCluster, newDirCluster, targetSector);
-
                 entryOffset = 0;
 
                 // Initialize new cluster with zeros
                 memset(clusterBuffer, 0, 4096);  // 🎯 FIX: Clear entire page, not just pointer size
+                
+                // 🎯 FIX: We found a free entry in the new cluster!
+                foundFreeEntry = true;
+                targetSector = cluster_to_sector(currentCluster);
+                k_printf("[FAT32] 🆕 Extended directory: newCluster=%d, entryOffset=%d, targetSector=%d\n", 
+                         newDirCluster, entryOffset, targetSector);
             }
-            targetSector = cluster_to_sector(currentCluster);
-
-            // Aug 3rd, 2025 - I think this is the problem, we need to set foundFreeEntry to true here
-            foundFreeEntry = true;
         }
     }
     
