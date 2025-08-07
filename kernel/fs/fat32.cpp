@@ -190,16 +190,16 @@ FSResult FAT32Node::read_dir(u32 index, DirectoryEntry& entry) {
         Fat32DirEntry& entry = m_dirEntries[physicalIndex];
         
         // End of directory
-        if (entry.name[0] == 0x00) {
+        if (entry.name[0] == Fat32DirEntryName::END_OF_DIR) {
             // k_printf("[FAT32 - read_dir] Hit end of directory at physical index %d\n", physicalIndex);
             break;
         }
         
         // Skip deleted entries and volume labels
-        if (entry.name[0] == 0xE5 || (entry.attr & Fat32Attr::VOLUME_ID)) {
+        if (entry.name[0] == Fat32DirEntryName::DELETED || (entry.attr & Fat32Attr::VOLUME_ID)) {
             // k_printf("[FAT32 - read_dir] Skipping physical index %d (deleted=%s, volume=%s)\n", 
             //          physicalIndex, 
-            //          (entry.name[0] == 0xE5) ? "yes" : "no",
+            //          (entry.name[0] == Fat32DirEntryName::DELETED) ? "yes" : "no",
             //          (entry.attr & Fat32Attr::VOLUME_ID) ? "yes" : "no");
             continue;
         }
@@ -326,10 +326,10 @@ FSResult FAT32Node::load_directory_cache() {
     // Count valid entries (exclude volume labels and deleted entries)
     m_dirEntryCount = 0;
     for (u32 i = 0; i < maxEntries; i++) {
-        if (m_dirEntries[i].name[0] == 0x00) {
+        if (m_dirEntries[i].name[0] == Fat32DirEntryName::END_OF_DIR) {
             break; // End of directory
         }
-        if (m_dirEntries[i].name[0] != 0xE5 && !(m_dirEntries[i].attr & Fat32Attr::VOLUME_ID)) {
+        if (m_dirEntries[i].name[0] != Fat32DirEntryName::DELETED && !(m_dirEntries[i].attr & Fat32Attr::VOLUME_ID)) {
             // Count only non-deleted, non-volume-label entries
             m_dirEntryCount++;
         }
@@ -965,7 +965,7 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
             // k_printf("[FAT32 - create_file_in_directory] entry: %s\n", entry.name);
 
             // Check for end of directory or free entry
-            if (entry.name[0] == 0x00 || entry.name[0] == 0xE5) {
+            if (entry.name[0] == Fat32DirEntryName::END_OF_DIR || entry.name[0] == Fat32DirEntryName::DELETED) {
                 // Found a free entry
                 k_printf("[FAT32 - create_file_in_directory] found a free entry\n");
                 foundFreeEntry = true;
@@ -1096,7 +1096,7 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
     // Convert name to FAT format for comparison
     u8 fatName[11];
     convert_standard_name_to_fat(name, fatName);
-    
+    k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - name: %s, fatName: %s\n", name, fatName);
     // Get memory manager
     auto& memMgr = MemoryManager::get_instance();
     
@@ -1111,6 +1111,7 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
         }
         
         u32 sector = cluster_to_sector(currentCluster);
+        k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - sector: %d\n", sector);
         FSResult readResult = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
         if (readResult != FSResult::SUCCESS) {
             memMgr.free_physical_page(clusterBuffer);
@@ -1125,13 +1126,13 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
             Fat32DirEntry& entry = entries[i];
             
             // End of directory
-            if (entry.name[0] == 0x00) {
+            if (entry.name[0] == Fat32DirEntryName::END_OF_DIR) {
                 memMgr.free_physical_page(clusterBuffer);
                 return FSResult::NOT_FOUND;
             }
             
             // Skip deleted entries
-            if (entry.name[0] == 0xE5) {
+            if (entry.name[0] == Fat32DirEntryName::DELETED) {
                 continue;
             }
             
@@ -1142,12 +1143,13 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
             
             // Check if this matches our target file
             if (memcmp(entry.name, fatName, 11) == 0) {
+                k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - found the file, entry.name: %s, fatName: %s\n", entry.name, fatName);
                 // Found it! Get file info before deleting
                 u32 firstCluster = (static_cast<u32>(entry.first_cluster_high) << 16) | entry.first_cluster_low;
                 bool isDirectory = (entry.attr & Fat32Attr::DIRECTORY) != 0;
                 
                 // Mark as deleted
-                entry.name[0] = 0xE5;
+                entry.name[0] = Fat32DirEntryName::DELETED;
                 
                 // Write the modified cluster back
                 FSResult writeResult = m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
@@ -1163,6 +1165,7 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
                 if (firstCluster >= 2) {
                     if (isDirectory) {
                         // For directories, recursively delete contents first
+                        k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - deleting directory contents\n");
                         delete_directory_contents(firstCluster);
                     }
                     free_cluster_chain(firstCluster);
@@ -1230,12 +1233,12 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
 
         
         // Skip deleted entries
-        if (entry.name[0] == 0xE5) {
+        if (entry.name[0] == Fat32DirEntryName::DELETED) {
             continue;
         }
         
         // Skip end of directory marker
-        if (entry.name[0] == 0x00) {
+        if (entry.name[0] == Fat32DirEntryName::END_OF_DIR) {
             break;
         }
         
@@ -1421,7 +1424,7 @@ FSResult FAT32::initialize_directory(u32 dirCluster, u32 parentCluster) {
     
     // Mark end of directory
     Fat32DirEntry& endEntry = entries[2];
-    endEntry.name[0] = 0x00;
+    endEntry.name[0] = Fat32DirEntryName::END_OF_DIR;
     
     // Write back the cluster
     FSResult writeResult = m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
@@ -1440,8 +1443,9 @@ FSResult FAT32::delete_directory_contents(u32 dirCluster) {
     auto& memMgr = MemoryManager::get_instance();
     
     while (currentCluster < Fat32Cluster::END_MIN) {
+        k_printf("[FAT32 - delete_directory_contents] delete_directory_contents - currentCluster: %d\n", currentCluster);
         u32 sector = cluster_to_sector(currentCluster);
-        
+        k_printf("[FAT32 - delete_directory_contents] delete_directory_contents - sector: %d\n", sector);
         // 🎯 FIX: Use properly sized buffer to prevent overflow corruption
         u8* clusterBuffer = static_cast<u8*>(memMgr.allocate_physical_page());
         if (!clusterBuffer) {
@@ -1462,13 +1466,19 @@ FSResult FAT32::delete_directory_contents(u32 dirCluster) {
             Fat32DirEntry& entry = entries[i];
             
             // Check for end of directory
-            if (entry.name[0] == 0x00) {
+            if (entry.name[0] == Fat32DirEntryName::END_OF_DIR) {
                 memMgr.free_physical_page(clusterBuffer);
                 return FSResult::SUCCESS; // End of directory
             }
             
             // Skip deleted entries and volume labels
-            if (entry.name[0] == 0xE5 || (entry.attr & Fat32Attr::VOLUME_ID)) {
+            if (entry.name[0] == Fat32DirEntryName::DELETED || (entry.attr & Fat32Attr::VOLUME_ID)) {
+                continue;
+            }
+            
+            // Skip "." and ".." entries to prevent infinite recursion
+            if ((entry.name[0] == '.' && entry.name[1] == ' ') ||
+                (entry.name[0] == '.' && entry.name[1] == '.' && entry.name[2] == ' ')) {
                 continue;
             }
             
@@ -1477,6 +1487,7 @@ FSResult FAT32::delete_directory_contents(u32 dirCluster) {
             
             // If it's a directory, recursively delete its contents
             if (entry.attr & Fat32Attr::DIRECTORY) {
+                k_printf("[FAT32 - delete_directory_contents] delete_directory_contents - deleting directory contents, firstCluster: %d\n", firstCluster);
                 FSResult deleteResult = delete_directory_contents(firstCluster);
                 if (deleteResult != FSResult::SUCCESS) {
                     memMgr.free_physical_page(clusterBuffer);
@@ -1492,7 +1503,7 @@ FSResult FAT32::delete_directory_contents(u32 dirCluster) {
             }
             
             // Mark directory entry as deleted
-            entry.name[0] = 0xE5;
+            entry.name[0] = Fat32DirEntryName::DELETED;
             
             // Write back the modified cluster
             FSResult writeResult = m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
@@ -1507,6 +1518,7 @@ FSResult FAT32::delete_directory_contents(u32 dirCluster) {
         
         // Move to next cluster in directory
         FSResult nextResult = get_next_cluster(currentCluster, currentCluster);
+        k_printf("[FAT32 - delete_directory_contents] delete_directory_contents - next currentCluster: %d\n", currentCluster);
         if (nextResult != FSResult::SUCCESS) {
             break;
         }

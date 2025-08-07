@@ -76,6 +76,12 @@ namespace Fat32Cluster {
     constexpr u32 MASK = 0x0FFFFFFF;  // 28-bit cluster numbers
 }
 
+// FAT32 directory entry name markers
+namespace Fat32DirEntryName {
+    constexpr u8 DELETED = 0xE5;      // Deleted entry marker
+    constexpr u8 END_OF_DIR = 0x00;   // End of directory marker
+}
+
 /**
  * @brief FAT32 VNode Implementation
  */

@@ -276,33 +276,36 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         if (rootResult == FSResult::SUCCESS && rootVNode) {
             console.add_message("Going to Create boot directory", kira::display::VGA_GREEN_ON_BLUE);
 
-            FSResult fileResult = rootVNode->create_file("LOG", FileType::REGULAR);
+            FSResult fileResult = rootVNode->create_file("D1", FileType::DIRECTORY);
             if (fileResult == FSResult::SUCCESS) {
-                console.add_message("Created LOG file", kira::display::VGA_GREEN_ON_BLUE);
+                console.add_message("Created D1 dir", kira::display::VGA_GREEN_ON_BLUE);
             } else {
-                console.add_message("[FATAL] Failed to create LOG file", kira::display::VGA_RED_ON_BLUE);
+                console.add_message("[FATAL] Failed to create D1 dir", kira::display::VGA_RED_ON_BLUE);
             }
             console.add_message("FAT32 root directory accessible", kira::display::VGA_CYAN_ON_BLUE);
         } else {
             console.add_message("FAT32 root directory not accessible", kira::display::VGA_RED_ON_BLUE);
         }
-        
+
+        // Delete a file in the root directory
+        console.add_message("Deleting a file in the root directory...", kira::display::VGA_YELLOW_ON_BLUE);
+        FSResult fileResult = rootVNode->delete_file("D1");
+        if (fileResult == FSResult::SUCCESS) {
+            console.add_message("Deleted D1 dir", kira::display::VGA_GREEN_ON_BLUE);
+        } else {
+            console.add_message("Failed to delete D1 dir", kira::display::VGA_RED_ON_BLUE);
+        }
+
         console.add_message("FAT32 filesystem ready for shell", kira::display::VGA_GREEN_ON_BLUE);
     } else {
         console.add_message("ERROR: FAT32 mount failed", kira::display::VGA_RED_ON_BLUE);
         return;
     }
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
-    k_printf("[FAT32] get_m_fatCacheSector 2: %d\n", mfatCacheSector);
 
     u32 pid1 = process_manager.create_user_process(kira::usermode::user_shell, "KiraShell", 5);
     if (pid1) {
-        char pidMsg[64];
-        strcpy_s(pidMsg, "Interactive shell started with PID: ", sizeof(pidMsg));
-        char pidStr[16];
-        number_to_decimal(pidStr, pid1);
-        strcat(pidMsg, pidStr);
-        console.add_message(pidMsg, kira::display::VGA_GREEN_ON_BLUE);
+        k_printf("Interactive shell started with PID: %d\n", pid1);
         console.add_message("Starting process scheduler...", kira::display::VGA_YELLOW_ON_BLUE);
         
         // Debug: Check if ready queue still has processes before scheduling
@@ -310,12 +313,8 @@ void main(volatile unsigned short* vga_buffer) noexcept {
         
         // Enable timer-driven scheduling before starting the scheduler
         ProcessManager::enable_timer_scheduling();
-        k_printf("[FAT32] get_m_fatCacheSector 3: %d\n", mfatCacheSector);
-
         // Start the process scheduler - this will run the user process and enter idle loop
         process_manager.schedule();
-        k_printf("[FAT32] get_m_fatCacheSector 4: %d\n", mfatCacheSector);
-
         // The schedule() call above should not return in normal operation
         // If we get here, something went wrong
         console.add_message("ERROR: Scheduler returned unexpectedly", kira::display::VGA_RED_ON_BLUE);
