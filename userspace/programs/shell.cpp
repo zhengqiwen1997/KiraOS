@@ -118,11 +118,17 @@ private:
             return false;
         }
         const char* demoCommands[] = {
-            "help",
-            "about", 
+            // "help",
+            // "about", 
+            // "pwd",
+            // "ls",
+            // "cat readme.txt",
+            "cd /APPS",
             "pwd",
             "ls",
-            "cat",
+            "cat README.TXT",
+            "cd ..",
+            "cd ./BOOT",
             "mem",
             "ps",
             "printf_test",
@@ -227,10 +233,10 @@ private:
             cmd_pwd();
         } else if (string_equals(cmd, "ls")) {
             cmd_ls();
-        // } else if (string_equals(cmd, "cat")) {
-        //     cmd_cat();
-        // } else if (string_equals(cmd, "cd")) {
-        //     cmd_cd();
+        } else if (string_equals(cmd, "cat")) {
+            cmd_cat();
+        } else if (string_equals(cmd, "cd")) {
+            cmd_cd();
         // } else if (string_equals(cmd, "mem")) {
         //     cmd_mem();
         // } else if (string_equals(cmd, "ps")) {
@@ -331,73 +337,89 @@ private:
         }
     }
     
-    // void cmd_cat() {
-    //     if (argCount < 2) {
-    //         UserAPI::print_colored("Usage: cat <filename>", Colors::YELLOW_ON_BLUE);
-    //         UserAPI::println("");
-    //         return;
-    //     }
+    void cmd_cat() {
+        UserAPI::printf("cmd_cat");
+        if (argCount < 2) {
+            UserAPI::print_colored("Usage: cat <filename>", Colors::YELLOW_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
         
-    //     const char* filename = args[1];
-    //     UserAPI::printf("Reading file: %s\n", filename);
-    //     UserAPI::println("");
+        const char* filename = args[1];
+        char fullPath[256];
+        build_absolute_path(filename, fullPath, sizeof(fullPath));
+        UserAPI::printf("Reading file: %s\n", fullPath);
+        UserAPI::println("");
         
-    //     // Open file for reading
-    //     i32 fd = UserAPI::open(filename, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
+        // Open file for reading
+        i32 fd = UserAPI::open(fullPath, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
         
-    //     if (fd < 0) {
-    //         UserAPI::printf("Error: Could not open file '%s' (error code: %d)\n", filename, fd);
-    //         UserAPI::print_colored("Make sure the file exists and is readable.\n", Colors::YELLOW_ON_BLUE);
-    //         return;
-    //     }
+        if (fd < 0) {
+            UserAPI::printf("Error: Could not open file '%s' (error code: %d)\n", fullPath, fd);
+            UserAPI::print_colored("Make sure the file exists and is readable.\n", Colors::YELLOW_ON_BLUE);
+            return;
+        }
         
-    //     // Read and display file contents
-    //     char buffer[512];
-    //     i32 bytesRead = UserAPI::read_file(fd, buffer, sizeof(buffer) - 1);
+        // Read and display file contents
+        char buffer[512];
+        i32 bytesRead = UserAPI::read_file(fd, buffer, sizeof(buffer) - 1);
         
-    //     if (bytesRead > 0) {
-    //         buffer[bytesRead] = '\0'; // Null terminate
-    //         UserAPI::printf("File contents (%d bytes):\n", bytesRead);
-    //         UserAPI::println("=====================================");
-    //         UserAPI::print(buffer);
-    //         UserAPI::println("=====================================");
-    //     } else if (bytesRead == 0) {
-    //         UserAPI::println("File is empty.");
-    //     } else {
-    //         UserAPI::printf("Error reading file (error code: %d)\n", bytesRead);
-    //     }
+        if (bytesRead > 0) {
+            buffer[bytesRead] = '\0'; // Null terminate
+            UserAPI::printf("File contents (%d bytes):\n", bytesRead);
+            UserAPI::println("=====================================");
+            UserAPI::print(buffer);
+            UserAPI::println("=====================================");
+        } else if (bytesRead == 0) {
+            UserAPI::println("File is empty.");
+        } else {
+            UserAPI::printf("Error reading file (error code: %d)\n", bytesRead);
+        }
         
-    //     // Close file
-    //     UserAPI::close(fd);
-    //     UserAPI::println("");
-    // }
+        // Close file
+        UserAPI::close(fd);
+        UserAPI::println("");
+    }
     
-    // void cmd_cd() {
-    //     if (argCount < 2) {
-    //         UserAPI::print_colored("Usage: cd <directory>", Colors::YELLOW_ON_BLUE);
-    //         UserAPI::println("");
-    //         return;
-    //     }
-        
-    //     const char* newDir = args[1];
-        
-    //     // For now, simulate directory changes
-    //     // This will be replaced with actual VFS navigation
-    //     if (string_equals(newDir, "/")) {
-    //         currentDirectory[0] = '/';
-    //         currentDirectory[1] = '\0';
-    //         UserAPI::print_colored("Changed to root directory", Colors::GREEN_ON_BLUE);
-    //         UserAPI::println("");
-    //     } else if (string_equals(newDir, "..")) {
-    //         UserAPI::print_colored("Parent directory navigation coming soon!", Colors::YELLOW_ON_BLUE);
-    //         UserAPI::println("");
-    //     } else {
-    //         UserAPI::print_colored("Directory navigation with VFS integration coming soon!", Colors::YELLOW_ON_BLUE);
-    //         UserAPI::println("");
-    //         UserAPI::print_colored("Target directory: ", Colors::WHITE_ON_BLUE);
-    //         UserAPI::println(newDir);
-    //     }
-    // }
+    void cmd_cd() {
+        if (argCount < 2) {
+            UserAPI::print_colored("Usage: cd <directory>", Colors::YELLOW_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
+
+        const char* inputPath = args[1];
+
+        // Build normalized absolute path from currentDirectory and inputPath
+        char normalized[256];
+        build_absolute_path(inputPath, normalized, sizeof(normalized));
+
+        // Special-case root
+        if (normalized[0] == '/' && normalized[1] == '\0') {
+            currentDirectory[0] = '/';
+            currentDirectory[1] = '\0';
+            UserAPI::print_colored("Changed directory", Colors::GREEN_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
+
+        // Verify the target is a directory that exists
+        if (!directory_exists(normalized)) {
+            UserAPI::print_colored("cd: no such directory: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+            return;
+        }
+
+        // Update currentDirectory
+        u32 i = 0;
+        for (; i < MAX_COMMAND_LENGTH - 1 && normalized[i] != '\0'; i++) {
+            currentDirectory[i] = normalized[i];
+        }
+        currentDirectory[i] = '\0';
+
+        UserAPI::print_colored("Changed directory", Colors::GREEN_ON_BLUE);
+        UserAPI::println("");
+    }
     
     // void cmd_mem() {
     //     UserAPI::print_colored("Memory Information:", Colors::YELLOW_ON_BLUE);
@@ -532,6 +554,135 @@ private:
         }
         
         // If we hit the limit, strings are too long or not equal
+        return false;
+    }
+
+    // Build an absolute, normalized path from currentDirectory and an input path.
+    // Handles absolute and relative inputs, "." and ".." components, and collapses duplicate slashes.
+    void build_absolute_path(const char* inputPath, char* outPath, u32 outSize) {
+        if (!outPath || outSize == 0) return;
+
+        // Step 1: Build a combined path string
+        char combined[256];
+        u32 pos = 0;
+        combined[0] = '\0';
+
+        if (inputPath && inputPath[0] == '/') {
+            // Absolute input
+            for (u32 i = 0; inputPath[i] != '\0' && pos < sizeof(combined) - 1; i++) {
+                combined[pos++] = inputPath[i];
+            }
+        } else {
+            // Relative input: start from currentDirectory
+            // Copy currentDirectory
+            for (u32 i = 0; currentDirectory[i] != '\0' && pos < sizeof(combined) - 1; i++) {
+                combined[pos++] = currentDirectory[i];
+            }
+            // Ensure single slash separator if not root
+            if (pos == 0 || combined[0] != '/') {
+                if (pos < sizeof(combined) - 1) combined[pos++] = '/';
+            } else if (!(pos == 1 && combined[0] == '/')) {
+                if (combined[pos - 1] != '/' && pos < sizeof(combined) - 1) combined[pos++] = '/';
+            }
+            // Append inputPath
+            if (inputPath) {
+                for (u32 i = 0; inputPath[i] != '\0' && pos < sizeof(combined) - 1; i++) {
+                    combined[pos++] = inputPath[i];
+                }
+            }
+        }
+        combined[pos < sizeof(combined) ? pos : (sizeof(combined) - 1)] = '\0';
+
+        // Step 2: Normalize the combined path into components
+        const u32 MAX_COMPONENTS = 32;
+        const u32 MAX_COMP_LEN = 64;
+        char components[MAX_COMPONENTS][MAX_COMP_LEN];
+        u32 compCount = 0;
+
+        u32 i = 0;
+        while (combined[i] != '\0') {
+            // Skip consecutive slashes
+            while (combined[i] == '/') { i++; }
+            if (combined[i] == '\0') break;
+
+            // Extract one segment
+            char segment[MAX_COMP_LEN];
+            u32 segLen = 0;
+            while (combined[i] != '\0' && combined[i] != '/' && segLen < MAX_COMP_LEN - 1) {
+                segment[segLen++] = combined[i++];
+            }
+            segment[segLen] = '\0';
+
+            // Process segment
+            if (segment[0] == '\0' || (segment[0] == '.' && segment[1] == '\0')) {
+                // Skip
+            } else if (segment[0] == '.' && segment[1] == '.' && segment[2] == '\0') {
+                if (compCount > 0) {
+                    compCount--; // Go up one level
+                }
+            } else {
+                if (compCount < MAX_COMPONENTS) {
+                    // Copy segment into components
+                    u32 c = 0;
+                    while (segment[c] != '\0' && c < MAX_COMP_LEN - 1) {
+                        components[compCount][c] = segment[c];
+                        c++;
+                    }
+                    components[compCount][c] = '\0';
+                    compCount++;
+                }
+            }
+        }
+
+        // Step 3: Rebuild normalized path
+        u32 outPos = 0;
+        if (outPos < outSize - 1) outPath[outPos++] = '/';
+        if (compCount == 0) {
+            // Root
+            outPath[outPos < outSize ? outPos : (outSize - 1)] = '\0';
+            return;
+        }
+        for (u32 idx = 0; idx < compCount; idx++) {
+            u32 c = 0;
+            while (components[idx][c] != '\0' && outPos < outSize - 1) {
+                outPath[outPos++] = components[idx][c++];
+            }
+            if (idx + 1 < compCount && outPos < outSize - 1) {
+                outPath[outPos++] = '/';
+            }
+        }
+        outPath[outPos < outSize ? outPos : (outSize - 1)] = '\0';
+    }
+
+    // Check whether an absolute path refers to an existing directory.
+    // Strategy:
+    // - Try readdir(path, 0, &entry)
+    //   * SUCCESS (0): directory exists and has at least one entry
+    //   * IO_ERROR (-7): not a directory
+    //   * FILE_NOT_FOUND (-5): ambiguous: path not found OR empty directory
+    //       -> disambiguate by open(path): if open succeeds, treat as empty directory; else not found.
+    bool directory_exists(const char* absPath) {
+        if (!absPath || absPath[0] != '/') return false;
+
+        FileSystem::DirectoryEntry entry;
+        i32 rd = UserAPI::readdir(absPath, 0, &entry);
+        if (rd == 0) {
+            return true; // Directory with entries
+        }
+        // -7: IO_ERROR (from kernel SyscallResult)
+        if (rd == -7) {
+            return false; // Not a directory
+        }
+        // -5: FILE_NOT_FOUND (from kernel SyscallResult)
+        if (rd == -5) {
+            // Try to open to see if the path exists at all (dir may be empty)
+            i32 fd = UserAPI::open(absPath, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
+            if (fd >= 0) {
+                UserAPI::close(fd);
+                return true; // Treat as existing (likely empty directory)
+            }
+            return false; // Does not exist
+        }
         return false;
     }
 };

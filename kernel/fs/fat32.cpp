@@ -859,7 +859,8 @@ void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) 
     for (int i = 0; i < 10; i++) {
         fatName[i] = ' ';
     }
-    fatName[11] = '\0';
+    fatName[10] = '\0';
+    k_printf("[FAT32 - convert_standard_name_to_fat] standardName: %s\n", standardName);
     int nameLen = strlen(standardName);
     int dotPos = -1;
     
@@ -887,6 +888,7 @@ void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) 
             fatName[8 + i] = toupper(standardName[extStart + i]);
         }
     }
+    k_printf("[FAT32 - convert_standard_name_to_fat] fatName: %s\n", (char*)fatName);
 }
 
 FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileType type) {
