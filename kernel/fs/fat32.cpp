@@ -17,7 +17,7 @@ using namespace kira::utils;
 using namespace kira::display;
 
 // SAFE: Minimal static memory pool - just enough for root directory
-static constexpr u32 MAX_STATIC_FAT32_NODES = 2; // Only root + 1 extra
+static constexpr u32 MAX_STATIC_FAT32_NODES = 4; // Only root + 1 extra
 static constexpr u32 FAT32_NODE_SIZE = sizeof(FAT32Node);
 static u8 s_static_fat32_pool[MAX_STATIC_FAT32_NODES * FAT32_NODE_SIZE];
 static bool s_fat32_pool_used[MAX_STATIC_FAT32_NODES] = {false};
@@ -856,10 +856,10 @@ void FAT32::convert_fat_name(const u8* fatName, char* standardName) {
 
 void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) {
     // Initialize with spaces
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 11; i++) {
         fatName[i] = ' ';
     }
-    fatName[10] = '\0';
+    fatName[11] = '\0';
     k_printf("[FAT32 - convert_standard_name_to_fat] standardName: %s\n", standardName);
     int nameLen = strlen(standardName);
     int dotPos = -1;
@@ -911,7 +911,7 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
     // k_printf("[FAT32 - create_file_in_directory] checking existingNode - not exists\n");
 
     // Convert name to FAT format
-    u8 fatName[11];
+    u8 fatName[12];
     convert_standard_name_to_fat(name, fatName);
     // k_printf("[FAT32 - create_file_in_directory] convert_standard_name_to_fat - name: %s and fatName: %s\n", name, fatName);
 
@@ -1248,7 +1248,14 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
         if (entry.attr & (Fat32Attr::VOLUME_ID | Fat32Attr::SYSTEM)) {
             continue;
         }
-        
+
+        for (int j = 0; j < 11; j++) {
+            k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - entry.name[%d]: %c, searchFatName[%d]: %c\n", j, entry.name[j], j, searchFatName[j]);
+        }
+        // if (entry.name[10] != '\0') {
+        //     k_printf("[FAT32 - lookup_in_directory] haha, lookup_in_directory - entry.name[11]: \\0\n");
+        // }
+
         // Check if this is the file we're looking for
         if (memcmp(entry.name, searchFatName, 11) == 0) {
             // Found the file! Create a VNode for it using static allocation
@@ -1263,12 +1270,15 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
             // Create FAT32Node using static allocation
             FAT32Node* node = allocate_static_fat32_node(allocate_inode(), type, this, firstCluster, entry.file_size);
             if (!node) {
+                k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - allocate_static_fat32_node failed\n");
                 memMgr.free_physical_page(dirEntries);
                 return FSResult::NO_SPACE;
             }
             result = node;
             
             memMgr.free_physical_page(dirEntries);
+            k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - found the file, return success\n");
+
             return FSResult::SUCCESS;
         }
     }
@@ -1398,7 +1408,7 @@ FSResult FAT32::initialize_directory(u32 dirCluster, u32 parentCluster) {
     for (int i = 1; i < 11; i++) {
         dotEntry.name[i] = ' ';
     }
-    
+    // dotEntry.name[11] = '\0';
     // Set attributes
     dotEntry.attr = Fat32Attr::DIRECTORY;
     
@@ -1416,7 +1426,7 @@ FSResult FAT32::initialize_directory(u32 dirCluster, u32 parentCluster) {
     for (int i = 2; i < 11; i++) {
         dotDotEntry.name[i] = ' ';
     }
-    
+    // dotDotEntry.name[11] = '\0';
     // Set attributes
     dotDotEntry.attr = Fat32Attr::DIRECTORY;
     
