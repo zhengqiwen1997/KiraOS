@@ -3,10 +3,30 @@
 #include "fs/vfs.hpp"
 #include "fs/block_device.hpp"
 #include "core/types.hpp"
+#include "core/sync.hpp"
 
 namespace kira::fs {
 
 using namespace kira::system;
+
+// Common FAT32 constants used across implementation
+namespace Fat32Const {
+    // Storage sizes
+    constexpr u32 SectorSize = 512;          // Bytes per sector
+    constexpr u32 PageSize   = 4096;         // Bytes per page (MemoryManager page size)
+
+    // FAT metadata
+    constexpr u32 FatEntrySize       = 4;    // 4 bytes per FAT32 entry
+    constexpr u32 ShortNameLen       = 11;   // 8.3 short name total length
+    constexpr u32 NameLen            = 8;    // 8 chars name part
+    constexpr u32 ExtLen             = 3;    // 3 chars extension part
+    constexpr u32 MinValidCluster    = 2;    // Clusters start at 2 in FAT
+    constexpr u32 InvalidIndex       = 0xFFFFFFFFu; // Sentinel for invalid sector/index
+    constexpr u32 MaxClusterScan     = 1000; // Safety bound for cluster traversal
+
+    // BPB offsets (within boot sector)
+    constexpr u32 BpbBytesPerSectorOffset = 11; // bytes_per_sector field offset
+}
 
 // FAT32 filesystem structures (little-endian)
 struct Fat32Bpb {
@@ -88,7 +108,7 @@ namespace Fat32DirEntryName {
 class FAT32Node : public VNode {
 public:
     FAT32Node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster, u32 size = 0);
-    virtual ~FAT32Node() = default;
+    virtual ~FAT32Node();
 
     // File operations
     FSResult read(u32 offset, u32 size, void* buffer) override;
@@ -204,6 +224,31 @@ public:
     FSResult initialize_directory(u32 dirCluster, u32 parentCluster);
     FSResult delete_directory_contents(u32 dirCluster);
     FSResult free_cluster_chain(u32 firstCluster);
+
+private:
+    // Protect node cache in multi-threaded contexts
+    kira::sync::Spinlock m_nodeCacheLock;
+    // Simple per-filesystem node cache keyed by first cluster
+    static constexpr u32 NODE_CACHE_CAPACITY = 512;
+    struct NodeCacheEntry {
+        u32 cluster;            // 0xFFFFFFFF means empty slot
+        FAT32Node* node;        // allocated FAT32Node
+        u32 lruPrev;            // index of previous in LRU, 0xFFFFFFFF if none
+        u32 lruNext;            // index of next in LRU, 0xFFFFFFFF if none
+        u32 refCount;           // shadow of VNode's ref count for eviction check
+    };
+    NodeCacheEntry m_nodeCache[NODE_CACHE_CAPACITY];
+    u32 m_nodeCacheCount = 0;
+    u32 m_lruHead = 0xFFFFFFFFu;
+    u32 m_lruTail = 0xFFFFFFFFu;
+    
+    void lru_remove(u32 idx);
+    void lru_push_front(u32 idx);
+    bool try_evict_one_zero_ref();
+
+    void init_node_cache();
+    void free_all_nodes_in_cache();
+    FAT32Node* get_or_create_node(u32 firstCluster, FileType type, u32 size);
 };
 
 } // namespace kira::fs 

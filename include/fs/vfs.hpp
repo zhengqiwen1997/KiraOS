@@ -77,6 +77,9 @@ class VNode {
 public:
     VNode(u32 inode, FileType type, FileSystem* fs);
     virtual ~VNode() = default;
+    void retain() { m_refCount++; }
+    void release();
+    u32 get_refcount() const { return m_refCount; }
 
     // File operations
     virtual FSResult read(u32 offset, u32 size, void* buffer) = 0;
@@ -99,6 +102,7 @@ protected:
     u32 m_inode;
     FileType m_type;
     FileSystem* m_filesystem;
+    u32 m_refCount {1};
 };
 
 /**

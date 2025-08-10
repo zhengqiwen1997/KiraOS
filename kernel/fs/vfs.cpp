@@ -47,16 +47,28 @@ VNode::VNode(u32 inode, FileType type, FileSystem* fs)
     : m_inode(inode), m_type(type), m_filesystem(fs) {
 }
 
+void VNode::release() {
+    if (m_refCount > 0) {
+        m_refCount--;
+    }
+    // Actual deletion is controlled by filesystem-specific caches.
+}
+
 //=============================================================================
 // FileDescriptor Implementation
 //=============================================================================
 
 FileDescriptor::FileDescriptor(VNode* vnode, OpenFlags flags)
     : m_vnode(vnode), m_flags(flags), m_position(0) {
+    if (m_vnode) {
+        m_vnode->retain();
+    }
 }
 
 FileDescriptor::~FileDescriptor() {
-    // VNode cleanup is handled by the file system
+    if (m_vnode) {
+        m_vnode->release();
+    }
 }
 
 FSResult FileDescriptor::read(u32 size, void* buffer) {
@@ -317,13 +329,22 @@ FSResult VFS::open(const char* path, OpenFlags flags, i32& fd) {
         // Create the file in the parent directory
         result = parent_vnode->create_file(filename, FileType::REGULAR);
         if (result != FSResult::SUCCESS) {
+            if (parent_vnode && parent_vnode != m_rootVnode) {
+                parent_vnode->release();
+            }
             return result;
         }
         
         // Now resolve the newly created file
         result = resolve_path(path, vnode);
         if (result != FSResult::SUCCESS) {
+            if (parent_vnode && parent_vnode != m_rootVnode) {
+                parent_vnode->release();
+            }
             return result;
+        }
+        if (parent_vnode && parent_vnode != m_rootVnode) {
+            parent_vnode->release();
         }
     }
     
@@ -342,10 +363,13 @@ FSResult VFS::open(const char* path, OpenFlags flags, i32& fd) {
     void* memory = memMgr.allocate_physical_page();
     if (!memory) {
         free_fd(new_fd);
+        if (vnode) vnode->release();
         return FSResult::NO_SPACE;
     }
     
     m_fileDescriptors[new_fd] = new(memory) FileDescriptor(vnode, flags);
+    // FileDescriptor retains its own reference; drop our resolve_path reference
+    if (vnode) vnode->release();
     fd = new_fd;
     
     return FSResult::SUCCESS;
@@ -403,7 +427,9 @@ FSResult VFS::stat(const char* path, FileStat& stat) {
         return result;
     }
     
-    return vnode->get_stat(stat);
+    FSResult r = vnode->get_stat(stat);
+    vnode->release();
+    return r;
 }
 
 FSResult VFS::mkdir(const char* path) {
@@ -447,11 +473,12 @@ FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {
     }
     
     if (vnode->get_type() != FileType::DIRECTORY) {
+        vnode->release();
         return FSResult::NOT_DIRECTORY;
     }
     
     FSResult read_result = vnode->read_dir(index, entry);
-    
+    vnode->release();
     return read_result;
 }
 
@@ -477,11 +504,13 @@ FSResult VFS::resolve_path(const char* path, VNode*& vnode) {
     if (path[0] == '/' && path[1] == '\0') {
         // kira::kernel::console.add_message("[VFS] is root path", VGA_CYAN_ON_BLUE);
         vnode = m_rootVnode;
+        if (vnode) vnode->retain();
         return FSResult::SUCCESS;
     }
     
     // Start from root
     VNode* current = m_rootVnode;
+    if (current) current->retain();
     
     // Skip leading slash
     if (path[0] == '/') {
@@ -501,9 +530,12 @@ FSResult VFS::resolve_path(const char* path, VNode*& vnode) {
                 VNode* next = nullptr;
                 FSResult result = current->lookup(component, next);
                 if (result != FSResult::SUCCESS) {
+                    if (current) current->release();
                     return result;
                 }
                 
+                // next is returned retained by FS; drop current and advance
+                if (current) current->release();
                 current = next;
                 component_len = 0;
             }
@@ -522,9 +554,11 @@ FSResult VFS::resolve_path(const char* path, VNode*& vnode) {
         VNode* next = nullptr;
         FSResult result = current->lookup(component, next);
         if (result != FSResult::SUCCESS) {
+            if (current) current->release();
             return result;
         }
         
+        if (current) current->release();
         current = next;
     }
     

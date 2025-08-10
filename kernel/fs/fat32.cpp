@@ -16,50 +16,21 @@ using namespace kira::system;
 using namespace kira::utils;
 using namespace kira::display;
 
-// SAFE: Minimal static memory pool - just enough for root directory
-static constexpr u32 MAX_STATIC_FAT32_NODES = 4; // Only root + 1 extra
-static constexpr u32 FAT32_NODE_SIZE = sizeof(FAT32Node);
-static u8 s_static_fat32_pool[MAX_STATIC_FAT32_NODES * FAT32_NODE_SIZE];
-static bool s_fat32_pool_used[MAX_STATIC_FAT32_NODES] = {false};
-static u32 s_next_fat32_index = 0;
-
-// SAFE: Static FAT32Node allocation with minimal pool size
-static FAT32Node* allocate_static_fat32_node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster, u32 size) {
-    for (u32 i = 0; i < MAX_STATIC_FAT32_NODES; i++) {
-        u32 index = (s_next_fat32_index + i) % MAX_STATIC_FAT32_NODES;
-        if (!s_fat32_pool_used[index]) {
-            s_fat32_pool_used[index] = true;
-            s_next_fat32_index = (index + 1) % MAX_STATIC_FAT32_NODES;
-            
-            // Calculate memory address for this node
-            void* memory = &s_static_fat32_pool[index * FAT32_NODE_SIZE];
-            
-            // Use placement new to initialize the pre-allocated memory
-            return new(memory) FAT32Node(inode, type, fs, firstCluster, size);
-        }
+// Dynamic FAT32Node allocation backed by MemoryManager pages
+static FAT32Node* allocate_dynamic_fat32_node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster, u32 size) {
+    auto& memMgr = MemoryManager::get_instance();
+    void* memory = memMgr.allocate_physical_page();
+    if (!memory) {
+        return nullptr;
     }
-    return nullptr; // Pool exhausted - fallback to dynamic
+    return new(memory) FAT32Node(inode, type, fs, firstCluster, size);
 }
 
-static void free_static_fat32_node(FAT32Node* node) {
+static void free_dynamic_fat32_node(FAT32Node* node) {
     if (!node) return;
-    
-    // Find the node in our pool by checking memory range
-    u8* node_ptr = reinterpret_cast<u8*>(node);
-    u8* pool_start = s_static_fat32_pool;
-    u8* pool_end = s_static_fat32_pool + (MAX_STATIC_FAT32_NODES * FAT32_NODE_SIZE);
-    
-    if (node_ptr >= pool_start && node_ptr < pool_end) {
-        // Calculate index
-        u32 offset = node_ptr - pool_start;
-        u32 index = offset / FAT32_NODE_SIZE;
-        
-        if (index < MAX_STATIC_FAT32_NODES && s_fat32_pool_used[index]) {
-            s_fat32_pool_used[index] = false;
-            // Call destructor manually
-            node->~FAT32Node();
-        }
-    }
+    auto& memMgr = MemoryManager::get_instance();
+    node->~FAT32Node();
+    memMgr.free_physical_page(node);
 }
 
 // SAFE: Static allocation for main FAT32 filesystem (single instance)
@@ -100,6 +71,16 @@ static void free_static_fat32_filesystem(FAT32* fs) {
 FAT32Node::FAT32Node(u32 inode, FileType type, FileSystem* fs, u32 firstCluster, u32 size)
     : VNode(inode, type, fs), m_firstCluster(firstCluster), m_size(size),
       m_dirEntries(nullptr), m_dirEntryCount(0), m_dirCacheValid(false) {
+}
+
+FAT32Node::~FAT32Node() {
+    if (m_dirEntries) {
+        auto& memMgr = MemoryManager::get_instance();
+        memMgr.free_physical_page(m_dirEntries);
+        m_dirEntries = nullptr;
+        m_dirCacheValid = false;
+        m_dirEntryCount = 0;
+    }
 }
 
 FSResult FAT32Node::read(u32 offset, u32 size, void* buffer) {
@@ -182,7 +163,7 @@ FSResult FAT32Node::read_dir(u32 index, DirectoryEntry& entry) {
     // Find the Nth valid entry (skipping deleted entries and volume labels)
     u32 validEntryCount = 0;
     u32 physicalIndex = 0;
-    u32 maxEntries = 4096 / sizeof(Fat32DirEntry); // Same as in load_directory_cache
+    u32 maxEntries = Fat32Const::PageSize / sizeof(Fat32DirEntry); // Same as in load_directory_cache
     
     k_printf("[FAT32 - read_dir] Looking for logical index %d\n", index);
     
@@ -312,8 +293,8 @@ FSResult FAT32Node::load_directory_cache() {
     
     // Read directory data
     u32 dirSize = fat32->get_cluster_chain_size(m_firstCluster);
-    u32 entriesPerPage = 4096 / sizeof(Fat32DirEntry);
-    u32 maxEntries = (dirSize < 4096) ? (dirSize / sizeof(Fat32DirEntry)) : entriesPerPage;
+    u32 entriesPerPage = Fat32Const::PageSize / sizeof(Fat32DirEntry);
+    u32 maxEntries = (dirSize < Fat32Const::PageSize) ? (dirSize / sizeof(Fat32DirEntry)) : entriesPerPage;
     kira::kernel::console.add_message("[FAT32 - load_directory_cache] load_directory_cache Read directory data", VGA_GREEN_ON_BLUE);
     k_printf("[FAT32 - load_directory_cache] load_directory_cache Read directory data entriesPerPage: %d, maxEntries: %d\n", entriesPerPage, maxEntries);
 
@@ -347,7 +328,7 @@ FSResult FAT32Node::load_directory_cache() {
 FAT32::FAT32(BlockDevice* device) 
     : m_device(device), m_root(nullptr), m_mounted(false), m_fatStartSector(0), m_dataStartSector(0),
       m_sectorsPerCluster(0), m_bytesPerCluster(0), m_nextInode(1),
-      m_fatCache(nullptr), m_fatCacheSector(0xFFFFFFFF), m_fatCacheDirty(false) {
+      m_fatCache(nullptr), m_fatCacheSector(Fat32Const::InvalidIndex), m_fatCacheDirty(false) {
 }
 
 FAT32::~FAT32() {
@@ -357,9 +338,7 @@ FAT32::~FAT32() {
         memMgr.free_physical_page(m_fatCache);
     }
     
-    if (m_root) {
-        free_static_fat32_node(m_root);
-    }
+    free_all_nodes_in_cache();
 }
 
 
@@ -391,20 +370,14 @@ FSResult FAT32::mount(const char* device) {
         return FSResult::NO_SPACE;
     }
         
-    // Create root directory node - TEMPORARY: use dynamic allocation since static is disabled
-    // Try static allocation first (will return nullptr since disabled)
-    m_root = allocate_static_fat32_node(allocate_inode(), FileType::DIRECTORY, this, m_bpb.root_cluster, 0);
+    // Initialize node cache
+    init_node_cache();
+    
+    // Create or retrieve root directory node
+    m_root = get_or_create_node(m_bpb.root_cluster, FileType::DIRECTORY, 0);
     if (!m_root) {
-        kira::kernel::console.add_message("[FAT32] static allocation failed, trying dynamic", VGA_YELLOW_ON_BLUE);
-        
-        // Fallback to dynamic allocation
-        void* rootMemory = memMgr.allocate_physical_page();
-        if (!rootMemory) {
-            kira::kernel::console.add_message("[FAT32] dynamic root allocation failed", VGA_RED_ON_BLUE);
-            return FSResult::NO_SPACE;
-        }
-        
-        m_root = new(rootMemory) FAT32Node(allocate_inode(), FileType::DIRECTORY, this, m_bpb.root_cluster, 0);
+        kira::kernel::console.add_message("[FAT32] root node allocation failed", VGA_RED_ON_BLUE);
+        return FSResult::NO_SPACE;
     }
     
     m_mounted = true;
@@ -420,9 +393,9 @@ FSResult FAT32::unmount() {
     sync();
     
     if (m_root) {
-        free_static_fat32_node(m_root);
         m_root = nullptr;
     }
+    free_all_nodes_in_cache();
     
     m_mounted = false;
     return FSResult::SUCCESS;
@@ -438,12 +411,10 @@ FSResult FAT32::get_root(VNode*& root) {
 }
 
 FSResult FAT32::create_vnode(u32 inode, FileType type, VNode*& vnode) {
-    // Use static allocation instead of dynamic
-    FAT32Node* node = allocate_static_fat32_node(inode, type, this, 0, 0);
+    FAT32Node* node = allocate_dynamic_fat32_node(inode, type, this, 0, 0);
     if (!node) {
         return FSResult::NO_SPACE;
     }
-    
     vnode = node;
     return FSResult::SUCCESS;
 }
@@ -476,7 +447,7 @@ FSResult FAT32::parse_bpb() {
     
     // m_fatCacheSector = 5;
     // 🎯 FIX: Use safe 512-byte buffer to prevent overflow corruption
-    u8 bootSectorBuffer[512];  // Exactly one sector
+    u8 bootSectorBuffer[Fat32Const::SectorSize];  // Exactly one sector
     FSResult result = m_device->read_blocks(0, 1, bootSectorBuffer);
     if (result != FSResult::SUCCESS) {
         kira::kernel::console.add_message("[FAT32] Boot sector read failed", VGA_RED_ON_BLUE);
@@ -493,7 +464,7 @@ FSResult FAT32::parse_bpb() {
     // kira::kernel::console.add_message("[FAT32] Boot sector read successfully", VGA_GREEN_ON_BLUE);
 
     // Validate FAT32 signature
-    if (m_bpb.bytes_per_sector != 512) {
+    if (m_bpb.bytes_per_sector != Fat32Const::SectorSize) {
         k_printf("[FAT32] Invalid bytes_per_sector (not 512): %d\n", m_bpb.bytes_per_sector);
         kira::kernel::console.add_message("[FAT32] Invalid bytes_per_sector (not 512)", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
@@ -534,15 +505,15 @@ FSResult FAT32::parse_bpb() {
 
 // 🔍 DEBUG: Check if BPB has been corrupted
 FSResult FAT32::check_bpb_integrity() {
-    u8 bootSectorBuffer[512];
+    u8 bootSectorBuffer[Fat32Const::SectorSize];
     FSResult result = m_device->read_blocks(0, 1, bootSectorBuffer);
     if (result != FSResult::SUCCESS) {
         k_printf("[FAT32] 🚨 BPB integrity check: Cannot read boot sector!\n");
         return result;
     }
     
-    u16 current_bytes_per_sector = *reinterpret_cast<u16*>(&bootSectorBuffer[11]);
-    if (current_bytes_per_sector != 512) {
+    u16 current_bytes_per_sector = *reinterpret_cast<u16*>(&bootSectorBuffer[Fat32Const::BpbBytesPerSectorOffset]);
+    if (current_bytes_per_sector != Fat32Const::SectorSize) {
         k_printf("[FAT32] 🚨 BPB CORRUPTION DETECTED! bytes_per_sector=%d (should be 512)\n", 
                  current_bytes_per_sector);
         k_printf("[FAT32] 🚨 Boot sector first 32 bytes:\n");
@@ -564,11 +535,11 @@ u32 FAT32::cluster_to_sector(u32 cluster) {
     // k_printf("[FAT32] cluster_to_sector: cluster=%d, m_dataStartSector=%d, m_sectorsPerCluster=%d\n", 
             //  cluster, m_dataStartSector, m_sectorsPerCluster);
     
-    if (cluster < 2) {
+    if (cluster < Fat32Const::MinValidCluster) {
         k_printf("[FAT32] CRITICAL ERROR: Invalid cluster %d < 2, CANNOT RETURN BOOT SECTOR!\n", cluster);
         // NEVER return sector 0 (boot sector) - this would corrupt the BPB!
         // Return a safe invalid sector number instead
-        return 0xFFFFFFFF; // Invalid sector - will cause read/write to fail safely
+        return Fat32Const::InvalidIndex; // Invalid sector - will cause read/write to fail safely
     }
     
     u32 sector = m_dataStartSector + ((cluster - 2) * m_sectorsPerCluster);
@@ -584,7 +555,7 @@ FSResult FAT32::load_fat_sector(u32 sector) {
         
     // Write back dirty cache to THE OLD SECTOR before loading new one
     // 🎯 FIX: Only write back if m_fatCacheSector is a VALID sector number
-    if (m_fatCacheDirty && m_fatCacheSector != 0xFFFFFFFF) {
+    if (m_fatCacheDirty && m_fatCacheSector != Fat32Const::InvalidIndex) {
         k_printf("[FAT32] load_fat_sector writing back dirty cache to VALID sector: %d\n", m_fatCacheSector);
         FSResult result = m_device->write_blocks(m_fatCacheSector, 1, m_fatCache);
         if (result != FSResult::SUCCESS) {
@@ -593,7 +564,7 @@ FSResult FAT32::load_fat_sector(u32 sector) {
         }
         m_fatCacheDirty = false;
         // k_printf("[FAT32] load_fat_sector dirty cache written back successfully\n");
-    } else if (m_fatCacheDirty && m_fatCacheSector == 0xFFFFFFFF) {
+    } else if (m_fatCacheDirty && m_fatCacheSector == Fat32Const::InvalidIndex) {
         // k_printf("[FAT32] load_fat_sector SKIPPING writeback - m_fatCacheSector is INVALID (0xFFFFFFFF)\n");
         m_fatCacheDirty = false; // Reset dirty flag since we can't write back invalid sector
     }
@@ -786,16 +757,16 @@ FSResult FAT32::get_next_cluster(u32 cluster, u32& nextCluster) {
     // k_printf("[FAT32 - get_next_cluster]: this=%p, m_fatCacheSector=%u (should be 0xFFFFFFFF=%u)\n", 
             //  this, m_fatCacheSector, 0xFFFFFFFF);
     
-    if (cluster < 2) {
+    if (cluster < Fat32Const::MinValidCluster) {
         kira::kernel::console.add_message("[FAT32] get_next_cluster < 2", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
     kira::kernel::console.add_message("[FAT32 - get_next_cluster] get_next_cluster cluster >= 2", VGA_GREEN_ON_BLUE);
 
     // Calculate FAT sector and offset
-    u32 fatOffset = cluster * 4; // 4 bytes per FAT32 entry
-    u32 fatSector = m_fatStartSector + (fatOffset / 512);
-    u32 entryOffset = (fatOffset % 512) / 4;
+    u32 fatOffset = cluster * Fat32Const::FatEntrySize; // 4 bytes per FAT32 entry
+    u32 fatSector = m_fatStartSector + (fatOffset / Fat32Const::SectorSize);
+    u32 entryOffset = (fatOffset % Fat32Const::SectorSize) / Fat32Const::FatEntrySize;
     // k_printf("fatOffset: %d, fatSector: %d, entryOffset: %d\n", fatOffset, fatSector, entryOffset);
     // Load FAT sector
     FSResult result = load_fat_sector(fatSector);
@@ -819,7 +790,7 @@ u32 FAT32::get_cluster_chain_size(u32 firstCluster) {
     u32 currentCluster = firstCluster;
     u32 clusterCount = 0;
     
-    while (currentCluster < Fat32Cluster::END_MIN && clusterCount < 1000) { // Prevent infinite loops
+    while (currentCluster < Fat32Cluster::END_MIN && clusterCount < Fat32Const::MaxClusterScan) { // Prevent infinite loops
         size += m_bytesPerCluster;
         clusterCount++;
         
@@ -839,14 +810,14 @@ void FAT32::convert_fat_name(const u8* fatName, char* standardName) {
     int pos = 0;
     
     // Copy name part (8 chars)
-    for (int i = 0; i < 8 && fatName[i] != ' '; i++) {
+    for (int i = 0; i < Fat32Const::NameLen && fatName[i] != ' '; i++) {
         standardName[pos++] = fatName[i];
     }
     
     // Add extension if present
-    if (fatName[8] != ' ') {
+    if (fatName[Fat32Const::NameLen] != ' ') {
         standardName[pos++] = '.';
-        for (int i = 8; i < 11 && fatName[i] != ' '; i++) {
+        for (int i = Fat32Const::NameLen; i < Fat32Const::ShortNameLen && fatName[i] != ' '; i++) {
             standardName[pos++] = fatName[i];
         }
     }
@@ -856,11 +827,11 @@ void FAT32::convert_fat_name(const u8* fatName, char* standardName) {
 
 void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) {
     // Initialize with spaces
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < Fat32Const::ShortNameLen; i++) {
         fatName[i] = ' ';
     }
-    fatName[11] = '\0';
-    k_printf("[FAT32 - convert_standard_name_to_fat] standardName: %s\n", standardName);
+    fatName[Fat32Const::ShortNameLen] = '\0';
+    // k_printf("[FAT32 - convert_standard_name_to_fat] standardName: %s\n", standardName);
     int nameLen = strlen(standardName);
     int dotPos = -1;
     
@@ -874,7 +845,7 @@ void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) 
     
     // Copy name part (up to 8 characters)
     int nameEnd = (dotPos >= 0) ? dotPos : nameLen;
-    int namePartLen = (nameEnd > 8) ? 8 : nameEnd;
+    int namePartLen = (nameEnd > Fat32Const::NameLen) ? Fat32Const::NameLen : nameEnd;
     
     for (int i = 0; i < namePartLen; i++) {
         fatName[i] = toupper(standardName[i]);
@@ -883,12 +854,12 @@ void FAT32::convert_standard_name_to_fat(const char* standardName, u8* fatName) 
     if (dotPos >= 0 && dotPos < nameLen - 1) {
         int extStart = dotPos + 1;
         int extLen = nameLen - extStart;
-        if (extLen > 3) extLen = 3;
+        if (extLen > Fat32Const::ExtLen) extLen = Fat32Const::ExtLen;
         for (int i = 0; i < extLen; i++) {
-            fatName[8 + i] = toupper(standardName[extStart + i]);
+            fatName[Fat32Const::NameLen + i] = toupper(standardName[extStart + i]);
         }
     }
-    k_printf("[FAT32 - convert_standard_name_to_fat] fatName: %s\n", (char*)fatName);
+    // k_printf("[FAT32 - convert_standard_name_to_fat] fatName: %s\n", (char*)fatName);
 }
 
 FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileType type) {
@@ -979,17 +950,17 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
         
         if (!foundFreeEntry) {
             // Move to next cluster in directory
-            k_printf("[FAT32] 🔄 No free entries in cluster %d, trying next cluster...\n", currentCluster);
+            // k_printf("[FAT32] 🔄 No free entries in cluster %d, trying next cluster...\n", currentCluster);
             u32 nextCluster;
             FSResult nextResult = get_next_cluster(currentCluster, nextCluster);
             if (nextResult == FSResult::SUCCESS) {
                 // Successfully found next cluster in chain - continue searching
-                k_printf("[FAT32] 🔄 Moving from cluster %d to cluster %d\n", currentCluster, nextCluster);
+                // k_printf("[FAT32] 🔄 Moving from cluster %d to cluster %d\n", currentCluster, nextCluster);
                 currentCluster = nextCluster;
                 // Continue to next iteration of while loop
             } else {
                 // Reached end of directory chain - need to extend
-                k_printf("[FAT32] 🆕 Reached end of directory chain, extending...\n");
+                // k_printf("[FAT32] 🆕 Reached end of directory chain, extending...\n");
                 u32 newDirCluster = allocate_cluster();
                 if (newDirCluster == 0) {
                     k_printf("[FAT32 - create_file_in_directory] allocate_cluster failed: NO_SPACE\n");
@@ -1009,8 +980,8 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
                 // 🎯 FIX: We found a free entry in the new cluster!
                 foundFreeEntry = true;
                 targetSector = cluster_to_sector(currentCluster);
-                k_printf("[FAT32] 🆕 Extended directory: newCluster=%d, entryOffset=%d, targetSector=%d\n", 
-                         newDirCluster, entryOffset, targetSector);
+                // k_printf("[FAT32] 🆕 Extended directory: newCluster=%d, entryOffset=%d, targetSector=%d\n", 
+                        //  newDirCluster, entryOffset, targetSector);
             }
         }
     }
@@ -1061,7 +1032,7 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
     }
     
     // Write the cluster back to disk
-    k_printf("[FAT32] Writing directory entry to targetSector=%d (should be ~3184)\n", targetSector);
+    // k_printf("[FAT32] Writing directory entry to targetSector=%d (should be ~3184)\n", targetSector);
     FSResult writeResult = m_device->write_blocks(targetSector, m_sectorsPerCluster, clusterBuffer);
     if (writeResult != FSResult::SUCCESS) {
         free_cluster(newCluster);
@@ -1084,7 +1055,7 @@ FSResult FAT32::create_file_in_directory(u32 dirCluster, const char* name, FileT
     memMgr.free_physical_page(clusterBuffer);
     
     // 🔍 DEBUG: Check BPB integrity after file creation
-    k_printf("[FAT32] 🔍 Checking BPB integrity after file creation...\n");
+    // k_printf("[FAT32] 🔍 Checking BPB integrity after file creation...\n");
     check_bpb_integrity();
     
     return FSResult::SUCCESS;
@@ -1098,7 +1069,7 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
     // Convert name to FAT format for comparison
     u8 fatName[11];
     convert_standard_name_to_fat(name, fatName);
-    k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - name: %s, fatName: %s\n", name, fatName);
+    // k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - name: %s, fatName: %s\n", name, fatName);
     // Get memory manager
     auto& memMgr = MemoryManager::get_instance();
     
@@ -1113,7 +1084,7 @@ FSResult FAT32::delete_file_from_directory(u32 dirCluster, const char* name) {
         }
         
         u32 sector = cluster_to_sector(currentCluster);
-        k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - sector: %d\n", sector);
+        // k_printf("[FAT32 - delete_file_from_directory] delete_file_from_directory - sector: %d\n", sector);
         FSResult readResult = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
         if (readResult != FSResult::SUCCESS) {
             memMgr.free_physical_page(clusterBuffer);
@@ -1204,12 +1175,12 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
     // Convert search name to FAT format for comparison
     u8 searchFatName[11];
     convert_standard_name_to_fat(name, searchFatName);
-    k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - searchFatName: %s\n", searchFatName);
+    // k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - searchFatName: %s\n", searchFatName);
 
     // Use the same method as VFS cache - read_file_data
     u32 dirSize = get_cluster_chain_size(dirCluster);
     u32 maxEntries = dirSize / sizeof(Fat32DirEntry);
-    k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - maxEntries: %d\n", maxEntries);
+    // k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - maxEntries: %d\n", maxEntries);
 
     // Allocate buffer for directory entries
     auto& memMgr = MemoryManager::get_instance();
@@ -1230,10 +1201,8 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
     // Search through all entries
     for (u32 i = 0; i < maxEntries; i++) {
         Fat32DirEntry& entry = dirEntries[i];
-        k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - entry: %s\n", entry.name);
+        // k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - entry: %s\n", entry.name);
 
-
-        
         // Skip deleted entries
         if (entry.name[0] == Fat32DirEntryName::DELETED) {
             continue;
@@ -1249,9 +1218,9 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
             continue;
         }
 
-        for (int j = 0; j < 11; j++) {
-            k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - entry.name[%d]: %c, searchFatName[%d]: %c\n", j, entry.name[j], j, searchFatName[j]);
-        }
+        // for (int j = 0; j < 11; j++) {
+        //     k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - entry.name[%d]: %c, searchFatName[%d]: %c\n", j, entry.name[j], j, searchFatName[j]);
+        // }
         // if (entry.name[10] != '\0') {
         //     k_printf("[FAT32 - lookup_in_directory] haha, lookup_in_directory - entry.name[11]: \\0\n");
         // }
@@ -1267,17 +1236,17 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
             // Determine file type
             FileType type = (entry.attr & Fat32Attr::DIRECTORY) ? FileType::DIRECTORY : FileType::REGULAR;
             
-            // Create FAT32Node using static allocation
-            FAT32Node* node = allocate_static_fat32_node(allocate_inode(), type, this, firstCluster, entry.file_size);
+            // Create or reuse FAT32Node via cache using firstCluster as identity
+            FAT32Node* node = get_or_create_node(firstCluster, type, entry.file_size);
             if (!node) {
-                k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - allocate_static_fat32_node failed\n");
+                k_printf("[FAT32 - lookup_in_directory] get_or_create_node failed\n");
                 memMgr.free_physical_page(dirEntries);
                 return FSResult::NO_SPACE;
             }
             result = node;
             
             memMgr.free_physical_page(dirEntries);
-            k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - found the file, return success\n");
+            // k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - found the file, return success\n");
 
             return FSResult::SUCCESS;
         }
@@ -1295,7 +1264,7 @@ u32 FAT32::allocate_cluster() {
         u32 entryOffset = (fatOffset % 512) / 4;
         
         // Load FAT sector
-        k_printf("[FAT32 - allocate_cluster] allocate_cluster - m_fatCacheSector: %d, fatSector: %d\n", m_fatCacheSector, fatSector);
+        // k_printf("[FAT32 - allocate_cluster] allocate_cluster - m_fatCacheSector: %d, fatSector: %d\n", m_fatCacheSector, fatSector);
         FSResult result = load_fat_sector(fatSector);
         if (result != FSResult::SUCCESS) {
             return 0; // Failed to load FAT
@@ -1304,7 +1273,7 @@ u32 FAT32::allocate_cluster() {
         // Check if cluster is free
         if ((m_fatCache[entryOffset] & 0x0FFFFFFF) == Fat32Cluster::FREE) {
             // Mark cluster as end of chain
-            k_printf("[FAT32 - allocate_cluster] allocate_cluster - cluster: %d, entryOffset: %d, m_fatCache[entryOffset]: %d\n", cluster, entryOffset, m_fatCache[entryOffset]);
+            // k_printf("[FAT32 - allocate_cluster] allocate_cluster - cluster: %d, entryOffset: %d, m_fatCache[entryOffset]: %d\n", cluster, entryOffset, m_fatCache[entryOffset]);
             m_fatCache[entryOffset] = Fat32Cluster::END_MAX;
             m_fatCacheDirty = true;
             
@@ -1338,6 +1307,148 @@ FSResult FAT32::free_cluster(u32 cluster) {
     m_fatCacheDirty = true;
     
     return FSResult::SUCCESS;
+}
+
+//============================
+// Node cache implementation
+//============================
+
+void FAT32::init_node_cache() {
+    for (u32 i = 0; i < NODE_CACHE_CAPACITY; i++) {
+        m_nodeCache[i].cluster = 0xFFFFFFFFu;
+        m_nodeCache[i].node = nullptr;
+        m_nodeCache[i].lruPrev = 0xFFFFFFFFu;
+        m_nodeCache[i].lruNext = 0xFFFFFFFFu;
+        m_nodeCache[i].refCount = 0;
+    }
+    m_nodeCacheCount = 0;
+    m_lruHead = 0xFFFFFFFFu;
+    m_lruTail = 0xFFFFFFFFu;
+}
+
+void FAT32::free_all_nodes_in_cache() {
+    for (u32 i = 0; i < NODE_CACHE_CAPACITY; i++) {
+        if (m_nodeCache[i].node) {
+            free_dynamic_fat32_node(m_nodeCache[i].node);
+            m_nodeCache[i].node = nullptr;
+            m_nodeCache[i].cluster = 0xFFFFFFFFu;
+            m_nodeCache[i].lruPrev = 0xFFFFFFFFu;
+            m_nodeCache[i].lruNext = 0xFFFFFFFFu;
+            m_nodeCache[i].refCount = 0;
+        }
+    }
+    m_nodeCacheCount = 0;
+    m_lruHead = 0xFFFFFFFFu;
+    m_lruTail = 0xFFFFFFFFu;
+}
+
+static u32 node_cache_hash(u32 cluster) {
+    // Simple mix/hash for 32-bit key
+    cluster ^= cluster >> 16;
+    cluster *= 0x7feb352dU;
+    cluster ^= cluster >> 15;
+    cluster *= 0x846ca68bU;
+    cluster ^= cluster >> 16;
+    return cluster;
+}
+
+FAT32Node* FAT32::get_or_create_node(u32 firstCluster, FileType type, u32 size) {
+    if (firstCluster == 0) {
+        return nullptr;
+    }
+    kira::sync::SpinlockGuard guard(m_nodeCacheLock);
+    // Open addressing with linear probing
+    u32 idx = node_cache_hash(firstCluster) % NODE_CACHE_CAPACITY;
+    u32 firstFree = 0xFFFFFFFFu;
+    for (u32 probe = 0; probe < NODE_CACHE_CAPACITY; probe++) {
+        u32 slot = (idx + probe) % NODE_CACHE_CAPACITY;
+        if (m_nodeCache[slot].cluster == firstCluster) {
+            // Touch LRU: move to front
+            lru_remove(slot);
+            lru_push_front(slot);
+            if (m_nodeCache[slot].node) {
+                m_nodeCache[slot].node->retain();
+                m_nodeCache[slot].refCount = m_nodeCache[slot].node->get_refcount();
+            }
+            return m_nodeCache[slot].node;
+        }
+        if (m_nodeCache[slot].cluster == 0xFFFFFFFFu && firstFree == 0xFFFFFFFFu) {
+            firstFree = slot;
+        }
+    }
+    // Not found, insert if space available
+    if (firstFree != 0xFFFFFFFFu) {
+        FAT32Node* node = allocate_dynamic_fat32_node(allocate_inode(), type, this, firstCluster, size);
+        if (!node) return nullptr;
+        m_nodeCache[firstFree].cluster = firstCluster;
+        m_nodeCache[firstFree].node = node;
+        node->retain(); // retain for caller
+        m_nodeCache[firstFree].refCount = node->get_refcount();
+        m_nodeCacheCount++;
+        lru_push_front(firstFree);
+        return node;
+    }
+    // Cache full: try to evict a zero-ref node (tail)
+    if (try_evict_one_zero_ref()) {
+        // Retry insertion once
+        return get_or_create_node(firstCluster, type, size);
+    }
+    // Fallback without caching if no eviction possible
+    return allocate_dynamic_fat32_node(allocate_inode(), type, this, firstCluster, size);
+}
+
+void FAT32::lru_remove(u32 idx) {
+    if (idx >= NODE_CACHE_CAPACITY) return;
+    u32 prev = m_nodeCache[idx].lruPrev;
+    u32 next = m_nodeCache[idx].lruNext;
+    if (prev != 0xFFFFFFFFu) {
+        m_nodeCache[prev].lruNext = next;
+    } else if (m_lruHead == idx) {
+        m_lruHead = next;
+    }
+    if (next != 0xFFFFFFFFu) {
+        m_nodeCache[next].lruPrev = prev;
+    } else if (m_lruTail == idx) {
+        m_lruTail = prev;
+    }
+    m_nodeCache[idx].lruPrev = 0xFFFFFFFFu;
+    m_nodeCache[idx].lruNext = 0xFFFFFFFFu;
+}
+
+void FAT32::lru_push_front(u32 idx) {
+    if (idx >= NODE_CACHE_CAPACITY) return;
+    m_nodeCache[idx].lruPrev = 0xFFFFFFFFu;
+    m_nodeCache[idx].lruNext = m_lruHead;
+    if (m_lruHead != 0xFFFFFFFFu) {
+        m_nodeCache[m_lruHead].lruPrev = idx;
+    } else {
+        m_lruTail = idx;
+    }
+    m_lruHead = idx;
+}
+
+bool FAT32::try_evict_one_zero_ref() {
+    // Walk from tail until a zero-ref node is found
+    u32 idx = m_lruTail;
+    while (idx != 0xFFFFFFFFu) {
+        NodeCacheEntry& e = m_nodeCache[idx];
+        // Consider nodes without outstanding VFS references as evictable
+        if (e.node && e.node->get_refcount() == 1) { // only cached owner holds one ref
+            // No refcount tracking wired yet; assume evictable if not root
+            if (e.cluster != m_bpb.root_cluster) {
+                FAT32Node* victim = e.node;
+                e.node = nullptr;
+                u32 next = e.lruPrev; // preserve before remove
+                lru_remove(idx);
+                e.cluster = 0xFFFFFFFFu;
+                free_dynamic_fat32_node(victim);
+                m_nodeCacheCount--;
+                return true;
+            }
+        }
+        idx = e.lruPrev;
+    }
+    return false;
 }
 
 FSResult FAT32::set_next_cluster(u32 cluster, u32 nextCluster) {
