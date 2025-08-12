@@ -175,6 +175,13 @@ public:
      */
     static i32 mkdir(const char* path);
     
+    /**
+     * @brief Remove directory
+     * @param path Path to directory to remove
+     * @return 0 on success, negative error code on failure
+     */
+    static i32 rmdir(const char* path);
+    
     // Process management operations
     /**
      * @brief List processes (get current process info)

@@ -120,19 +120,28 @@ private:
         const char* demoCommands[] = {
             // "help",
             // "about", 
+            "pwd",
+            "ls",
+            "mkdir /test_dir",
+            "ls",
+            "cd /test_dir",
+            "pwd",
+            "mkdir subdir",
+            "ls",
+            "cd ..",
+            "rmdir /test_dir/subdir",
+            "rmdir /test_dir",
+            "ls",
+            // "cd /APPS",
             // "pwd",
             // "ls",
-            // "cat readme.txt",
-            "cd /APPS",
-            "pwd",
-            "ls",
-            "cat README.TXT",
-            "cd ..",
-            "cd ./BOOT",
-            "pwd",
-            "ls",
-            "cat README.TXT",
-            "cat BOOTINFO.TXT",
+            // "cat README.TXT",
+            // "cd ..",
+            // "cd ./BOOT",
+            // "pwd",
+            // "ls",
+            // "cat README.TXT",
+            // "cat BOOTINFO.TXT",
             // "mem",
             // "ps",
             // "printf_test",
@@ -241,6 +250,10 @@ private:
             cmd_cat();
         } else if (string_equals(cmd, "cd")) {
             cmd_cd();
+        } else if (string_equals(cmd, "mkdir")) {
+            cmd_mkdir();
+        } else if (string_equals(cmd, "rmdir")) {
+            cmd_rmdir();
         // } else if (string_equals(cmd, "mem")) {
         //     cmd_mem();
         // } else if (string_equals(cmd, "ps")) {
@@ -268,6 +281,8 @@ private:
         UserAPI::println("  cat <file> - Display file contents");
         UserAPI::println("  cd <dir>  - Change directory");
         UserAPI::println("  pwd       - Print working directory");
+        UserAPI::println("  mkdir <dir> - Create directory");
+        UserAPI::println("  rmdir <dir> - Remove empty directory");
         UserAPI::print_colored("Process Management:\n", Colors::CYAN_ON_BLUE);
         UserAPI::println("  ps        - List running processes");
         UserAPI::print_colored("System:\n", Colors::CYAN_ON_BLUE);
@@ -423,6 +438,79 @@ private:
 
         UserAPI::print_colored("Changed directory", Colors::GREEN_ON_BLUE);
         UserAPI::println("");
+    }
+    
+    void cmd_mkdir() {
+        if (argCount < 2) {
+            UserAPI::print_colored("Usage: mkdir <directory>", Colors::YELLOW_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
+
+        const char* inputPath = args[1];
+
+        // Build normalized absolute path from currentDirectory and inputPath
+        char normalized[256];
+        build_absolute_path(inputPath, normalized, sizeof(normalized));
+
+        // Try to create the directory
+        i32 result = UserAPI::mkdir(normalized);
+        
+        if (result == 0) {
+            UserAPI::print_colored("Directory created successfully", Colors::GREEN_ON_BLUE);
+            UserAPI::println("");
+        } else if (result == -6) { // FILE_EXISTS
+            UserAPI::print_colored("mkdir: directory already exists: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+        } else if (result == -5) { // FILE_NOT_FOUND (parent doesn't exist)
+            UserAPI::print_colored("mkdir: parent directory does not exist: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+        } else if (result == -10) { // NOT_DIRECTORY (parent is not a directory)
+            UserAPI::print_colored("mkdir: parent is not a directory: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+        } else {
+            UserAPI::printf("mkdir: failed to create directory: %s (error %d)\n", normalized, result);
+        }
+    }
+    
+    void cmd_rmdir() {
+        if (argCount < 2) {
+            UserAPI::print_colored("Usage: rmdir <directory>", Colors::YELLOW_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
+
+        const char* inputPath = args[1];
+
+        // Build normalized absolute path from currentDirectory and inputPath
+        char normalized[256];
+        build_absolute_path(inputPath, normalized, sizeof(normalized));
+
+        // Don't allow removing root directory
+        if (normalized[0] == '/' && normalized[1] == '\0') {
+            UserAPI::print_colored("rmdir: cannot remove root directory", Colors::RED_ON_BLUE);
+            UserAPI::println("");
+            return;
+        }
+
+        // Try to remove the directory
+        i32 result = UserAPI::rmdir(normalized);
+        
+        if (result == 0) {
+            UserAPI::print_colored("Directory removed successfully", Colors::GREEN_ON_BLUE);
+            UserAPI::println("");
+        } else if (result == -5) { // FILE_NOT_FOUND
+            UserAPI::print_colored("rmdir: directory does not exist: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+        } else if (result == -10) { // NOT_DIRECTORY
+            UserAPI::print_colored("rmdir: not a directory: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+        } else if (result == -5) { // Directory not empty (we're reusing NOT_FOUND for this)
+            UserAPI::print_colored("rmdir: directory not empty: ", Colors::RED_ON_BLUE);
+            UserAPI::println(normalized);
+        } else {
+            UserAPI::printf("rmdir: failed to remove directory: %s (error %d)\n", normalized, result);
+        }
     }
     
     // void cmd_mem() {

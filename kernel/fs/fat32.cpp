@@ -141,7 +141,7 @@ FSResult FAT32Node::get_stat(FileStat& stat) {
 }
 
 FSResult FAT32Node::read_dir(u32 index, DirectoryEntry& entry) {
-    kira::kernel::console.add_message("[FAT32 - read_dir] read_dir start", VGA_GREEN_ON_BLUE);
+    // kira::kernel::console.add_message("[FAT32 - read_dir] read_dir start", VGA_GREEN_ON_BLUE);
 
     if (m_type != FileType::DIRECTORY) {
         kira::kernel::console.add_message("[FAT32] not directory", VGA_RED_ON_BLUE);
@@ -153,19 +153,14 @@ FSResult FAT32Node::read_dir(u32 index, DirectoryEntry& entry) {
         kira::kernel::console.add_message("[FAT32 - read_dir] load_directory_cache failed", VGA_RED_ON_BLUE);
         return result;
     }
-    kira::kernel::console.add_message("[FAT32 - read_dir] load_directory_cache success", VGA_GREEN_ON_BLUE);
-
-    // Debug: show child count
-    char debugMsg[64];
-    kira::utils::number_to_decimal(debugMsg, m_dirEntryCount);
-    kira::kernel::console.add_message(debugMsg, VGA_WHITE_ON_BLUE);
+    // kira::kernel::console.add_message("[FAT32 - read_dir] load_directory_cache success", VGA_GREEN_ON_BLUE);
     
     // Find the Nth valid entry (skipping deleted entries and volume labels)
     u32 validEntryCount = 0;
     u32 physicalIndex = 0;
     u32 maxEntries = Fat32Const::PageSize / sizeof(Fat32DirEntry); // Same as in load_directory_cache
     
-    k_printf("[FAT32 - read_dir] Looking for logical index %d\n", index);
+    // k_printf("[FAT32 - read_dir] Looking for logical index %d\n", index);
     
     for (physicalIndex = 0; physicalIndex < maxEntries; physicalIndex++) {
         Fat32DirEntry& entry = m_dirEntries[physicalIndex];
@@ -269,7 +264,7 @@ FSResult FAT32Node::lookup(const char* name, VNode*& result) {
 
 FSResult FAT32Node::load_directory_cache() {
     if (m_dirCacheValid) {
-        kira::kernel::console.add_message("[FAT32 - load_directory_cache] load_directory_cache m_dirCacheValid valid, returning success", VGA_GREEN_ON_BLUE);
+        // kira::kernel::console.add_message("[FAT32 - load_directory_cache] load_directory_cache m_dirCacheValid valid, returning success", VGA_GREEN_ON_BLUE);
 
         return FSResult::SUCCESS;
     }
@@ -289,14 +284,14 @@ FSResult FAT32Node::load_directory_cache() {
             return FSResult::NO_SPACE;
         }
     }
-    k_printf("[FAT32 - load_directory_cache] load_directory_cache m_dirEntries name: %s\n", (char*)m_dirEntries->name);
+    // k_printf("[FAT32 - load_directory_cache] load_directory_cache m_dirEntries name: %s\n", (char*)m_dirEntries->name);
     
     // Read directory data
     u32 dirSize = fat32->get_cluster_chain_size(m_firstCluster);
     u32 entriesPerPage = Fat32Const::PageSize / sizeof(Fat32DirEntry);
     u32 maxEntries = (dirSize < Fat32Const::PageSize) ? (dirSize / sizeof(Fat32DirEntry)) : entriesPerPage;
-    kira::kernel::console.add_message("[FAT32 - load_directory_cache] load_directory_cache Read directory data", VGA_GREEN_ON_BLUE);
-    k_printf("[FAT32 - load_directory_cache] load_directory_cache Read directory data entriesPerPage: %d, maxEntries: %d\n", entriesPerPage, maxEntries);
+    // kira::kernel::console.add_message("[FAT32 - load_directory_cache] load_directory_cache Read directory data", VGA_GREEN_ON_BLUE);
+    // k_printf("[FAT32 - load_directory_cache] load_directory_cache Read directory data entriesPerPage: %d, maxEntries: %d\n", entriesPerPage, maxEntries);
 
     FSResult result = fat32->read_file_data(m_firstCluster, 0, maxEntries * sizeof(Fat32DirEntry), m_dirEntries);
     if (result != FSResult::SUCCESS) {
@@ -315,7 +310,7 @@ FSResult FAT32Node::load_directory_cache() {
             m_dirEntryCount++;
         }
     }
-    k_printf("[FAT32 - load_directory_cache] m_dirEntryCount: %d, maxEntries:%d\n", m_dirEntryCount, maxEntries);
+    // k_printf("[FAT32 - load_directory_cache] m_dirEntryCount: %d, maxEntries:%d\n", m_dirEntryCount, maxEntries);
 
     m_dirCacheValid = true;
     return FSResult::SUCCESS;
@@ -543,7 +538,7 @@ u32 FAT32::cluster_to_sector(u32 cluster) {
     }
     
     u32 sector = m_dataStartSector + ((cluster - 2) * m_sectorsPerCluster);
-    k_printf("[FAT32] cluster_to_sector: cluster %d -> sector %d\n", cluster, sector);
+    // k_printf("[FAT32] cluster_to_sector: cluster %d -> sector %d\n", cluster, sector);
     return sector;
 }
 
@@ -761,7 +756,7 @@ FSResult FAT32::get_next_cluster(u32 cluster, u32& nextCluster) {
         kira::kernel::console.add_message("[FAT32] get_next_cluster < 2", VGA_RED_ON_BLUE);
         return FSResult::INVALID_PARAMETER;
     }
-    kira::kernel::console.add_message("[FAT32 - get_next_cluster] get_next_cluster cluster >= 2", VGA_GREEN_ON_BLUE);
+    // kira::kernel::console.add_message("[FAT32 - get_next_cluster] get_next_cluster cluster >= 2", VGA_GREEN_ON_BLUE);
 
     // Calculate FAT sector and offset
     u32 fatOffset = cluster * Fat32Const::FatEntrySize; // 4 bytes per FAT32 entry
@@ -1228,7 +1223,7 @@ FSResult FAT32::lookup_in_directory(u32 dirCluster, const char* name, VNode*& re
         // Check if this is the file we're looking for
         if (memcmp(entry.name, searchFatName, 11) == 0) {
             // Found the file! Create a VNode for it using static allocation
-            k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - found the file, entry.name: %s, searchFatName: %s!\n", entry.name, searchFatName);
+            // k_printf("[FAT32 - lookup_in_directory] lookup_in_directory - found the file, entry.name: %s, searchFatName: %s!\n", entry.name, searchFatName);
 
             // Get first cluster
             u32 firstCluster = (static_cast<u32>(entry.first_cluster_high) << 16) | entry.first_cluster_low;

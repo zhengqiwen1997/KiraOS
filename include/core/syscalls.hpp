@@ -25,14 +25,15 @@ enum class SystemCall : u32 {
     STAT = 12,          // Get file/directory information
     READDIR = 13,       // Read directory entries
     MKDIR = 14,         // Create directory
-    CHDIR = 15,         // Change working directory
-    GETCWD = 16,        // Get current working directory
+    RMDIR = 15,         // Remove directory
+    CHDIR = 16,         // Change working directory
+    GETCWD = 17,        // Get current working directory
     
     // Process management operations
-    EXEC = 17,          // Execute program
-    KILL = 18,          // Terminate process
-    PS = 19,            // List processes
-    WAIT = 20,          // Wait for child process
+    EXEC = 18,          // Execute program
+    KILL = 19,          // Terminate process
+    PS = 20,            // List processes
+    WAIT = 21,          // Wait for child process
 };
 
 /**

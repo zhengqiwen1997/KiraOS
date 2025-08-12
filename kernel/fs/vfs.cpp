@@ -437,8 +437,71 @@ FSResult VFS::mkdir(const char* path) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    // TODO: Implement directory creation
-    return FSResult::NOT_FOUND;
+    // Check if path already exists
+    VNode* existing_vnode = nullptr;
+    FSResult check_result = resolve_path(path, existing_vnode);
+    if (check_result == FSResult::SUCCESS) {
+        existing_vnode->release();
+        return FSResult::EXISTS; // Directory/file already exists
+    }
+    
+    // Extract parent directory and directory name
+    const char* last_slash = nullptr;
+    for (const char* p = path; *p; p++) {
+        if (*p == '/') {
+            last_slash = p;
+        }
+    }
+    
+    VNode* parent_vnode = nullptr;
+    const char* dirname = nullptr;
+    
+    if (!last_slash) {
+        // No slash found - invalid path for mkdir
+        return FSResult::INVALID_PARAMETER;
+    } else if (last_slash == path) {
+        // Creating directory in root (e.g., "/newdir")
+        parent_vnode = m_rootVnode;
+        dirname = path + 1; // Skip leading slash
+    } else {
+        // Get parent directory path
+        u32 parent_len = last_slash - path;
+        char parent_path[256];
+        for (u32 i = 0; i < parent_len && i < 255; i++) {
+            parent_path[i] = path[i];
+        }
+        parent_path[parent_len < 256 ? parent_len : 255] = '\0';
+        
+        FSResult result = resolve_path(parent_path, parent_vnode);
+        if (result != FSResult::SUCCESS) {
+            return result; // Parent directory doesn't exist
+        }
+        
+        dirname = last_slash + 1; // Directory name after the last slash
+    }
+    
+    if (!parent_vnode || parent_vnode->get_type() != FileType::DIRECTORY) {
+        if (parent_vnode && parent_vnode != m_rootVnode) {
+            parent_vnode->release();
+        }
+        return FSResult::NOT_DIRECTORY;
+    }
+    
+    if (!dirname || strlen(dirname) == 0) {
+        if (parent_vnode && parent_vnode != m_rootVnode) {
+            parent_vnode->release();
+        }
+        return FSResult::INVALID_PARAMETER;
+    }
+    
+    // Create the directory using the parent's create_file method
+    FSResult result = parent_vnode->create_file(dirname, FileType::DIRECTORY);
+    
+    if (parent_vnode && parent_vnode != m_rootVnode) {
+        parent_vnode->release();
+    }
+    
+    return result;
 }
 
 FSResult VFS::rmdir(const char* path) {
@@ -446,8 +509,78 @@ FSResult VFS::rmdir(const char* path) {
         return FSResult::INVALID_PARAMETER;
     }
     
-    // TODO: Implement directory removal
-    return FSResult::NOT_FOUND;
+    // First verify the directory exists and is actually a directory
+    VNode* target_vnode = nullptr;
+    FSResult check_result = resolve_path(path, target_vnode);
+    if (check_result != FSResult::SUCCESS) {
+        return check_result; // Directory doesn't exist
+    }
+    
+    if (target_vnode->get_type() != FileType::DIRECTORY) {
+        target_vnode->release();
+        return FSResult::NOT_DIRECTORY;
+    }
+    
+    // Release the target vnode - we just needed to verify it exists
+    target_vnode->release();
+    
+    // Extract parent directory and directory name
+    const char* last_slash = nullptr;
+    for (const char* p = path; *p; p++) {
+        if (*p == '/') {
+            last_slash = p;
+        }
+    }
+    
+    VNode* parent_vnode = nullptr;
+    const char* dirname = nullptr;
+    
+    if (!last_slash) {
+        // No slash found - invalid path for rmdir
+        return FSResult::INVALID_PARAMETER;
+    } else if (last_slash == path) {
+        // Removing directory from root (e.g., "/somedir")
+        parent_vnode = m_rootVnode;
+        dirname = path + 1; // Skip leading slash
+    } else {
+        // Get parent directory path
+        u32 parent_len = last_slash - path;
+        char parent_path[256];
+        for (u32 i = 0; i < parent_len && i < 255; i++) {
+            parent_path[i] = path[i];
+        }
+        parent_path[parent_len < 256 ? parent_len : 255] = '\0';
+        
+        FSResult result = resolve_path(parent_path, parent_vnode);
+        if (result != FSResult::SUCCESS) {
+            return result; // Parent directory doesn't exist
+        }
+        
+        dirname = last_slash + 1; // Directory name after the last slash
+    }
+    
+    if (!parent_vnode || parent_vnode->get_type() != FileType::DIRECTORY) {
+        if (parent_vnode && parent_vnode != m_rootVnode) {
+            parent_vnode->release();
+        }
+        return FSResult::NOT_DIRECTORY;
+    }
+    
+    if (!dirname || strlen(dirname) == 0) {
+        if (parent_vnode && parent_vnode != m_rootVnode) {
+            parent_vnode->release();
+        }
+        return FSResult::INVALID_PARAMETER;
+    }
+    
+    // Delete the directory using the parent's delete_file method
+    FSResult result = parent_vnode->delete_file(dirname);
+    
+    if (parent_vnode && parent_vnode != m_rootVnode) {
+        parent_vnode->release();
+    }
+    
+    return result;
 }
 
 FSResult VFS::readdir(const char* path, u32 index, DirectoryEntry& entry) {

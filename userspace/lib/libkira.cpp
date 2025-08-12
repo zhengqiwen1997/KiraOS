@@ -371,6 +371,11 @@ i32 UserAPI::mkdir(const char* path) {
     return syscall(static_cast<u32>(SystemCall::MKDIR), (u32)path);
 }
 
+i32 UserAPI::rmdir(const char* path) {
+    if (!path) return -2; // INVALID_PARAMETER
+    return syscall(static_cast<u32>(SystemCall::RMDIR), (u32)path);
+}
+
 // Process management operations
 i32 UserAPI::ps() {
     return syscall(static_cast<u32>(SystemCall::PS));
