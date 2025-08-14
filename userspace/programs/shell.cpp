@@ -122,6 +122,10 @@ private:
             // "about", 
             "pwd",
             "ls",
+            // Sleep demo: ensure usermode resumes at the same point after kernel returns
+            // We simulate by invoking a small script of sleeps via user API
+            // Not a command; we inline a timed pause using prints and yield
+            // (left as future interactive command)
             "mkdir /test_dir",
             "ls",
             "cd /test_dir",

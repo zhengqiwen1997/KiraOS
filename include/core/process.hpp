@@ -73,6 +73,11 @@ struct Process {
     // Queue pointers
     Process* next;              // Next process in queue (for linked list)
     Process* prev;              // Previous process in queue (for doubly-linked list)
+
+    // Saved kernel stack frame ESP captured inside syscall stub when the
+    // process enters the kernel via INT 0x80. Used to resume exactly at
+    // the instruction following the syscall when the process is scheduled again.
+    u32 savedSyscallEsp;
 } __attribute__((packed));
 
 // Process function type
@@ -116,6 +121,7 @@ private:
     static u8 userStacks[MAX_PROCESSES][STACK_SIZE];    // User mode stacks
     u32 nextStackIndex;
     bool isInIdleState;                           // Flag to track if we're in idle state
+    bool contextSwitchDeferred;                   // Defer context switch from IRQ while waiting in syscall
     
 public:
     /**
@@ -224,6 +230,10 @@ public:
      * @brief Check if scheduling is disabled
      */
     static bool is_scheduling_disabled();
+
+    // Defer/resume context switches (used by syscall sleep/yield paths)
+    void set_defer_context_switch(bool defer) { contextSwitchDeferred = defer; }
+    bool is_context_switch_deferred() const { return contextSwitchDeferred; }
     
     /**
      * @brief Wake up a blocked process (make it ready to run)

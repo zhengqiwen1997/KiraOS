@@ -303,7 +303,7 @@ void main(volatile unsigned short* vga_buffer) noexcept {
     }
     console.add_message("About to create user process...", kira::display::VGA_YELLOW_ON_BLUE);
 
-    u32 pid1 = process_manager.create_user_process(kira::usermode::user_shell, "KiraShell", 5);
+    u32 pid1 = process_manager.create_user_process(kira::usermode::user_test_sleep, "SleepTest", 5);
     if (pid1) {
         k_printf("Interactive shell started with PID: %d\n", pid1);
         console.add_message("Starting process scheduler...", kira::display::VGA_YELLOW_ON_BLUE);

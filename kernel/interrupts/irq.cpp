@@ -142,8 +142,7 @@ void default_handler(IRQFrame* frame) {
         unhandled_irq(frame);
     }
     
-    // Send End of Interrupt signal
-    PIC::send_eoi(irqNumber);
+    // EOI is now the responsibility of the specific IRQ handlers.
 }
 
 void print_statistics() {
@@ -166,6 +165,10 @@ void timer_handler(IRQFrame* frame) {
     static u32 timerTicks = 0;
     timerTicks++;
     
+    // We may tail-switch to user from this handler, so send EOI here
+    // to avoid losing further timer interrupts if we do not return.
+    PIC::send_eoi(PIC::IRQ_TIMER);
+
     // Call process scheduler every timer tick
     // Only call scheduler if timer scheduling is enabled AND scheduling is not disabled
     extern bool timerSchedulingEnabled;
@@ -189,6 +192,7 @@ void keyboard_handler(IRQFrame* frame) {
         // Console handled the key, refresh display
         kira::kernel::console.refresh_display();
     }
+    PIC::send_eoi(PIC::IRQ_KEYBOARD);
 }
 
 void unhandled_irq(IRQFrame* frame) {
@@ -198,6 +202,7 @@ void unhandled_irq(IRQFrame* frame) {
         vga_display->print_string(19, 0, "Unhandled IRQ ", kira::display::VGA_RED_ON_BLUE);
         vga_display->print_decimal(19, 14, irqNumber, kira::display::VGA_RED_ON_BLUE);
     }
+    PIC::send_eoi(irqNumber);
 }
 
 } // namespace kira::system

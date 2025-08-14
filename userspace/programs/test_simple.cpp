@@ -2,7 +2,19 @@
 
 namespace kira::usermode {
 
-// Simple test user program that doesn't access kernel memory
+// Simple test user program that exercises sleep to validate resume point
+void user_test_sleep() {
+    UserAPI::print_colored("[user_test_sleep] start\n", Colors::CYAN_ON_BLUE);
+    for (u32 i = 0; i < 5; i++) {
+        UserAPI::printf("loop=%u before sleep\n", i);
+        UserAPI::sleep(100);
+        UserAPI::printf("loop=%u after sleep\n", i);
+    }
+    UserAPI::print_colored("[user_test_sleep] exit", Colors::CYAN_ON_BLUE);
+    UserAPI::exit();
+}
+
+// Simple baseline program retained
 void user_test_simple() {
     // Use only stack variables - no static variables that would be in kernel memory
     u32 count = 1;

@@ -13,6 +13,8 @@ namespace kira::kernel {
     extern kira::display::ScrollableConsole console;
 }
 
+extern "C" void resume_from_syscall_stack(kira::system::u32 newEsp);
+
 namespace kira::system {
 
 using namespace kira::utils;
@@ -54,6 +56,7 @@ ProcessManager::ProcessManager() {
     lastAgingTime = 0;
     nextStackIndex = 0;
     isInIdleState = false;
+    contextSwitchDeferred = false;
     
     // Initialize priority queues
     for (u32 i = 0; i <= MAX_PRIORITY; i++) {
@@ -73,6 +76,7 @@ ProcessManager::ProcessManager() {
         processes[i].sleepUntil = 0;
         processes[i].age = 0;
         processes[i].lastRunTime = 0;
+        processes[i].savedSyscallEsp = 0;
     }
 }
 
@@ -266,7 +270,9 @@ void ProcessManager::schedule() {
                 currentProcess->state = ProcessState::READY;
                 add_to_ready_queue(currentProcess);
                 currentProcess = nullptr;
-                switch_process();
+                if (!contextSwitchDeferred) {
+                    switch_process();
+                }
             }
             // User mode processes are already running - no need to call them again
             // They will return to kernel via system calls or continue running
@@ -283,7 +289,9 @@ void ProcessManager::schedule() {
                 currentProcess->state = ProcessState::READY;
                 add_to_ready_queue(currentProcess);
                 currentProcess = nullptr;
-                switch_process();
+                if (!contextSwitchDeferred) {
+                    switch_process();
+                }
             }
         }
     } else {
@@ -323,6 +331,7 @@ void ProcessManager::yield() {
         currentProcess->state = ProcessState::READY;
         add_to_ready_queue(currentProcess);
         currentProcess = nullptr;
+        // Immediately switch to another process from syscall context
         switch_process();
     }
 }
@@ -458,14 +467,31 @@ void ProcessManager::switch_process() {
                 // If we get here, something went wrong
                 currentProcess->state = ProcessState::TERMINATED;
             } else {
-                // Process has already started - this means it yielded and is resuming
+                // Process previously entered kernel via syscall; resume at saved iret frame
+                // Update TSS with this process's kernel stack for nested syscalls
+                TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
-                // Process has already started - this means it yielded and is resuming
-                // For now, just call the function again (this is a simplified approach)
-                // In a real OS, we would restore the saved context
-                typedef void (*UserFunction)();
-                UserFunction userFunc = (UserFunction)currentProcess->userFunction;
-                userFunc();
+                // Switch to the process's address space
+                if (currentProcess->addressSpace) {
+                    auto& vmManager = VirtualMemoryManager::get_instance();
+                    vmManager.switch_address_space(currentProcess->addressSpace);
+                }
+                
+                // If we have a saved syscall ESP, resume from there; otherwise, start anew
+                if (currentProcess->savedSyscallEsp != 0) {
+                    u32 esp_to_resume = currentProcess->savedSyscallEsp;
+                    currentProcess->savedSyscallEsp = 0; // clear after use
+                    // Pass current EAX (syscall return) as second arg (0 if not set)
+                    u32 eax_ret = 0; // return value already set by syscall_handler into EAX slot
+                    asm volatile(
+                        "push %0; push %1; call resume_from_syscall_stack; add $8, %%esp" :: "r"(eax_ret), "r"(esp_to_resume) : "memory");
+                } else {
+                    // Fallback: first-time style jump (should not normally hit here)
+                    UserMode::switch_to_user_mode(
+                        reinterpret_cast<void*>(currentProcess->context.eip),
+                        currentProcess->context.userEsp
+                    );
+                }
             }
         } else {
             // Kernel mode process - execute the function directly
@@ -489,21 +515,10 @@ void ProcessManager::switch_process() {
             }
         }
     } else {
-        // Ready queue is empty - no more processes to run
-        
-        // No more processes to run - enter kernel idle state
-        kira::kernel::console.add_message("All processes terminated - entering kernel idle state", kira::display::VGA_YELLOW_ON_BLUE);
-        
-        // Clear current process
-        currentProcess = nullptr;
-        
-        // Enter kernel idle loop - this allows console scrolling to work
-        while (true) {
-            // Enable interrupts so keyboard/timer still work
-            asm volatile("sti");
-            // Halt until next interrupt
-            asm volatile("hlt");
-        }
+        // No ready processes at the moment. Do not enter an infinite idle loop here,
+        // because this function can be invoked from syscall/IRQ contexts. Simply return
+        // to the caller and let the upper layer decide how to idle.
+        return;
     }
 }
 
@@ -773,7 +788,14 @@ void ProcessManager::sleep_current_process(u32 ticks) {
     
     add_to_sleep_queue(currentProcess, ticks);
     currentProcess = nullptr;
+    // Switch to a ready process now; if none ready, idle until timer wakes someone
     switch_process();
+    // If switch_process() returned, there was no ready process right now
+    while (!currentProcess) {
+        asm volatile("sti");
+        asm volatile("hlt");
+        switch_process();
+    }
 }
 
 void ProcessManager::wake_up_process(Process* process) {
@@ -876,6 +898,11 @@ void ProcessManager::block_current_process() {
     currentProcess->state = ProcessState::BLOCKED;
     currentProcess = nullptr;
     switch_process();
+    while (!currentProcess) {
+        asm volatile("sti");
+        asm volatile("hlt");
+        switch_process();
+    }
 }
 
 bool ProcessManager::set_process_priority(u32 pid, u32 priority) {

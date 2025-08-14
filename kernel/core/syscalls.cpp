@@ -24,7 +24,17 @@ extern "C" void syscall_stub();
 /**
  * @brief C system call handler called from assembly stub
  */
-extern "C" i32 syscall_handler(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
+extern "C" {
+    // Implemented in assembly to resume from a saved kernel stack
+    void resume_from_syscall_stack(u32 newEsp);
+}
+
+extern "C" i32 syscall_handler(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3, u32 kernel_frame_esp) {
+    // Save the kernel frame ESP into current process so we can resume at iret
+    auto& pm_for_save = ProcessManager::get_instance();
+    if (auto* p = pm_for_save.get_current_process()) {
+        p->savedSyscallEsp = kernel_frame_esp;
+    }
     return handle_syscall(syscall_num, arg1, arg2, arg3);
 }
 
@@ -34,13 +44,11 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     
     switch (static_cast<SystemCall>(syscall_num)) {
         case SystemCall::EXIT:
-            // Terminate current process
+            // Terminate current process and switch to another if available.
             pm.terminate_current_process();
-            
-            // EXIT syscall should never return - either we switch to another process
-            // or the system terminates. If we reach here, something went wrong.
-            kira::kernel::console.add_message("ERROR: EXIT syscall returned - this should not happen!", VGA_RED_ON_BLUE);
-            for(;;) { asm volatile("hlt"); } // Halt the system
+            // If we reach here, there was no immediate process to run.
+            // Enter idle loop; timer IRQ may start another process later.
+            while (true) { asm volatile("sti"); asm volatile("hlt"); }
             
         case SystemCall::WRITE: {
             // Legacy write system call (for backward compatibility)
