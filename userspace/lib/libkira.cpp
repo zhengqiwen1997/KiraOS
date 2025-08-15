@@ -385,4 +385,13 @@ i32 UserAPI::kill(u32 pid) {
     return syscall(static_cast<u32>(SystemCall::KILL), pid);
 }
 
+// Keyboard input
+i32 UserAPI::getch() {
+    return syscall(static_cast<u32>(SystemCall::GETCH));
+}
+
+i32 UserAPI::trygetch() {
+    return syscall(static_cast<u32>(SystemCall::TRYGETCH));
+}
+
 } // namespace kira::usermode 

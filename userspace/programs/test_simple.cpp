@@ -14,6 +14,24 @@ void user_test_sleep() {
     UserAPI::exit();
 }
 
+// Simple keyboard input echo program
+void user_test_input() {
+    UserAPI::print_colored("[user_test_input] Type, ESC to exit\n", Colors::YELLOW_ON_BLUE);
+    while (true) {
+        i32 ch = UserAPI::getch();
+        if (ch == 27) { // ESC
+            break;
+        }
+        // Print single character without extra newline
+        char msg[2];
+        msg[0] = (char)ch;
+        msg[1] = '\0';
+        UserAPI::print(msg);
+    }
+    UserAPI::print_colored("\n[user_test_input] bye\n", Colors::YELLOW_ON_BLUE);
+    UserAPI::exit();
+}
+
 // Simple baseline program retained
 void user_test_simple() {
     // Use only stack variables - no static variables that would be in kernel memory

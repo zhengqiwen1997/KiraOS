@@ -48,12 +48,14 @@ ProcessManager::ProcessManager() {
     // Initialize basic fields
     currentProcess = nullptr;
     sleepQueue = nullptr;
+    inputWaitQueue = nullptr;
     nextPid = 1;
     kira::kernel::console.add_message("Initializing ProcessManager in constructor", kira::display::VGA_YELLOW_ON_BLUE);
 
     processCount = 0;
     schedulerTicks = 0;
     lastAgingTime = 0;
+    lastDisplayedPid = 0xFFFFFFFF;
     nextStackIndex = 0;
     isInIdleState = false;
     contextSwitchDeferred = false;
@@ -77,6 +79,7 @@ ProcessManager::ProcessManager() {
         processes[i].age = 0;
         processes[i].lastRunTime = 0;
         processes[i].savedSyscallEsp = 0;
+        processes[i].pendingSyscallReturn = 0;
     }
 }
 
@@ -481,8 +484,8 @@ void ProcessManager::switch_process() {
                 if (currentProcess->savedSyscallEsp != 0) {
                     u32 esp_to_resume = currentProcess->savedSyscallEsp;
                     currentProcess->savedSyscallEsp = 0; // clear after use
-                    // Pass current EAX (syscall return) as second arg (0 if not set)
-                    u32 eax_ret = 0; // return value already set by syscall_handler into EAX slot
+                    // Use pendingSyscallReturn as the value to be placed in EAX on return
+                    u32 eax_ret = currentProcess->pendingSyscallReturn;
                     asm volatile(
                         "push %0; push %1; call resume_from_syscall_stack; add $8, %%esp" :: "r"(eax_ret), "r"(esp_to_resume) : "memory");
                 } else {
@@ -523,13 +526,16 @@ void ProcessManager::switch_process() {
 }
 
 void ProcessManager::display_current_process_only() {
+    // Print only on PID transition to avoid flooding
+    u32 nowPid = currentProcess ? currentProcess->pid : 0;
+    if (nowPid == lastDisplayedPid) return;
+    lastDisplayedPid = nowPid;
     if (currentProcess) {
-        // Display current process with PID and user mode indicator
         if (currentProcess->isUserMode) {
-            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, 
+            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE,
                 "Current: %s (PID:%u, U3)\n", currentProcess->name, currentProcess->pid);
         } else {
-            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, 
+            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE,
                 "Current: %s (PID:%u)\n", currentProcess->name, currentProcess->pid);
         }
     } else {
@@ -898,11 +904,38 @@ void ProcessManager::block_current_process() {
     currentProcess->state = ProcessState::BLOCKED;
     currentProcess = nullptr;
     switch_process();
-    while (!currentProcess) {
-        asm volatile("sti");
-        asm volatile("hlt");
-        switch_process();
+}
+
+void ProcessManager::block_current_process_for_input() {
+    if (!currentProcess) return;
+    // Move current process to input wait queue (FIFO)
+    Process* p = currentProcess;
+    p->state = ProcessState::BLOCKED;
+    p->next = nullptr;
+    p->prev = nullptr;
+    if (!inputWaitQueue) {
+        inputWaitQueue = p;
+    } else {
+        Process* tail = inputWaitQueue;
+        while (tail->next) tail = tail->next;
+        tail->next = p;
+        p->prev = tail;
     }
+    currentProcess = nullptr;
+    switch_process();
+}
+
+bool ProcessManager::deliver_input_char(char ch) {
+    if (!inputWaitQueue) return false;
+    // Wake the head waiter and set its pending return value
+    Process* p = inputWaitQueue;
+    inputWaitQueue = p->next;
+    if (inputWaitQueue) inputWaitQueue->prev = nullptr;
+    p->next = p->prev = nullptr;
+    p->pendingSyscallReturn = static_cast<u32>(static_cast<u8>(ch));
+    p->state = ProcessState::READY;
+    add_to_ready_queue(p);
+    return true;
 }
 
 bool ProcessManager::set_process_priority(u32 pid, u32 priority) {

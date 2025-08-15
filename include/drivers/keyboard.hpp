@@ -102,6 +102,12 @@ private:
     static bool altPressed;
     static bool capsLockOn;
 
+    // Simple ring buffer for ASCII keys captured from IRQ
+    static constexpr u32 KEY_BUFFER_SIZE = 128;
+    static volatile u32 keyHead;
+    static volatile u32 keyTail;
+    static char keyBuffer[KEY_BUFFER_SIZE];
+
 public:
     /**
      * @brief Initialize keyboard system
@@ -175,6 +181,42 @@ public:
      */
     static u8 get_base_scan_code(u8 scanCode) {
         return scanCode & ~KEY_RELEASED;
+    }
+
+    /**
+     * @brief Enqueue ASCII character from IRQ context
+     */
+    static void enqueue_char_from_irq(char ch) {
+        if (!ch) return;
+        u32 next = (keyHead + 1) % KEY_BUFFER_SIZE;
+        if (next != keyTail) {
+            keyBuffer[keyHead] = ch;
+            keyHead = next;
+        }
+    }
+
+    /**
+     * @brief Dequeue ASCII character if available (non-blocking)
+     * @param outCh output char
+     * @return true if a character was dequeued
+     */
+    static bool try_dequeue_char(char& outCh) {
+        if (keyHead == keyTail) return false;
+        outCh = keyBuffer[keyTail];
+        keyTail = (keyTail + 1) % KEY_BUFFER_SIZE;
+        return true;
+    }
+
+    /**
+     * @brief Wait for and dequeue a character (blocking with interrupts enabled)
+     */
+    static char wait_dequeue_char() {
+        char ch;
+        while (!try_dequeue_char(ch)) {
+            asm volatile("sti");
+            asm volatile("hlt");
+        }
+        return ch;
     }
 
 private:

@@ -7,6 +7,9 @@ bool Keyboard::shiftPressed = false;
 bool Keyboard::ctrlPressed = false;
 bool Keyboard::altPressed = false;
 bool Keyboard::capsLockOn = false;
+volatile u32 Keyboard::keyHead = 0;
+volatile u32 Keyboard::keyTail = 0;
+char Keyboard::keyBuffer[Keyboard::KEY_BUFFER_SIZE];
 
 // Scan code to ASCII conversion table (unshifted)
 static const char scan_code_to_ascii_table[128] = {
@@ -108,6 +111,8 @@ void Keyboard::handle_key_press(u8 scanCode) {
             }
             break;
     }
+
+    // No enqueue here; IRQ handler decides whether to deliver to user or enqueue.
 }
 
 const char* Keyboard::get_key_name(u8 scanCode) {

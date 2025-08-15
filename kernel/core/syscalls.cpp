@@ -4,6 +4,7 @@
 #include "display/console.hpp"
 #include "core/process.hpp"
 #include "fs/vfs.hpp"
+#include "drivers/keyboard.hpp"
 
 namespace kira::system {
 
@@ -35,7 +36,12 @@ extern "C" i32 syscall_handler(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3, u3
     if (auto* p = pm_for_save.get_current_process()) {
         p->savedSyscallEsp = kernel_frame_esp;
     }
-    return handle_syscall(syscall_num, arg1, arg2, arg3);
+    i32 ret = handle_syscall(syscall_num, arg1, arg2, arg3);
+    // Store return value for resume path
+    if (auto* p = pm_for_save.get_current_process()) {
+        p->pendingSyscallReturn = static_cast<u32>(ret);
+    }
+    return ret;
 }
 
 i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
@@ -116,6 +122,28 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             // Sleep for specified ticks
             pm.sleep_current_process(arg1);
             return static_cast<i32>(SyscallResult::SUCCESS);
+
+        case SystemCall::GETCH: {
+            // If a char is available now, return it immediately
+            char ch;
+            if (Keyboard::try_dequeue_char(ch)) {
+                return static_cast<i32>(static_cast<u8>(ch));
+            }
+            // Otherwise block this process on the input wait queue; it will be
+            // woken by the keyboard IRQ with its return value set
+            pm.block_current_process_for_input();
+            // Do not return to the syscall stub for this blocked process. Park.
+            for (;;) { asm volatile("sti"); asm volatile("hlt"); }
+        }
+
+        case SystemCall::TRYGETCH: {
+            // Non-blocking get char
+            char ch;
+            if (Keyboard::try_dequeue_char(ch)) {
+                return static_cast<i32>(static_cast<u8>(ch));
+            }
+            return 0;
+        }
             
         // File system operations
         case SystemCall::OPEN: {

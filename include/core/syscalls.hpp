@@ -34,6 +34,8 @@ enum class SystemCall : u32 {
     KILL = 19,          // Terminate process
     PS = 20,            // List processes
     WAIT = 21,          // Wait for child process
+    GETCH = 22,         // Get one character from keyboard (blocking)
+    TRYGETCH = 23,      // Non-blocking get character (0 if none)
 };
 
 /**

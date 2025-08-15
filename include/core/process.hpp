@@ -78,6 +78,9 @@ struct Process {
     // process enters the kernel via INT 0x80. Used to resume exactly at
     // the instruction following the syscall when the process is scheduled again.
     u32 savedSyscallEsp;
+
+    // Pending system call return value to be returned via resume_from_syscall_stack
+    u32 pendingSyscallReturn;
 } __attribute__((packed));
 
 // Process function type
@@ -106,11 +109,13 @@ private:
     Process processes[MAX_PROCESSES];
     PriorityQueue readyQueues[MAX_PRIORITY + 1];   // Priority queues
     Process* sleepQueue;                           // Sleeping processes
+    Process* inputWaitQueue;                       // Processes waiting for keyboard input
     Process* currentProcess;                       // Currently running process
     u32 nextPid;                                  // Next available PID
     u32 processCount;                             // Number of active processes
     u32 schedulerTicks;                           // Ticks since last schedule
     u32 lastAgingTime;                            // Last time aging was performed
+    u32 lastDisplayedPid;                         // For throttling 'Current:' output
     
     // Synchronization
     Mutex schedulerMutex;                         // Protects scheduler data structures
@@ -245,6 +250,11 @@ public:
      * @brief Block current process (waiting for event)
      */
     void block_current_process();
+
+    // Block current process waiting for keyboard input
+    void block_current_process_for_input();
+    // Deliver one input character to a waiting process (if any). Returns true if delivered
+    bool deliver_input_char(char ch);
     
     /**
      * @brief Set process priority

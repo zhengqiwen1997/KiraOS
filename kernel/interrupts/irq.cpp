@@ -5,6 +5,7 @@
 #include "display/vga.hpp"
 #include "drivers/keyboard.hpp"
 #include "core/process.hpp"
+#include "core/process.hpp"
 #include "display/console.hpp"
 
 // Forward declaration of console from kernel namespace
@@ -187,10 +188,21 @@ void keyboard_handler(IRQFrame* frame) {
     // Update keyboard state using the existing Keyboard class
     Keyboard::handle_key_press(scanCode);
     
-    // Forward keyboard input to console (declared in kernel namespace in kernel.cpp)
-    if (kira::kernel::console.handle_keyboard_input(scanCode)) {
-        // Console handled the key, refresh display
-        kira::kernel::console.refresh_display();
+    bool deliveredToUser = false;
+    // If this scan code translates to an ASCII character, try delivering it
+    if (Keyboard::is_key_press(scanCode)) {
+        char ch = Keyboard::scan_code_to_ascii(scanCode);
+        if (ch) {
+            auto& pm = ProcessManager::get_instance();
+            deliveredToUser = pm.deliver_input_char(ch);
+        }
+    }
+
+    // Only echo to console if not consumed by a waiting user process
+    if (!deliveredToUser) {
+        if (kira::kernel::console.handle_keyboard_input(scanCode)) {
+            kira::kernel::console.refresh_display();
+        }
     }
     PIC::send_eoi(PIC::IRQ_KEYBOARD);
 }

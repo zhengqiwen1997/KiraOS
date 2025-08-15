@@ -196,6 +196,12 @@ public:
      */
     static i32 kill(u32 pid);
 
+    // Keyboard input
+    /** Get one character (blocking). Returns ASCII code (0..255). */
+    static i32 getch();
+    /** Try get one character (non-blocking). Returns 0 if none. */
+    static i32 trygetch();
+
 private:
     /**
      * @brief Low-level system call interface
