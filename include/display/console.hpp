@@ -86,6 +86,8 @@ public:
      * @brief Refresh the display with current scroll position
      */
     void refresh_display();
+    // Optional: move the hardware cursor to the end of current line
+    void update_hardware_cursor_to_current_line();
     
     /**
      * @brief Toggle console active mode (scrolling vs normal display)

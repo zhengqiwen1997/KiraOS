@@ -67,6 +67,11 @@ char Keyboard::scan_code_to_ascii(u8 scanCode) {
     if (baseCode >= 128) {
         return 0;
     }
+
+    // Special handling: map Delete to backspace semantics for simple line editing
+    if (baseCode == KEY_DELETE) {
+        return '\b';
+    }
     
     // Get character from appropriate table
     char ch;

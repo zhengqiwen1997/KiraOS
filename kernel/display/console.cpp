@@ -65,6 +65,7 @@ void ScrollableConsole::add_message(const char* message, u16 color) {
     if (!active) {
         // Use the safe refresh approach from original console.cpp
         refresh_display();
+        update_hardware_cursor_to_current_line();
     }
     
     // Don't mess with interrupt state if we're in an exception handler
@@ -84,7 +85,7 @@ void ScrollableConsole::add_multiline_message(const char* message, u16 color) {
     }
     
     // Track if the message ends with a newline
-    bool ends_with_newline = (message_len > 0 && message[message_len - 1] == '\n');
+    bool ends_with_newline = (message_len > 0 && message_len - 1 == message_len - 1 && message[message_len - 1] == '\n');
     
     for (u32 i = 0; i < message_len; i++) {
         if (message[i] == '\n') {
@@ -210,34 +211,43 @@ void ScrollableConsole::refresh_display() {
         }
     }
     
+    // Calculate how many lines exist including current incomplete line
+    int lineCount = static_cast<int>(totalLines) + (currentLineIncomplete ? 1 : 0);
+    
     // Calculate which messages to display
     int displayStart = 0;
     int maxDisplayLines = 24;  // Lines 0-23 = 24 lines
     
-    if (totalLines > maxDisplayLines) {
+    if (lineCount > maxDisplayLines) {
         // We have more messages than can fit, so calculate the start position
         if (active) {
             // In scroll mode, use scrollOffset
-            displayStart = totalLines - maxDisplayLines - scrollOffset;
+            displayStart = lineCount - maxDisplayLines - scrollOffset;
         } else {
             // In normal mode, always show the latest messages
-            displayStart = totalLines - maxDisplayLines;
+            displayStart = lineCount - maxDisplayLines;
         }
         
         // Ensure display_start is within bounds
         if (displayStart < 0) displayStart = 0;
-        if (displayStart + maxDisplayLines > totalLines) {
-            displayStart = totalLines - maxDisplayLines;
+        if (displayStart + maxDisplayLines > lineCount) {
+            displayStart = lineCount - maxDisplayLines;
         }
     }
     
     // Display the messages using direct buffer access
     int linesShown = 0;
-    for (int i = 0; i < totalLines && linesShown < maxDisplayLines; i++) {
+    for (int i = 0; i < lineCount && linesShown < maxDisplayLines; i++) {
         int messageIndex = displayStart + i;
-        if (messageIndex >= totalLines) break;
+        if (messageIndex >= lineCount) break;
         
-        int bufferIndex = messageIndex % BUFFER_LINES;
+        int bufferIndex;
+        if (messageIndex == static_cast<int>(totalLines) && currentLineIncomplete) {
+            // Show the current incomplete line as the last line
+            bufferIndex = static_cast<int>(currentLine % BUFFER_LINES);
+        } else {
+            bufferIndex = messageIndex % BUFFER_LINES;
+        }
         int displayLine = 0 + linesShown;  // Start from line 0
         
         // Copy message to VGA buffer directly
@@ -263,6 +273,22 @@ void ScrollableConsole::refresh_display() {
             vgaBuffer[24 * 80 + i] = VGA_WHITE_ON_BLUE | ' ';
         }
     }
+}
+
+// Move hardware cursor to the end of current line (bottom of screen)
+static inline void vga_set_cursor(u16 pos) {
+    asm volatile("outb %0, %1" :: "a"((u8)0x0F), "Nd"((u16)0x3D4));
+    asm volatile("outb %0, %1" :: "a"((u8)(pos & 0xFF)), "Nd"((u16)0x3D5));
+    asm volatile("outb %0, %1" :: "a"((u8)0x0E), "Nd"((u16)0x3D4));
+    asm volatile("outb %0, %1" :: "a"((u8)((pos >> 8) & 0xFF)), "Nd"((u16)0x3D5));
+}
+
+void ScrollableConsole::update_hardware_cursor_to_current_line() {
+    // Position cursor at the visible bottom line (line 23), at currentLinePos
+    u32 visibleLine = 23;
+    u32 col = (currentLinePos < 80) ? currentLinePos : 79;
+    u16 pos = static_cast<u16>(visibleLine * 80 + col);
+    vga_set_cursor(pos);
 }
 
 void ScrollableConsole::toggle_active_mode() {
@@ -383,6 +409,12 @@ void ScrollableConsole::add_printf_output(const char* text, u16 color) {
             clear_buffer_line(currentLine);
             currentLinePos = 0;
             currentLineIncomplete = true;
+        } else if (text[i] == '\b') {
+            // Backspace: delete last character on current line if any
+            if (currentLinePos > 0) {
+                currentLinePos--;
+                buffer[currentLine][currentLinePos] = '\0';
+            }
         } else if (currentLinePos < (LINE_WIDTH - 1)) {
             // Add character to current line
             buffer[currentLine][currentLinePos++] = text[i];
@@ -407,6 +439,7 @@ void ScrollableConsole::add_printf_output(const char* text, u16 color) {
     // If not in active scroll mode, automatically refresh display
     if (!active) {
         refresh_display();
+        update_hardware_cursor_to_current_line();
     }
     
     // Don't mess with interrupt state if we're in an exception handler
