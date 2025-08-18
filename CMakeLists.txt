@@ -84,6 +84,11 @@ add_library(kernel_core STATIC
     userspace/programs/test_simple.cpp
     userspace/programs/test_syscall.cpp
     userspace/programs/shell.cpp
+    userspace/lib/user_utils.cpp
+    userspace/programs/ls.cpp
+    userspace/programs/cat.cpp
+    userspace/programs/mkdir.cpp
+    userspace/programs/rmdir.cpp
     userspace/lib/libkira.cpp
     kernel/memory/memory_manager.cpp
     kernel/memory/virtual_memory.cpp
