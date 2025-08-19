@@ -1,10 +1,12 @@
 #include "core/syscalls.hpp"
 #include "arch/x86/idt.hpp"
+#include "core/utils.hpp"
 #include "display/vga.hpp"
 #include "display/console.hpp"
 #include "core/process.hpp"
 #include "fs/vfs.hpp"
 #include "drivers/keyboard.hpp"
+#include "user_programs.hpp"
 
 namespace kira::system {
 
@@ -29,6 +31,8 @@ extern "C" {
     // Implemented in assembly to resume from a saved kernel stack
     void resume_from_syscall_stack(u32 newEsp);
 }
+
+// Forward declaration removed: dispatcher will be handled by program-specific entrypoints
 
 extern "C" i32 syscall_handler(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3, u32 kernel_frame_esp) {
     // Save the kernel frame ESP into current process so we can resume at iret
@@ -144,7 +148,75 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             }
             return 0;
         }
-            
+
+        case SystemCall::SPAWN: {
+            // prog: 0=ls (currently supported). arg2=pointer to cwd
+            u32 prog = arg1; u32 arg = arg2;
+            if (prog != 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER); // only ls for now
+            // Create child process for ls
+            u32 childPid = pm.create_user_process(reinterpret_cast<ProcessFunction>(kira::usermode::user_ls_main), "ls", 5);
+            if (childPid == 0) return static_cast<i32>(SyscallResult::IO_ERROR);
+            Process* child = pm.get_process(childPid);
+            if (!child) return static_cast<i32>(SyscallResult::IO_ERROR);
+            // Copy caller's cwd into child's spawnArg for future use if needed
+            const char* src = reinterpret_cast<const char*>(arg); u32 i = 0;
+            // utils::k_printf("the arg2: %s\n", src);
+            if (src) { while (src[i] != '\0' && i < sizeof(child->spawnArg) - 1) { child->spawnArg[i] = src[i]; i++; } }
+            child->spawnArg[i] = '\0';
+            utils::k_printf("the child->spawnArg: %s\n", child->spawnArg);
+            // Also set child's PCB current working directory to the same path
+            for (u32 j = 0; j <= i && j < sizeof(child->currentWorkingDirectory); j++) {
+                child->currentWorkingDirectory[j] = child->spawnArg[j];
+            }
+
+            // No initial stack argument setup; child queries cwd via GETCWD
+            // Block parent until child terminates (cooperative wait)
+            Process* parent = pm.get_current_process();
+            if (parent) {
+                parent->waitingOnPid = childPid;
+                parent->state = ProcessState::BLOCKED;
+            }
+            // Switch away; when child exits, scheduler will pick parent again
+            pm.schedule();
+            return static_cast<i32>(SyscallResult::SUCCESS);
+        }
+        case SystemCall::CHDIR: {
+            const char* path = reinterpret_cast<const char*>(arg1);
+            if (!path) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            Process* cur = pm.get_current_process();
+            if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            // Require absolute path for now
+            if (path[0] != '\0' && path[0] != '/') return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            // Copy string into PCB cwd
+            u32 i = 0;
+            while (path[i] != '\0' && i < sizeof(cur->currentWorkingDirectory) - 1) {
+                cur->currentWorkingDirectory[i] = path[i];
+                i++;
+            }
+            cur->currentWorkingDirectory[i] = '\0';
+            return static_cast<i32>(SyscallResult::SUCCESS);
+        }
+        case SystemCall::GETCWD: {
+            char* buf = reinterpret_cast<char*>(arg1);
+            u32 size = arg2;
+            if (!buf || size == 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            Process* cur = pm.get_current_process();
+            if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            u32 i = 0;
+            while (cur->currentWorkingDirectory[i] != '\0' && i + 1 < size) {
+                buf[i] = cur->currentWorkingDirectory[i];
+                i++;
+            }
+            buf[i] = '\0';
+            return static_cast<i32>(SyscallResult::SUCCESS);
+        }
+        
+        case SystemCall::GETCWD_PTR: {
+            Process* p = pm.get_current_process();
+            if (!p) return 0;
+            return reinterpret_cast<i32>(p->currentWorkingDirectory);
+        }
+        
         // File system operations
         case SystemCall::OPEN: {
             // Open file or directory
@@ -233,54 +305,17 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             u32 index = arg2;
             kira::fs::DirectoryEntry* entry = reinterpret_cast<kira::fs::DirectoryEntry*>(arg3);
             
-            // kira::kernel::console.add_message("[SYSCALL] checking params", kira::display::VGA_MAGENTA_ON_BLUE);
             if (!path || !entry) {
                 kira::kernel::console.add_message("[SYSCALL] null params", kira::display::VGA_RED_ON_BLUE);
                 return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             }
             
-            // Debug: check path contents
-            if (path[0] == '/' && path[1] == '\0') {
-                // kira::kernel::console.add_message("[SYSCALL] path is root /", kira::display::VGA_CYAN_ON_BLUE);
-            } else {
-                // kira::kernel::console.add_message("[SYSCALL] path not root", kira::display::VGA_YELLOW_ON_BLUE);
-            }
-            
-            // kira::kernel::console.add_message("[SYSCALL] calling VFS", kira::display::VGA_MAGENTA_ON_BLUE);
             auto& vfs = kira::fs::VFS::get_instance();
-            // kira::kernel::console.add_message("[SYSCALL] about to call readdir", kira::display::VGA_MAGENTA_ON_BLUE);
-            
-            // Test if VFS instance is valid
-            // kira::kernel::console.add_message("[SYSCALL] VFS instance OK", kira::display::VGA_MAGENTA_ON_BLUE);
-            
-            // Check VFS root vnode status RIGHT NOW - before using it
-            // kira::kernel::console.add_message("[SYSCALL] Checking VFS root state", kira::display::VGA_YELLOW_ON_BLUE);
-            if (vfs.is_root_mounted()) {
-                // kira::kernel::console.add_message("[SYSCALL] VFS root is mounted", kira::display::VGA_GREEN_ON_BLUE);
-            } else {
-                kira::kernel::console.add_message("[SYSCALL] ERROR: VFS root NOT mounted!", kira::display::VGA_RED_ON_BLUE);
-                return static_cast<i32>(SyscallResult::IO_ERROR);
-            }
-            
-            // Use kernel-space buffer to avoid user-space pointer dereferencing issue
-            kira::fs::DirectoryEntry kernelEntry;
-            
-
-            kira::fs::FSResult result = vfs.readdir(path, index, kernelEntry);
+            kira::fs::FSResult result = vfs.readdir(path, index, *entry);
             
             if (result == kira::fs::FSResult::SUCCESS) {
-                // kira::kernel::console.add_message("[SYSCALL] VFS success, copying to user", kira::display::VGA_GREEN_ON_BLUE);
-                // Copy kernel entry to user space
-                *entry = kernelEntry;
-                // kira::kernel::console.add_message("[SYSCALL] Copy to user completed", kira::display::VGA_GREEN_ON_BLUE);
-            }
-            // kira::kernel::console.add_message("[SYSCALL] VFS call completed", kira::display::VGA_MAGENTA_ON_BLUE);
-            
-            if (result == kira::fs::FSResult::SUCCESS) {
-                // kira::kernel::console.add_message("[SYSCALL] SUCCESS", kira::display::VGA_GREEN_ON_BLUE);
                 return static_cast<i32>(SyscallResult::SUCCESS);
             } else if (result == kira::fs::FSResult::NOT_FOUND) {
-                // kira::kernel::console.add_message("[SYSCALL] NOT_FOUND", kira::display::VGA_YELLOW_ON_BLUE);
                 return static_cast<i32>(SyscallResult::FILE_NOT_FOUND); // No more entries
             } else {
                 return static_cast<i32>(SyscallResult::IO_ERROR);
@@ -288,59 +323,32 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
         }
         
         case SystemCall::MKDIR: {
-            // Create directory
-            // arg1 = path pointer, arg2/arg3 = unused
             const char* path = reinterpret_cast<const char*>(arg1);
-            if (!path) {
-                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-            }
-            
+            if (!path) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             auto& vfs = kira::fs::VFS::get_instance();
             kira::fs::FSResult result = vfs.mkdir(path);
-            
-            if (result == kira::fs::FSResult::SUCCESS) {
-                return static_cast<i32>(SyscallResult::SUCCESS);
-            } else if (result == kira::fs::FSResult::EXISTS) {
-                return static_cast<i32>(SyscallResult::FILE_EXISTS);
-            } else {
-                return static_cast<i32>(SyscallResult::IO_ERROR);
-            }
+            if (result == kira::fs::FSResult::SUCCESS) return static_cast<i32>(SyscallResult::SUCCESS);
+            if (result == kira::fs::FSResult::EXISTS) return static_cast<i32>(SyscallResult::FILE_EXISTS);
+            return static_cast<i32>(SyscallResult::IO_ERROR);
         }
         
         case SystemCall::RMDIR: {
-            // Remove directory
-            // arg1 = path pointer, arg2/arg3 = unused
             const char* path = reinterpret_cast<const char*>(arg1);
-            if (!path) {
-                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-            }
-            
+            if (!path) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             auto& vfs = kira::fs::VFS::get_instance();
             kira::fs::FSResult result = vfs.rmdir(path);
-            
-            if (result == kira::fs::FSResult::SUCCESS) {
-                return static_cast<i32>(SyscallResult::SUCCESS);
-            } else if (result == kira::fs::FSResult::NOT_FOUND) {
-                return static_cast<i32>(SyscallResult::FILE_NOT_FOUND);
-            } else if (result == kira::fs::FSResult::NOT_DIRECTORY) {
-                return static_cast<i32>(SyscallResult::NOT_DIRECTORY);
-            } else {
-                return static_cast<i32>(SyscallResult::IO_ERROR);
-            }
+            if (result == kira::fs::FSResult::SUCCESS) return static_cast<i32>(SyscallResult::SUCCESS);
+            if (result == kira::fs::FSResult::NOT_FOUND) return static_cast<i32>(SyscallResult::FILE_NOT_FOUND);
+            if (result == kira::fs::FSResult::NOT_DIRECTORY) return static_cast<i32>(SyscallResult::NOT_DIRECTORY);
+            return static_cast<i32>(SyscallResult::IO_ERROR);
         }
         
-        // Process management operations
         case SystemCall::PS: {
-            // List processes - for now return process count
-            // TODO: Implement proper process listing
-            return pm.get_current_pid(); // Placeholder - return current PID
+            return pm.get_current_pid();
         }
         
         case SystemCall::KILL: {
-            // Terminate process by PID
-            // arg1 = target PID, arg2/arg3 = unused
             u32 target_pid = arg1;
-            
             bool success = pm.terminate_process(target_pid);
             return success ? 
                 static_cast<i32>(SyscallResult::SUCCESS) : 

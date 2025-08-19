@@ -202,6 +202,15 @@ public:
     /** Try get one character (non-blocking). Returns 0 if none. */
     static i32 trygetch();
 
+    // Process utilities (temporary)
+    /** Spawn a builtin program by id (0=ls,1=cat,2=mkdir,3=rmdir) */
+    static i32 spawn(u32 programId, u32 arg1 = 0);
+    static const char* getcwd_ptr();
+
+    // New cwd syscalls
+    static i32 chdir(const char* absPath); // absolute only for now
+    static i32 getcwd(char* buffer, u32 size);
+
 private:
     /**
      * @brief Low-level system call interface

@@ -17,4 +17,7 @@ void user_cat(const char* path, const char* currentDirectory);
 void user_mkdir(const char* path, const char* currentDirectory);
 void user_rmdir(const char* path, const char* currentDirectory);
 
+// Spawnable entry point (temporary): obtains cwd via syscall
+void user_ls_main();
+
 } // namespace kira::usermode 

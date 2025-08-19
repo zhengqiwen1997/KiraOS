@@ -394,4 +394,22 @@ i32 UserAPI::trygetch() {
     return syscall(static_cast<u32>(SystemCall::TRYGETCH));
 }
 
+i32 UserAPI::spawn(u32 programId, u32 arg1) {
+    return syscall(static_cast<u32>(SystemCall::SPAWN), programId, arg1);
+}
+
+const char* UserAPI::getcwd_ptr() {
+    return reinterpret_cast<const char*>(syscall(static_cast<u32>(SystemCall::GETCWD_PTR)));
+}
+
+i32 UserAPI::chdir(const char* absPath) {
+    if (!absPath) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+    return syscall(static_cast<u32>(SystemCall::CHDIR), reinterpret_cast<u32>(absPath));
+}
+
+i32 UserAPI::getcwd(char* buffer, u32 size) {
+    if (!buffer || size == 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+    return syscall(static_cast<u32>(SystemCall::GETCWD), reinterpret_cast<u32>(buffer), size);
+}
+
 } // namespace kira::usermode 

@@ -36,6 +36,8 @@ enum class SystemCall : u32 {
     WAIT = 21,          // Wait for child process
     GETCH = 22,         // Get one character from keyboard (blocking)
     TRYGETCH = 23,      // Non-blocking get character (0 if none)
+    SPAWN = 24,         // Spawn a builtin user program by id (temporary)
+    GETCWD_PTR = 25,    // Get pointer to current process CWD (temporary)
 };
 
 /**

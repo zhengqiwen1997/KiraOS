@@ -80,6 +80,10 @@ ProcessManager::ProcessManager() {
         processes[i].lastRunTime = 0;
         processes[i].savedSyscallEsp = 0;
         processes[i].pendingSyscallReturn = 0;
+        processes[i].currentWorkingDirectory[0] = '/';
+        processes[i].currentWorkingDirectory[1] = '\0';
+        processes[i].spawnArg[0] = '\0';
+        processes[i].waitingOnPid = 0;
     }
 }
 
@@ -248,18 +252,8 @@ void ProcessManager::schedule() {
     // Perform aging to prevent starvation
     perform_aging();
     
-    // Debug: Show scheduler state only when it changes
-    if (currentProcess) {
-        if (isInIdleState) {
-            kira::kernel::console.add_message("DEBUG: Scheduler has current process", kira::display::VGA_GREEN_ON_BLUE);
-            isInIdleState = false;
-        }
-    } else {
-        if (!isInIdleState) {
-            kira::kernel::console.add_message("DEBUG: Scheduler has no current process", kira::display::VGA_MAGENTA_ON_BLUE);
-            isInIdleState = true;
-        }
-    }
+    // Debug banners disabled to avoid interfering with user prompts
+    isInIdleState = (currentProcess == nullptr);
     
     if (currentProcess) {
         currentProcess->timeUsed++;
@@ -454,9 +448,6 @@ void ProcessManager::switch_process() {
             if (!currentProcess->hasStarted) {
                 currentProcess->hasStarted = true;
                 
-                // Debug: Use console system to show we're about to switch to user mode
-                kira::kernel::console.add_message("ABOUT TO SWITCH TO USER MODE", kira::display::VGA_YELLOW_ON_BLUE);
-                
                 // Update TSS with this process's kernel stack
                 TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
@@ -526,21 +517,8 @@ void ProcessManager::switch_process() {
 }
 
 void ProcessManager::display_current_process_only() {
-    // Print only on PID transition to avoid flooding
-    u32 nowPid = currentProcess ? currentProcess->pid : 0;
-    if (nowPid == lastDisplayedPid) return;
-    lastDisplayedPid = nowPid;
-    if (currentProcess) {
-        if (currentProcess->isUserMode) {
-            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE,
-                "Current: %s (PID:%u, U3)\n", currentProcess->name, currentProcess->pid);
-        } else {
-            kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE,
-                "Current: %s (PID:%u)\n", currentProcess->name, currentProcess->pid);
-        }
-    } else {
-        kira::utils::k_printf_colored(kira::display::VGA_CYAN_ON_BLUE, "Current: IDLE\n");
-    }
+    // Suppress scheduler banners to avoid interfering with user prompts
+    return;
 }
 
 void ProcessManager::init_user_process_context(Process* process, ProcessFunction function) {
@@ -635,6 +613,11 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     u32 userTextAddr = USER_TEXT_START;
     u32 numPagesToMap = 20; // Map 20 pages (80KB) to handle larger user programs like the shell
     
+    // Map one extra preceding page to tolerate minor negative offsets into the first page
+    if (functionPage >= PAGE_SIZE) {
+        process->addressSpace->map_page(userTextAddr - PAGE_SIZE, functionPage - PAGE_SIZE, false, true);
+    }
+    
     for (u32 i = 0; i < numPagesToMap; i++) {
         u32 userVirtAddr = userTextAddr + (i * PAGE_SIZE);
         u32 kernelPhysAddr = functionPage + (i * PAGE_SIZE);
@@ -655,15 +638,6 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     u32 kernelStart = 0x100000; // 1MB - typical kernel start  
     u32 kernelEnd = 0x800000;   // 8MB - expanded to cover full kernel with FAT32 code
     
-    kira::kernel::console.add_message("[PROCESS] Mapping kernel memory range:", kira::display::VGA_YELLOW_ON_BLUE);
-    kira::utils::number_to_hex(debugMsg, kernelStart);
-    kira::kernel::console.add_message("[PROCESS] kernelStart:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    kira::utils::number_to_hex(debugMsg, kernelEnd);
-    kira::kernel::console.add_message("[PROCESS] kernelEnd:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
     u32 pagesMapped = 0;
     for (u32 addr = kernelStart; addr < kernelEnd; addr += PAGE_SIZE) {
         // Map kernel pages to user space (writable for static variables)
@@ -672,11 +646,7 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
             pagesMapped++;
         }
     }
-    
-    kira::utils::number_to_decimal(debugMsg, pagesMapped);
-    kira::kernel::console.add_message("[PROCESS] Kernel pages mapped:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
+
     // Map console object and its buffers (needed for console.add_message calls)
     // The console is a global object in kernel memory, so we need to map it
     u32 consoleAddr = reinterpret_cast<u32>(&kira::kernel::console);
@@ -694,9 +664,12 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
         process->addressSpace->map_page(addr, addr, true, true);
     }
     
-    // Map user stack into user address space
-    u32 userStackPages = (process->userStackSize + PAGE_SIZE - 1) / PAGE_SIZE;
-    u32 userStackPhysBase = process->userStackBase & PAGE_MASK;
+    // Map user stack into user address space, honoring base offset
+    u32 userStackBase = process->userStackBase;
+    u32 userStackOffset = userStackBase & (PAGE_SIZE - 1);
+    u32 userStackPhysBase = userStackBase & PAGE_MASK;
+    u32 totalStackBytes = process->userStackSize + userStackOffset;
+    u32 userStackPages = (totalStackBytes + PAGE_SIZE - 1) / PAGE_SIZE;
     u32 userStackVirtTop = USER_STACK_TOP;
     u32 userStackVirtBase = userStackVirtTop - (userStackPages * PAGE_SIZE);
     
@@ -709,39 +682,14 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
         }
     }
     
-    // Update process context to use virtual addresses
+    // Update process context: execute directly at the kernel function address
+    // (kernel code pages were mapped user-accessible above)
     u32 functionOffset = functionAddr - functionPage;
-    process->context.eip = userTextAddr + functionOffset;
-    process->context.userEsp = userStackVirtTop - 16; // Leave some space at top
+    process->context.eip = functionAddr;
+    // Point ESP to the top of the mapped stack region minus the portion used by offset
+    process->context.userEsp = userStackVirtBase + userStackOffset + process->userStackSize - 16; // leave 16 bytes
     
-    // DEBUG: Print critical user mode setup values
-    kira::kernel::console.add_message("[PROCESS] User mode setup debug:", kira::display::VGA_YELLOW_ON_BLUE);
-    kira::utils::number_to_hex(debugMsg, functionAddr);
-    kira::kernel::console.add_message("[PROCESS] functionAddr:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    kira::utils::number_to_hex(debugMsg, functionPage);
-    kira::kernel::console.add_message("[PROCESS] functionPage:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    kira::utils::number_to_hex(debugMsg, functionOffset);
-    kira::kernel::console.add_message("[PROCESS] functionOffset:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    kira::utils::number_to_hex(debugMsg, userTextAddr);
-    kira::kernel::console.add_message("[PROCESS] userTextAddr:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    kira::utils::number_to_hex(debugMsg, process->context.eip);
-    kira::kernel::console.add_message("[PROCESS] final EIP:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    kira::utils::number_to_hex(debugMsg, process->context.userEsp);
-    kira::kernel::console.add_message("[PROCESS] final ESP:", kira::display::VGA_CYAN_ON_BLUE);
-    kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    
-    // DEBUG: Show memory addresses of critical shell functions to check if they're mapped
-    
+
     // Check if user shell function is in mapped range
     u32 shellAddr = reinterpret_cast<u32>(function);
     if (shellAddr >= kernelStart && shellAddr < kernelEnd) {
@@ -762,8 +710,17 @@ u32 ProcessManager::get_current_pid() const {
 
 void ProcessManager::terminate_current_process() {
     if (currentProcess) {
+        u32 terminatedPid = currentProcess->pid;
         currentProcess->state = ProcessState::TERMINATED;
         processCount--;
+        // Wake any parent waiting on this pid
+        for (u32 i = 0; i < MAX_PROCESSES; i++) {
+            if (processes[i].state == ProcessState::BLOCKED && processes[i].waitingOnPid == terminatedPid) {
+                processes[i].waitingOnPid = 0;
+                processes[i].state = ProcessState::READY;
+                add_to_ready_queue(&processes[i]);
+            }
+        }
         currentProcess = nullptr;
         switch_process();
     }

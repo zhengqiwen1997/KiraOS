@@ -81,6 +81,15 @@ struct Process {
 
     // Pending system call return value to be returned via resume_from_syscall_stack
     u32 pendingSyscallReturn;
+
+    // Current working directory (user-visible path)
+    char currentWorkingDirectory[256];
+
+    // Spawn argument buffer (temporary exec/spawn argument passing)
+    char spawnArg[256];
+
+    // Waiting pid for WAIT syscall (0 = none)
+    u32 waitingOnPid;
 } __attribute__((packed));
 
 // Process function type

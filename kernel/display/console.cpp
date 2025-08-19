@@ -284,8 +284,18 @@ static inline void vga_set_cursor(u16 pos) {
 }
 
 void ScrollableConsole::update_hardware_cursor_to_current_line() {
-    // Position cursor at the visible bottom line (line 23), at currentLinePos
+    // Position cursor at the end of the last visible line
+    u32 lineCount = totalLines + (currentLineIncomplete ? 1u : 0u);
     u32 visibleLine = 23;
+    if (!active) {
+        if (lineCount == 0) {
+            visibleLine = 0;
+        } else if (lineCount < DISPLAY_LINES) {
+            visibleLine = lineCount - 1; // last drawn line
+        } else {
+            visibleLine = DISPLAY_LINES - 1; // bottom line
+        }
+    }
     u32 col = (currentLinePos < 80) ? currentLinePos : 79;
     u16 pos = static_cast<u16>(visibleLine * 80 + col);
     vga_set_cursor(pos);
@@ -409,6 +419,10 @@ void ScrollableConsole::add_printf_output(const char* text, u16 color) {
             clear_buffer_line(currentLine);
             currentLinePos = 0;
             currentLineIncomplete = true;
+        } else if (text[i] == '\r') {
+            // Carriage return: move to line start without advancing
+            currentLinePos = 0;
+            buffer[currentLine][0] = '\0';
         } else if (text[i] == '\b') {
             // Backspace: delete last character on current line if any
             if (currentLinePos > 0) {
