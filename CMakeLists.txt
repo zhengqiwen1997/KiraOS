@@ -161,3 +161,67 @@ add_custom_command(TARGET kernel.elf POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/kernel.bin ${CMAKE_BINARY_DIR}/boot/
     COMMENT "Creating boot directory structure"
 ) 
+
+# Build a minimal user ELF (/bin/ls)
+enable_language(ASM)
+add_executable(ls_user.elf
+    userspace/startup/crt0.s
+    userspace/programs/ls_user.cpp
+    userspace/lib/libkira.cpp
+)
+target_include_directories(ls_user.elf PRIVATE userspace userspace/include include)
+target_include_directories(ls_user.elf PRIVATE userspace/lib)
+target_compile_options(ls_user.elf PRIVATE -ffreestanding -fno-pie -fno-stack-protector -m32 -nostdlib)
+target_link_options(ls_user.elf PRIVATE -nostdlib -m32 -static -T${CMAKE_SOURCE_DIR}/userspace/user.ld -Wl,--build-id=none)
+
+# After building, copy the ELF to a staging dir for disk tools
+add_custom_command(TARGET ls_user.elf POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/bin
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:ls_user.elf> ${CMAKE_BINARY_DIR}/bin/ls
+    COMMENT "Staging /bin/ls"
+)
+
+# cat_user
+add_executable(cat_user.elf
+    userspace/startup/crt0.s
+    userspace/programs/cat_user.cpp
+    userspace/lib/libkira.cpp
+)
+target_include_directories(cat_user.elf PRIVATE userspace userspace/include userspace/lib include)
+target_compile_options(cat_user.elf PRIVATE -ffreestanding -fno-pie -fno-stack-protector -m32 -nostdlib)
+target_link_options(cat_user.elf PRIVATE -nostdlib -m32 -static -T${CMAKE_SOURCE_DIR}/userspace/user.ld -Wl,--build-id=none)
+add_custom_command(TARGET cat_user.elf POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/bin
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cat_user.elf> ${CMAKE_BINARY_DIR}/bin/cat
+    COMMENT "Staging /bin/cat"
+)
+
+# mkdir_user
+add_executable(mkdir_user.elf
+    userspace/startup/crt0.s
+    userspace/programs/mkdir_user.cpp
+    userspace/lib/libkira.cpp
+)
+target_include_directories(mkdir_user.elf PRIVATE userspace userspace/include userspace/lib include)
+target_compile_options(mkdir_user.elf PRIVATE -ffreestanding -fno-pie -fno-stack-protector -m32 -nostdlib)
+target_link_options(mkdir_user.elf PRIVATE -nostdlib -m32 -static -T${CMAKE_SOURCE_DIR}/userspace/user.ld -Wl,--build-id=none)
+add_custom_command(TARGET mkdir_user.elf POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/bin
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:mkdir_user.elf> ${CMAKE_BINARY_DIR}/bin/mkdir
+    COMMENT "Staging /bin/mkdir"
+)
+
+# rmdir_user
+add_executable(rmdir_user.elf
+    userspace/startup/crt0.s
+    userspace/programs/rmdir_user.cpp
+    userspace/lib/libkira.cpp
+)
+target_include_directories(rmdir_user.elf PRIVATE userspace userspace/include userspace/lib include)
+target_compile_options(rmdir_user.elf PRIVATE -ffreestanding -fno-pie -fno-stack-protector -m32 -nostdlib)
+target_link_options(rmdir_user.elf PRIVATE -nostdlib -m32 -static -T${CMAKE_SOURCE_DIR}/userspace/user.ld -Wl,--build-id=none)
+add_custom_command(TARGET rmdir_user.elf POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/bin
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:rmdir_user.elf> ${CMAKE_BINARY_DIR}/bin/rmdir
+    COMMENT "Staging /bin/rmdir"
+)

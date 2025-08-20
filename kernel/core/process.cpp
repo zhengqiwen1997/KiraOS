@@ -153,6 +153,55 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     return process->pid;
 }
 
+u32 ProcessManager::create_user_process_from_elf(AddressSpace* addressSpace, u32 entryPoint, u32 userStackTop, const char* name, u32 priority) {
+    if (processCount >= MAX_PROCESSES || !addressSpace || entryPoint == 0 || userStackTop == 0) {
+        return 0;
+    }
+    
+    // Find free process slot
+    Process* process = nullptr;
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].state == ProcessState::TERMINATED || processes[i].pid == 0) {
+            process = &processes[i];
+            break;
+        }
+    }
+    if (!process) return 0;
+    
+    // Initialize process metadata
+    process->pid = nextPid++;
+    strcpy_s(process->name, name ? name : "elf", sizeof(process->name) - 1);
+    process->state = ProcessState::READY;
+    process->priority = priority;
+    process->timeSlice = DEFAULT_TIME_SLICE;
+    process->timeUsed = 0;
+    process->creationTime = 0;
+    process->totalCpuTime = 0;
+    process->isUserMode = true;
+    process->hasStarted = false;
+    process->userFunction = nullptr;
+    process->next = nullptr;
+    
+    // Allocate kernel/user stacks backing memory (kernel stack for syscalls)
+    if (!allocate_process_stacks(process)) {
+        process->pid = 0; return 0;
+    }
+    
+    // Attach provided user address space and context
+    process->addressSpace = addressSpace;
+    process->context.eip = entryPoint;
+    // Use the stack top returned by ELF loader directly; do not subtract again
+    process->context.userEsp = userStackTop;
+    process->context.kernelEsp = process->kernelStackBase + process->kernelStackSize - 4;
+    process->context.eflags = 0x202;
+    process->context.ds = 0x23; process->context.es = 0x23; process->context.fs = 0x23; process->context.gs = 0x23;
+    
+    // Ready queue
+    add_to_ready_queue(process);
+    processCount++;
+    return process->pid;
+}
+
 u32 ProcessManager::create_process(ProcessFunction function, const char* name, u32 priority) {
     if (processCount >= MAX_PROCESSES || !function) {
         return 0;

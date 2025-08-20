@@ -161,6 +161,16 @@ public:
      * @return Process ID or 0 if failed
      */
     u32 create_user_process(ProcessFunction function, const char* name, u32 priority = 5);
+    /**
+     * @brief Create a new user mode process from an existing address space and entry point (ELF)
+     * @param addressSpace Pre-built user address space containing program segments and stack
+     * @param entryPoint Virtual entry point address inside the address space
+     * @param userStackTop Virtual user stack top (ESP on first entry)
+     * @param name Process name
+     * @param priority Process priority (0 = highest)
+     * @return Process ID or 0 if failed
+     */
+    u32 create_user_process_from_elf(AddressSpace* addressSpace, u32 entryPoint, u32 userStackTop, const char* name, u32 priority = 5);
     
     /**
      * @brief Create a new process (legacy - for compatibility)

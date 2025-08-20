@@ -38,6 +38,7 @@ enum class SystemCall : u32 {
     TRYGETCH = 23,      // Non-blocking get character (0 if none)
     SPAWN = 24,         // Spawn a builtin user program by id (temporary)
     GETCWD_PTR = 25,    // Get pointer to current process CWD (temporary)
+    GETSPAWNARG = 26,   // Copy spawn argument string into user buffer
 };
 
 /**

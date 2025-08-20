@@ -7,6 +7,8 @@
 #include "fs/vfs.hpp"
 #include "drivers/keyboard.hpp"
 #include "user_programs.hpp"
+#include "memory/virtual_memory.hpp"
+#include "loaders/elf_loader.hpp"
 
 namespace kira::system {
 
@@ -187,6 +189,16 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
             // Require absolute path for now
             if (path[0] != '\0' && path[0] != '/') return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            // Validate path exists and is a directory via VFS
+            auto& vfs = kira::fs::VFS::get_instance();
+            kira::fs::FileStat st;
+            kira::fs::FSResult res = vfs.stat(path, st);
+            if (res != kira::fs::FSResult::SUCCESS) {
+                return static_cast<i32>(SyscallResult::FILE_NOT_FOUND);
+            }
+            if (st.type != kira::fs::FileType::DIRECTORY) {
+                return static_cast<i32>(SyscallResult::NOT_DIRECTORY);
+            }
             // Copy string into PCB cwd
             u32 i = 0;
             while (path[i] != '\0' && i < sizeof(cur->currentWorkingDirectory) - 1) {
@@ -215,6 +227,93 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             Process* p = pm.get_current_process();
             if (!p) return 0;
             return reinterpret_cast<i32>(p->currentWorkingDirectory);
+        }
+
+        case SystemCall::GETSPAWNARG: {
+            // arg1 = user buffer, arg2 = size
+            Process* p = pm.get_current_process();
+            if (!p) return static_cast<i32>(SyscallResult::IO_ERROR);
+            char* out = reinterpret_cast<char*>(arg1);
+            u32 size = arg2;
+            if (!out || size == 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            u32 i = 0;
+            while (p->spawnArg[i] != '\0' && i + 1 < size) {
+                out[i] = p->spawnArg[i];
+                i++;
+            }
+            out[i] = '\0';
+            return static_cast<i32>(SyscallResult::SUCCESS);
+        }
+        
+        case SystemCall::EXEC: {
+            const char* path = reinterpret_cast<const char*>(arg1);
+            const char* arg0 = reinterpret_cast<const char*>(arg2); // optional spawn arg string
+            if (!path) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            // Load file via VFS
+            auto& vfs = kira::fs::VFS::get_instance();
+            i32 fd;
+            if (vfs.open(path, kira::fs::OpenFlags::READ_ONLY, fd) != kira::fs::FSResult::SUCCESS) {
+                return static_cast<i32>(SyscallResult::FILE_NOT_FOUND);
+            }
+            // Get file size
+            kira::fs::FileStat st;
+            if (vfs.stat(path, st) != kira::fs::FSResult::SUCCESS || st.type != kira::fs::FileType::REGULAR || st.size == 0) {
+                vfs.close(fd);
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
+
+            // Temporary kernel-mapped buffer for ELF file (limit size for now)
+            static u8 elfBuffer[65536]; // 64KB cap for early exec implementation
+            if (st.size > sizeof(elfBuffer)) {
+                vfs.close(fd);
+                return static_cast<i32>(SyscallResult::NO_SPACE);
+            }
+            if (vfs.read(fd, st.size, elfBuffer) != kira::fs::FSResult::SUCCESS) {
+                vfs.close(fd);
+                return static_cast<i32>(SyscallResult::IO_ERROR);
+            }
+            vfs.close(fd);
+            // // Create address space and load ELF
+            auto& vm = kira::system::VirtualMemoryManager::get_instance();
+            kira::system::AddressSpace* as = vm.create_user_address_space();
+            if (!as) { return static_cast<i32>(SyscallResult::NO_SPACE); }
+            auto elfResult = kira::loaders::ElfLoader::load_executable(elfBuffer, st.size, as);
+            if (!elfResult.success) { as->~AddressSpace(); return static_cast<i32>(SyscallResult::INVALID_PARAMETER); }
+            u32 stackTop = kira::loaders::ElfLoader::setup_user_stack(as);
+            if (stackTop == 0) { as->~AddressSpace(); return static_cast<i32>(SyscallResult::NO_SPACE); }
+            
+
+            // Create process from ELF
+            u32 pid = pm.create_user_process_from_elf(as, elfResult.entryPoint, stackTop, "elf", 5);
+            if (pid == 0) {
+                as->~AddressSpace();
+                return static_cast<i32>(SyscallResult::NO_SPACE);
+            }
+
+            // Inherit cwd and propagate single spawn argument (if provided)
+            if (Process* child = pm.get_process(pid)) {
+                if (Process* parent = pm.get_current_process()) {
+                    for (u32 i = 0; i < sizeof(child->currentWorkingDirectory) - 1; i++) {
+                        child->currentWorkingDirectory[i] = parent->currentWorkingDirectory[i];
+                        if (parent->currentWorkingDirectory[i] == '\0') break;
+                    }
+                    // Copy optional argument into child's spawnArg for user programs
+                    if (arg0) {
+                        u32 i = 0; while (arg0[i] && i < sizeof(child->spawnArg) - 1) { child->spawnArg[i] = arg0[i]; i++; }
+                        child->spawnArg[i] = '\0';
+                    } else {
+                        child->spawnArg[0] = '\0';
+                    }
+                }
+            }
+
+            // Block parent until child exits
+            if (Process* parent = pm.get_current_process()) {
+                parent->waitingOnPid = pid;
+                parent->state = ProcessState::BLOCKED;
+            }
+            pm.schedule();
+            return static_cast<i32>(SyscallResult::SUCCESS);
         }
         
         // File system operations

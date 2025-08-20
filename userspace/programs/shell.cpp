@@ -38,8 +38,8 @@ public:
             UserAPI::sleep(1);
             display_prompt();
             if (!read_command()) break; 
-            parse_command(); 
-            execute_command(); 
+                parse_command();
+                execute_command();
         }
     }
 private:
@@ -81,13 +81,35 @@ private:
         else if (string_equals(cmd, "about")) { cmd_about(); }
         else if (string_equals(cmd, "clear")) { cmd_clear(); }
         else if (string_equals(cmd, "pwd")) { cmd_pwd(); }
-        else if (string_equals(cmd, "ls")) { UserAPI::spawn(0, reinterpret_cast<u32>(currentDirectory)); }
-        else if (string_equals(cmd, "cat")) { if (argCount >= 2) user_cat(args[1], currentDirectory); else UserAPI::println("Usage: cat <filename>"); }
+        // No special casing for 'cat', treat externally
         else if (string_equals(cmd, "cd")) { cmd_cd(); }
-        else if (string_equals(cmd, "mkdir")) { if (argCount >= 2) user_mkdir(args[1], currentDirectory); else UserAPI::println("Usage: mkdir <directory>"); }
-        else if (string_equals(cmd, "rmdir")) { if (argCount >= 2) user_rmdir(args[1], currentDirectory); else UserAPI::println("Usage: rmdir <directory>"); }
+        // No special casing for 'mkdir'/'rmdir', treat externally
         else if (string_equals(cmd, "exit")) { cmd_exit(); }
-        else { UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE); UserAPI::println(cmd); }
+        else {
+            // Try exec of /bin/<cmd>; if not present, report unknown
+            char path[64]; u32 p = 0;
+            const char* prefix = "/bin/";
+            for (; prefix[p] != '\0' && p < 63; p++) path[p] = prefix[p];
+            for (u32 i = 0; cmd[i] != '\0' && p < 63; i++, p++) path[p] = cmd[i];
+            path[p] = '\0';
+            // Join remaining args into a single space-separated absolute-path string
+            const char* argStr = nullptr;
+            char joined[256];
+            if (argCount > 1) {
+                u32 jp = 0; joined[0] = '\0';
+                for (u32 ai = 1; ai < argCount; ai++) {
+                    char full[128]; build_absolute_path(currentDirectory, args[ai], full, sizeof(full));
+                    for (u32 k = 0; full[k] && jp < sizeof(joined) - 1; k++) joined[jp++] = full[k];
+                    if (ai + 1 < argCount && jp < sizeof(joined) - 1) joined[jp++] = ' ';
+                }
+                joined[jp] = '\0';
+                argStr = joined;
+            }
+            if (UserAPI::exec(path, argStr) != 0) {
+                UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
+                UserAPI::println(cmd);
+            }
+        }
         // Sync cached cwd from kernel after commands that may modify it
         UserAPI::getcwd(currentDirectory, sizeof(currentDirectory));
     }
@@ -97,9 +119,15 @@ private:
     void cmd_pwd() { char buf[256]; UserAPI::getcwd(buf, sizeof(buf)); UserAPI::print_colored("Current directory: ", Colors::WHITE_ON_BLUE); UserAPI::println(buf); }
     void cmd_cd() {
         if (argCount < 2) { UserAPI::print_colored("Usage: cd <directory>", Colors::YELLOW_ON_BLUE); UserAPI::println(""); return; }
-        // Build absolute path from currentDirectory and args[1] for now (until kernel supports relative chdir)
-        char normalized[256]; build_absolute_path(currentDirectory, args[1], normalized, sizeof(normalized));
-        if (UserAPI::chdir(normalized) != 0) { UserAPI::print_colored("cd: failed\n", Colors::RED_ON_BLUE); }
+        // Build absolute path from currentDirectory and args[1]
+        char normalized[256]; 
+        build_absolute_path(currentDirectory, args[1], normalized, sizeof(normalized));
+        i32 rc = UserAPI::chdir(normalized);
+        if (rc == 0) return;
+        UserAPI::print_colored("cd: ", Colors::RED_ON_BLUE);
+        UserAPI::print_colored(UserAPI::strerror(rc), Colors::RED_ON_BLUE);
+        UserAPI::print_colored(": ", Colors::RED_ON_BLUE);
+        UserAPI::println(normalized);
     }
     void cmd_exit() { UserAPI::print_colored("Exiting shell...\n", Colors::YELLOW_ON_BLUE); UserAPI::exit(); }
     static bool string_equals(const char* s1, const char* s2) { if (!s1 || !s2) return false; u32 i = 0; while (i < 32) { if (s1[i] != s2[i]) return false; if (s1[i] == '\0') return true; i++; } return false; }

@@ -60,9 +60,10 @@ AddressSpace::AddressSpace(bool kernelSpace) : isKernelSpace(kernelSpace) {
         pageDirectory[i] = 0;
     }
     
-    if (kernelSpace) {
-        setup_kernel_mappings();
-    }
+    // Map kernel regions into every address space so kernel remains accessible
+    // on interrupts/syscalls. Pages are mapped with user=false and thus not
+    // accessible from ring 3.
+    setup_kernel_mappings();
 }
 
 AddressSpace::~AddressSpace() {

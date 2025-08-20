@@ -104,6 +104,32 @@ EOF
     create_file "$mount_point/APPS/README.TXT" "Application files stored here"
     create_file "$mount_point/APPS/TEST.SH" "#!/bin/sh"
     append_file "$mount_point/APPS/TEST.SH" "echo 'Hello from shell script!'"
+
+    # Install /bin and copy staged ls ELF if present
+    make_dir "$mount_point/bin"
+    if [ -f "${PWD}/cmake-build-elf/bin/ls" ]; then
+        if [ "$use_sudo" = "true" ]; then
+            sudo cp "${PWD}/cmake-build-elf/bin/ls" "$mount_point/bin/ls"
+        else
+            cp "${PWD}/cmake-build-elf/bin/ls" "$mount_point/bin/ls"
+        fi
+        echo "Installed /bin/ls"
+    else
+        echo "Note: ${PWD}/cmake-build-elf/bin/ls not found; build ls_user.elf first"
+    fi
+
+    for prog in cat mkdir rmdir; do
+        if [ -f "${PWD}/cmake-build-elf/bin/$prog" ]; then
+            if [ "$use_sudo" = "true" ]; then
+                sudo cp "${PWD}/cmake-build-elf/bin/$prog" "$mount_point/bin/$prog"
+            else
+                cp "${PWD}/cmake-build-elf/bin/$prog" "$mount_point/bin/$prog"
+            fi
+            echo "Installed /bin/$prog"
+        else
+            echo "Note: ${PWD}/cmake-build-elf/bin/$prog not found; build ${prog}_user.elf first"
+        fi
+    done
 }
 
 case $OS in

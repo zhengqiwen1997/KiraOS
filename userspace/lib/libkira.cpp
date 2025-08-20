@@ -412,4 +412,32 @@ i32 UserAPI::getcwd(char* buffer, u32 size) {
     return syscall(static_cast<u32>(SystemCall::GETCWD), reinterpret_cast<u32>(buffer), size);
 }
 
+i32 UserAPI::exec(const char* absPath, const char* arg0) {
+    if (!absPath) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+    return syscall(static_cast<u32>(SystemCall::EXEC), reinterpret_cast<u32>(absPath), reinterpret_cast<u32>(arg0));
+}
+
+i32 UserAPI::getspawnarg(char* buffer, u32 size) {
+    if (!buffer || size == 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+    return syscall(static_cast<u32>(SystemCall::GETSPAWNARG), reinterpret_cast<u32>(buffer), size);
+}
+
+const char* UserAPI::strerror(i32 code) {
+    switch (code) {
+        case 0: return "success";
+        case static_cast<i32>(SyscallResult::INVALID_SYSCALL): return "invalid syscall";
+        case static_cast<i32>(SyscallResult::INVALID_PARAMETER): return "invalid parameter";
+        case static_cast<i32>(SyscallResult::PERMISSION_DENIED): return "permission denied";
+        case static_cast<i32>(SyscallResult::RESOURCE_UNAVAILABLE): return "resource unavailable";
+        case static_cast<i32>(SyscallResult::FILE_NOT_FOUND): return "file not found";
+        case static_cast<i32>(SyscallResult::FILE_EXISTS): return "file exists";
+        case static_cast<i32>(SyscallResult::IO_ERROR): return "I/O error";
+        case static_cast<i32>(SyscallResult::NO_SPACE): return "no space";
+        case static_cast<i32>(SyscallResult::TOO_MANY_FILES): return "too many files";
+        case static_cast<i32>(SyscallResult::NOT_DIRECTORY): return "not a directory";
+        case static_cast<i32>(SyscallResult::IS_DIRECTORY): return "is a directory";
+        default: return "unknown error";
+    }
+}
+
 } // namespace kira::usermode 

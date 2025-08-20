@@ -211,6 +211,15 @@ public:
     static i32 chdir(const char* absPath); // absolute only for now
     static i32 getcwd(char* buffer, u32 size);
 
+    // Exec ELF binary (absolute path) with optional single argument
+    static i32 exec(const char* absPath, const char* arg0 = nullptr);
+
+    // Human-readable message for syscall result codes
+    static const char* strerror(i32 code);
+
+    // Get spawn argument string passed by parent (via EXEC bridge)
+    static i32 getspawnarg(char* buffer, u32 size);
+
 private:
     /**
      * @brief Low-level system call interface
