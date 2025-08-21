@@ -176,10 +176,10 @@ disk: clean-disk $(DISK_IMAGE)
 	@echo "Bootable disk image created: $(DISK_IMAGE)"
 
 # Run KiraOS using ELF kernel with FAT32 disk (same as run but with monitor)
-run-disk: $(CPP_KERNEL_ELF) test_fat32.img | $(BUILD_DIR)
-	@echo "Starting KiraOS with FAT32 filesystem and monitor console..."
+run-disk: $(CMAKE_BUILD_DIR)-disk/kernel.elf test_fat32.img | $(BUILD_DIR)
+	@echo "Starting KiraOS (disk build) with FAT32 filesystem and monitor console..."
 	@echo "💡 Try these commands in KiraOS shell: ls, cat HELLO.TXT, cd BOOT, help"
-	@cd $(CMAKE_BUILD_DIR)-elf && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
+	@cd $(CMAKE_BUILD_DIR)-disk && $(QEMU) $(QEMU_ELF_FLAGS) -monitor stdio
 
 # Run using legacy custom bootloader method
 run-legacy-disk: disk

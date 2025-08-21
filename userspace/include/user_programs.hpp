@@ -11,13 +11,13 @@ void user_test_input();
 // Interactive shell
 void user_shell();
 
-// Standalone utilities
-void user_ls(const char* currentDirectory);
-void user_cat(const char* path, const char* currentDirectory);
-void user_mkdir(const char* path, const char* currentDirectory);
-void user_rmdir(const char* path, const char* currentDirectory);
+// // Standalone utilities
+// void user_ls(const char* currentDirectory);
+// void user_cat(const char* path, const char* currentDirectory);
+// void user_mkdir(const char* path, const char* currentDirectory);
+// void user_rmdir(const char* path, const char* currentDirectory);
 
-// Spawnable entry point (temporary): obtains cwd via syscall
-void user_ls_main();
+// // Spawnable entry point (temporary): obtains cwd via syscall
+// void user_ls_main();
 
 } // namespace kira::usermode 

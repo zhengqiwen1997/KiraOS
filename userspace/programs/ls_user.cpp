@@ -1,6 +1,6 @@
 #include "libkira.hpp"
 
-extern "C" void user_entry() {
+int main() {
     using namespace kira::usermode;
     using namespace kira::system;
 
@@ -18,6 +18,5 @@ extern "C" void user_entry() {
             UserAPI::printf("%s    <FILE>\n", entry.name);
         }
     }
+    return 0;
 }
-
-

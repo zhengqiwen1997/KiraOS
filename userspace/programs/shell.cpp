@@ -130,7 +130,6 @@ private:
         UserAPI::println(normalized);
     }
     void cmd_exit() { UserAPI::print_colored("Exiting shell...\n", Colors::YELLOW_ON_BLUE); UserAPI::exit(); }
-    static bool string_equals(const char* s1, const char* s2) { if (!s1 || !s2) return false; u32 i = 0; while (i < 32) { if (s1[i] != s2[i]) return false; if (s1[i] == '\0') return true; i++; } return false; }
 };
 
 void user_shell() { KiraShell shell; shell.run(); }

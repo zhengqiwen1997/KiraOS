@@ -1,12 +1,12 @@
 #include "libkira.hpp"
 
-extern "C" void user_entry() {
+int main() {
     using namespace kira::usermode;
     using namespace kira::system;
     char args[256];
     if (UserAPI::getspawnarg(args, sizeof(args)) != 0 || args[0] == '\0') {
         UserAPI::print_colored("mkdir: missing operand\n", Colors::RED_ON_BLUE);
-        return;
+        return 0;
     }
     // Parse space-separated list
     u32 i = 0;
@@ -23,6 +23,5 @@ extern "C" void user_entry() {
             if (rc != 0) { UserAPI::print_colored("mkdir: cannot create ", Colors::RED_ON_BLUE); UserAPI::println(token); }
         }
     }
+    return 0;
 }
-
-

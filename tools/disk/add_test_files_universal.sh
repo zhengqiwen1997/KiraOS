@@ -107,27 +107,30 @@ EOF
 
     # Install /bin and copy staged ls ELF if present
     make_dir "$mount_point/bin"
-    if [ -f "${PWD}/cmake-build-elf/bin/ls" ]; then
+    # Prefer cmake-build-disk/bin, fallback to cmake-build-elf/bin
+    BIN_SRC_BASE="${PWD}/cmake-build-disk/bin"
+    if [ ! -f "$BIN_SRC_BASE/ls" ]; then BIN_SRC_BASE="${PWD}/cmake-build-elf/bin"; fi
+    if [ -f "$BIN_SRC_BASE/ls" ]; then
         if [ "$use_sudo" = "true" ]; then
-            sudo cp "${PWD}/cmake-build-elf/bin/ls" "$mount_point/bin/ls"
+            sudo cp "$BIN_SRC_BASE/ls" "$mount_point/bin/ls"
         else
-            cp "${PWD}/cmake-build-elf/bin/ls" "$mount_point/bin/ls"
+            cp "$BIN_SRC_BASE/ls" "$mount_point/bin/ls"
         fi
         echo "Installed /bin/ls"
     else
-        echo "Note: ${PWD}/cmake-build-elf/bin/ls not found; build ls_user.elf first"
+        echo "Note: /bin/ls not found in $BIN_SRC_BASE; build ls_user.elf first"
     fi
 
     for prog in cat mkdir rmdir; do
-        if [ -f "${PWD}/cmake-build-elf/bin/$prog" ]; then
+        if [ -f "$BIN_SRC_BASE/$prog" ]; then
             if [ "$use_sudo" = "true" ]; then
-                sudo cp "${PWD}/cmake-build-elf/bin/$prog" "$mount_point/bin/$prog"
+                sudo cp "$BIN_SRC_BASE/$prog" "$mount_point/bin/$prog"
             else
-                cp "${PWD}/cmake-build-elf/bin/$prog" "$mount_point/bin/$prog"
+                cp "$BIN_SRC_BASE/$prog" "$mount_point/bin/$prog"
             fi
             echo "Installed /bin/$prog"
         else
-            echo "Note: ${PWD}/cmake-build-elf/bin/$prog not found; build ${prog}_user.elf first"
+            echo "Note: $prog not found in $BIN_SRC_BASE; build ${prog}_user.elf first"
         fi
     done
 }

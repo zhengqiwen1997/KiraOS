@@ -1,12 +1,11 @@
 #include "core/syscalls.hpp"
 #include "arch/x86/idt.hpp"
-#include "core/utils.hpp"
+// #include "core/utils.hpp"
 #include "display/vga.hpp"
 #include "display/console.hpp"
 #include "core/process.hpp"
 #include "fs/vfs.hpp"
 #include "drivers/keyboard.hpp"
-#include "user_programs.hpp"
 #include "memory/virtual_memory.hpp"
 #include "loaders/elf_loader.hpp"
 
@@ -152,35 +151,8 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
         }
 
         case SystemCall::SPAWN: {
-            // prog: 0=ls (currently supported). arg2=pointer to cwd
-            u32 prog = arg1; u32 arg = arg2;
-            if (prog != 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER); // only ls for now
-            // Create child process for ls
-            u32 childPid = pm.create_user_process(reinterpret_cast<ProcessFunction>(kira::usermode::user_ls_main), "ls", 5);
-            if (childPid == 0) return static_cast<i32>(SyscallResult::IO_ERROR);
-            Process* child = pm.get_process(childPid);
-            if (!child) return static_cast<i32>(SyscallResult::IO_ERROR);
-            // Copy caller's cwd into child's spawnArg for future use if needed
-            const char* src = reinterpret_cast<const char*>(arg); u32 i = 0;
-            // utils::k_printf("the arg2: %s\n", src);
-            if (src) { while (src[i] != '\0' && i < sizeof(child->spawnArg) - 1) { child->spawnArg[i] = src[i]; i++; } }
-            child->spawnArg[i] = '\0';
-            utils::k_printf("the child->spawnArg: %s\n", child->spawnArg);
-            // Also set child's PCB current working directory to the same path
-            for (u32 j = 0; j <= i && j < sizeof(child->currentWorkingDirectory); j++) {
-                child->currentWorkingDirectory[j] = child->spawnArg[j];
-            }
-
-            // No initial stack argument setup; child queries cwd via GETCWD
-            // Block parent until child terminates (cooperative wait)
-            Process* parent = pm.get_current_process();
-            if (parent) {
-                parent->waitingOnPid = childPid;
-                parent->state = ProcessState::BLOCKED;
-            }
-            // Switch away; when child exits, scheduler will pick parent again
-            pm.schedule();
-            return static_cast<i32>(SyscallResult::SUCCESS);
+            // Deprecated: builtin spawn removed; use EXEC instead
+            return static_cast<i32>(SyscallResult::INVALID_SYSCALL);
         }
         case SystemCall::CHDIR: {
             const char* path = reinterpret_cast<const char*>(arg1);
