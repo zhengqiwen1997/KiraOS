@@ -346,6 +346,28 @@ void VirtualMemoryManager::switch_address_space(AddressSpace* addressSpace) {
     }
 }
 
+void VirtualMemoryManager::destroy_user_address_space(AddressSpace* addressSpace) {
+    if (!addressSpace) {
+        return;
+    }
+    // Do not allow destroying the kernel address space
+    if (addressSpace == kernelAddressSpace) {
+        SerialDebugger::println("WARN: Attempted to destroy kernel address space; ignoring.");
+        return;
+    }
+
+    // If this address space is currently active, switch back to kernel first
+    if (addressSpace == currentAddressSpace) {
+        switch_address_space(kernelAddressSpace);
+    }
+
+    // Explicitly call destructor since we used placement new
+    addressSpace->~AddressSpace();
+
+    // We do not reclaim the placement buffer for reuse in this simple pool.
+    // Optionally, we could track indices and allow reuse, but not required now.
+}
+
 void VirtualMemoryManager::flush_tlb() {
     flush_tlb_asm();
 }

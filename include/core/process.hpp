@@ -90,6 +90,12 @@ struct Process {
 
     // Waiting pid for WAIT syscall (0 = none)
     u32 waitingOnPid;
+
+    // Parent process ID (0 if no parent)
+    u32 parentPid;
+
+    // Exit status code set at termination (valid when state == TERMINATED)
+    i32 exitStatus;
 } __attribute__((packed));
 
 // Process function type
@@ -227,6 +233,12 @@ public:
      * @brief Terminate current process
      */
     void terminate_current_process();
+
+    /**
+     * @brief Terminate current process with an exit status
+     * @param status Exit status to record for parent waiters
+     */
+    void terminate_current_process_with_status(i32 status);
     
     /**
      * @brief Sleep current process for specified ticks

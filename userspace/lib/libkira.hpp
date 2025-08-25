@@ -124,6 +124,8 @@ public:
      * @return Does not return
      */
     static void exit();
+    /** Exit with status code */
+    static void exit_with(i32 status);
     
     // File system operations
     /**
@@ -195,6 +197,9 @@ public:
      * @return 0 on success, negative error code on failure
      */
     static i32 kill(u32 pid);
+
+    /** Wait for a child to exit; returns exit status or negative on error */
+    static i32 wait(u32 pid);
 
     // Keyboard input
     /** Get one character (blocking). Returns ASCII code (0..255). */

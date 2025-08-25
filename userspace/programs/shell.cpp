@@ -35,7 +35,7 @@ public:
         // Sync with kernel cwd at start
         UserAPI::getcwd(currentDirectory, sizeof(currentDirectory));
         while (!finished) {
-            UserAPI::sleep(1);
+            // UserAPI::sleep(2);
             display_prompt();
             if (!read_command()) break; 
                 parse_command();
@@ -54,7 +54,8 @@ private:
         // const char* parts[] = {"KiraOS:", currentDirectory, "$ "};
         // for (u32 part = 0; part < 3; part++) { const char* s = parts[part]; for (u32 i = 0; s[i] != '\0' && pos < 63; i++) promptBuffer[pos++] = s[i]; }
         // UserAPI::print_colored(promptBuffer, Colors::GREEN_ON_BLUE);
-        UserAPI::printf("KiraOS:%s$ ", currentDirectory);
+        // Ensure prompt starts on a new line
+        UserAPI::printf("\nKiraOS:%s$ ", currentDirectory);
     }
     bool read_command() {
         cmdLen = 0; commandBuffer[0] = '\0';
@@ -86,7 +87,7 @@ private:
         // No special casing for 'mkdir'/'rmdir', treat externally
         else if (string_equals(cmd, "exit")) { cmd_exit(); }
         else {
-            // Try exec of /bin/<cmd>; if not present, report unknown
+            // Try exec of /bin/<cmd>; if not present, report unknown. Do not auto-wait.
             char path[64]; u32 p = 0;
             const char* prefix = "/bin/";
             for (; prefix[p] != '\0' && p < 63; p++) path[p] = prefix[p];
@@ -105,9 +106,15 @@ private:
                 joined[jp] = '\0';
                 argStr = joined;
             }
-            if (UserAPI::exec(path, argStr) != 0) {
+            i32 pid = UserAPI::exec(path, argStr);
+            if (pid < 0) {
                 UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
                 UserAPI::println(cmd);
+            } else {
+                // Foreground execution: wait for completion before next prompt
+                
+                (void)UserAPI::wait((u32)pid);
+                UserAPI::printf("[spawn] pid=%u\n", (u32)pid);
             }
         }
         // Sync cached cwd from kernel after commands that may modify it

@@ -169,6 +169,12 @@ public:
     AddressSpace* create_user_address_space();
     
     /**
+     * @brief Destroy a user address space and free its resources
+     * @param addressSpace Address space to destroy
+     */
+    void destroy_user_address_space(AddressSpace* addressSpace);
+    
+    /**
      * @brief Switch to address space
      * @param addressSpace Address space to switch to
      */

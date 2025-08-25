@@ -56,7 +56,8 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
     switch (static_cast<SystemCall>(syscall_num)) {
         case SystemCall::EXIT:
             // Terminate current process and switch to another if available.
-            pm.terminate_current_process();
+            // arg1 optionally carries exit status; default 0
+            pm.terminate_current_process_with_status(static_cast<i32>(arg1));
             // If we reach here, there was no immediate process to run.
             // Enter idle loop; timer IRQ may start another process later.
             while (true) { asm volatile("sti"); asm volatile("hlt"); }
@@ -250,17 +251,14 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             kira::system::AddressSpace* as = vm.create_user_address_space();
             if (!as) { return static_cast<i32>(SyscallResult::NO_SPACE); }
             auto elfResult = kira::loaders::ElfLoader::load_executable(elfBuffer, st.size, as);
-            if (!elfResult.success) { as->~AddressSpace(); return static_cast<i32>(SyscallResult::INVALID_PARAMETER); }
+            if (!elfResult.success) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::INVALID_PARAMETER); }
             u32 stackTop = kira::loaders::ElfLoader::setup_user_stack(as);
-            if (stackTop == 0) { as->~AddressSpace(); return static_cast<i32>(SyscallResult::NO_SPACE); }
+            if (stackTop == 0) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::NO_SPACE); }
             
 
             // Create process from ELF
             u32 pid = pm.create_user_process_from_elf(as, elfResult.entryPoint, stackTop, "elf", 5);
-            if (pid == 0) {
-                as->~AddressSpace();
-                return static_cast<i32>(SyscallResult::NO_SPACE);
-            }
+            if (pid == 0) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::NO_SPACE); }
 
             // Inherit cwd and propagate single spawn argument (if provided)
             if (Process* child = pm.get_process(pid)) {
@@ -279,13 +277,15 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 }
             }
 
-            // Block parent until child exits
+            // Record parentPid in child and return child's PID immediately
             if (Process* parent = pm.get_current_process()) {
-                parent->waitingOnPid = pid;
-                parent->state = ProcessState::BLOCKED;
+                if (Process* child = pm.get_process(pid)) {
+                    child->parentPid = parent->pid;
+                }
             }
-            pm.schedule();
-            return static_cast<i32>(SyscallResult::SUCCESS);
+            // Yield to allow the newly spawned child to run immediately (foreground-like)
+            pm.yield();
+            return static_cast<i32>(pid);
         }
         
         // File system operations
@@ -424,6 +424,30 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             return success ? 
                 static_cast<i32>(SyscallResult::SUCCESS) : 
                 static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+        }
+        
+        case SystemCall::WAIT: {
+            // arg1 = pid to wait on (0 => wait any child), arg2 = user buffer for status (ignored for now)
+            Process* cur = pm.get_current_process();
+            if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            u32 wantPid = arg1;
+            // Simple: only support explicit pid for now
+            if (wantPid == 0) {
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
+            Process* target = pm.get_process(wantPid);
+            if (!target) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            // Must be a child
+            if (target->parentPid != cur->pid) return static_cast<i32>(SyscallResult::PERMISSION_DENIED);
+            if (target->state == ProcessState::TERMINATED) {
+                // If already terminated, return its exit status immediately
+                return target->exitStatus;
+            }
+            // Block until it terminates; switch away immediately using helper
+            cur->waitingOnPid = wantPid;
+            pm.block_current_process();
+            // Park: this thread will be resumed via resume_from_syscall_stack with EAX preset
+            for (;;) { asm volatile("sti"); asm volatile("hlt"); }
         }
         
         default:

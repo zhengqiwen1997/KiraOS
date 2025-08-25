@@ -1,9 +1,7 @@
 #include "libkira.hpp"
+using namespace kira::usermode;
 
 int main() {
-    using namespace kira::usermode;
-    using namespace kira::system;
-
     char cwd[256];
     UserAPI::getcwd(cwd, sizeof(cwd));
 

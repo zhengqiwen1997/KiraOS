@@ -84,6 +84,8 @@ ProcessManager::ProcessManager() {
         processes[i].currentWorkingDirectory[1] = '\0';
         processes[i].spawnArg[0] = '\0';
         processes[i].waitingOnPid = 0;
+        processes[i].parentPid = 0;
+        processes[i].exitStatus = 0;
     }
 }
 
@@ -267,16 +269,33 @@ bool ProcessManager::terminate_process(u32 pid) {
     // Remove from ready queue if present
     remove_from_ready_queue(process);
     
+    // Set exit status for killed process and notify parent if waiting
+    u32 terminatedPid = process->pid;
+    process->exitStatus = -1; // default status for kill
+
     // Clean up address space
     if (process->addressSpace) {
-        // Manually call destructor since we used placement new
-        process->addressSpace->~AddressSpace();
+        auto& vm = VirtualMemoryManager::get_instance();
+        vm.destroy_user_address_space(process->addressSpace);
         process->addressSpace = nullptr;
     }
     
     // Mark as terminated
     process->state = ProcessState::TERMINATED;
     processCount--;
+
+    // Wake any parent waiting on this pid (and ensure return value is set)
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid != 0 && processes[i].waitingOnPid == terminatedPid) {
+            // Propagate child's exit status regardless of parent state
+            processes[i].pendingSyscallReturn = static_cast<u32>(process->exitStatus);
+            if (processes[i].state == ProcessState::BLOCKED) {
+                processes[i].waitingOnPid = 0;
+                processes[i].state = ProcessState::READY;
+                add_to_ready_queue(&processes[i]);
+            }
+        }
+    }
     
     // If this was the current process, switch to another
     if (currentProcess == process) {
@@ -526,6 +545,7 @@ void ProcessManager::switch_process() {
                     currentProcess->savedSyscallEsp = 0; // clear after use
                     // Use pendingSyscallReturn as the value to be placed in EAX on return
                     u32 eax_ret = currentProcess->pendingSyscallReturn;
+                    kira::utils::k_printf("[PROC] resume pid=%u eax_ret=%d\n", currentProcess->pid, eax_ret);
                     asm volatile(
                         "push %0; push %1; call resume_from_syscall_stack; add $8, %%esp" :: "r"(eax_ret), "r"(esp_to_resume) : "memory");
                 } else {
@@ -629,19 +649,17 @@ void ProcessManager::init_process_context(Process* process, ProcessFunction func
 }
 
 bool ProcessManager::allocate_process_stacks(Process* process) {
-    if (nextStackIndex >= MAX_PROCESSES) {
-        return false; // Out of stack space
+    // Reuse per-process slot stacks based on PCB index instead of consuming a global index
+    u32 index = static_cast<u32>(process - processes);
+    if (index >= MAX_PROCESSES) {
+        return false;
     }
-    
-    // Allocate kernel stack
-    process->kernelStackBase = (u32)&kernelStacks[nextStackIndex][0];
+    // Assign kernel stack
+    process->kernelStackBase = (u32)&kernelStacks[index][0];
     process->kernelStackSize = STACK_SIZE;
-    
-    // Allocate user stack
-    process->userStackBase = (u32)&userStacks[nextStackIndex][0];
+    // Assign user stack
+    process->userStackBase = (u32)&userStacks[index][0];
     process->userStackSize = STACK_SIZE;
-    
-    nextStackIndex++;
     return true;
 }
 
@@ -759,20 +777,43 @@ u32 ProcessManager::get_current_pid() const {
 
 void ProcessManager::terminate_current_process() {
     if (currentProcess) {
-        u32 terminatedPid = currentProcess->pid;
-        currentProcess->state = ProcessState::TERMINATED;
-        processCount--;
-        // Wake any parent waiting on this pid
-        for (u32 i = 0; i < MAX_PROCESSES; i++) {
-            if (processes[i].state == ProcessState::BLOCKED && processes[i].waitingOnPid == terminatedPid) {
-                processes[i].waitingOnPid = 0;
-                processes[i].state = ProcessState::READY;
-                add_to_ready_queue(&processes[i]);
+        terminate_current_process_with_status(0);
+    }
+}
+
+void ProcessManager::terminate_current_process_with_status(i32 status) {
+    if (!currentProcess) return;
+    u32 terminatedPid = currentProcess->pid;
+    currentProcess->exitStatus = status;
+    currentProcess->state = ProcessState::TERMINATED;
+    processCount--;
+
+    // Debug: announce termination and status
+    // Minimal debug: show exit pid and status
+    kira::utils::k_printf("[PROC] exit pid=%u status=%d\n", terminatedPid, status);
+
+    // Clean up address space
+    if (currentProcess->addressSpace) {
+        auto& vm = VirtualMemoryManager::get_instance();
+        vm.destroy_user_address_space(currentProcess->addressSpace);
+        currentProcess->addressSpace = nullptr;
+    }
+
+    // Wake any process waiting on this pid (parent or others) and always set return value
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        Process* p = &processes[i];
+        if (p->pid != 0 && p->waitingOnPid == terminatedPid) {
+            p->pendingSyscallReturn = static_cast<u32>(currentProcess->exitStatus);
+            if (p->state == ProcessState::BLOCKED) {
+                p->waitingOnPid = 0;
+                kira::utils::k_printf("[PROC] wake pid=%u ret=%d\n", p->pid, p->pendingSyscallReturn);
+                p->state = ProcessState::READY;
+                add_to_ready_queue(p);
             }
         }
-        currentProcess = nullptr;
-        switch_process();
     }
+    currentProcess = nullptr;
+    switch_process();
 }
 
 

@@ -106,11 +106,16 @@ i32 UserAPI::sleep(u32 ticks) {
 }
 
 void UserAPI::exit() {
-    syscall(static_cast<u32>(SystemCall::EXIT));
+    syscall(static_cast<u32>(SystemCall::EXIT), 0);
     // Should not return, but just in case
     while (true) {
         asm volatile("hlt");
     }
+}
+
+void UserAPI::exit_with(i32 status) {
+    syscall(static_cast<u32>(SystemCall::EXIT), static_cast<u32>(status));
+    while (true) { asm volatile("hlt"); }
 }
 
 /**
@@ -383,6 +388,10 @@ i32 UserAPI::ps() {
 
 i32 UserAPI::kill(u32 pid) {
     return syscall(static_cast<u32>(SystemCall::KILL), pid);
+}
+
+i32 UserAPI::wait(u32 pid) {
+    return syscall(static_cast<u32>(SystemCall::WAIT), pid);
 }
 
 // Keyboard input

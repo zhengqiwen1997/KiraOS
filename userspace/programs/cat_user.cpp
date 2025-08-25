@@ -1,8 +1,9 @@
 #include "libkira.hpp"
+using namespace kira::usermode;
+
+constexpr u32 MAX_BUF_SIZE = 1024;
 
 int main() {
-    using namespace kira::usermode;
-    using namespace kira::system;
     char args[256];
     if (UserAPI::getspawnarg(args, sizeof(args)) != 0 || args[0] == '\0') {
         UserAPI::print_colored("cat: missing operand\n", Colors::RED_ON_BLUE);
@@ -20,7 +21,7 @@ int main() {
             i32 fd = UserAPI::open(token, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
             if (fd < 0) { UserAPI::print_colored("cat: cannot open ", Colors::RED_ON_BLUE); UserAPI::println(token); }
             else {
-                char buf[512]; i32 n = UserAPI::read_file(fd, buf, sizeof(buf) - 1);
+                char buf[MAX_BUF_SIZE]; i32 n = UserAPI::read_file(fd, buf, sizeof(buf) - 1);
                 if (n > 0) { buf[n] = '\0'; UserAPI::print(buf); }
                 UserAPI::close(fd);
             }
