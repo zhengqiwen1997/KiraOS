@@ -36,15 +36,16 @@ extern "C" {
 // Forward declaration removed: dispatcher will be handled by program-specific entrypoints
 
 extern "C" i32 syscall_handler(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3, u32 kernel_frame_esp) {
-    // Save the kernel frame ESP into current process so we can resume at iret
+    // Capture the original caller BEFORE handle_syscall potentially yields/switches
     auto& pm_for_save = ProcessManager::get_instance();
-    if (auto* p = pm_for_save.get_current_process()) {
-        p->savedSyscallEsp = kernel_frame_esp;
+    Process* caller = pm_for_save.get_current_process();
+    if (caller) {
+        caller->savedSyscallEsp = kernel_frame_esp;
     }
     i32 ret = handle_syscall(syscall_num, arg1, arg2, arg3);
-    // Store return value for resume path
-    if (auto* p = pm_for_save.get_current_process()) {
-        p->pendingSyscallReturn = static_cast<u32>(ret);
+    // Store return value for resume path on the ORIGINAL caller
+    if (caller) {
+        caller->pendingSyscallReturn = static_cast<u32>(ret);
     }
     return ret;
 }
@@ -283,8 +284,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                     child->parentPid = parent->pid;
                 }
             }
-            // Yield to allow the newly spawned child to run immediately (foreground-like)
-            pm.yield();
+            // Do not yield here; return to caller first so it can decide to wait
             return static_cast<i32>(pid);
         }
         

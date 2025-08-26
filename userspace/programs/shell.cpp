@@ -55,7 +55,7 @@ private:
         // for (u32 part = 0; part < 3; part++) { const char* s = parts[part]; for (u32 i = 0; s[i] != '\0' && pos < 63; i++) promptBuffer[pos++] = s[i]; }
         // UserAPI::print_colored(promptBuffer, Colors::GREEN_ON_BLUE);
         // Ensure prompt starts on a new line
-        UserAPI::printf("\nKiraOS:%s$ ", currentDirectory);
+        UserAPI::printf("KiraOS:%s$ ", currentDirectory);
     }
     bool read_command() {
         cmdLen = 0; commandBuffer[0] = '\0';
@@ -111,10 +111,8 @@ private:
                 UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
                 UserAPI::println(cmd);
             } else {
-                // Foreground execution: wait for completion before next prompt
-                
-                (void)UserAPI::wait((u32)pid);
-                UserAPI::printf("[spawn] pid=%u\n", (u32)pid);
+                // Foreground execution: announce and then wait for completion
+                (void)UserAPI::wait((u32)pid);                
             }
         }
         // Sync cached cwd from kernel after commands that may modify it

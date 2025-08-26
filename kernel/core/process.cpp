@@ -545,7 +545,6 @@ void ProcessManager::switch_process() {
                     currentProcess->savedSyscallEsp = 0; // clear after use
                     // Use pendingSyscallReturn as the value to be placed in EAX on return
                     u32 eax_ret = currentProcess->pendingSyscallReturn;
-                    kira::utils::k_printf("[PROC] resume pid=%u eax_ret=%d\n", currentProcess->pid, eax_ret);
                     asm volatile(
                         "push %0; push %1; call resume_from_syscall_stack; add $8, %%esp" :: "r"(eax_ret), "r"(esp_to_resume) : "memory");
                 } else {
@@ -788,10 +787,6 @@ void ProcessManager::terminate_current_process_with_status(i32 status) {
     currentProcess->state = ProcessState::TERMINATED;
     processCount--;
 
-    // Debug: announce termination and status
-    // Minimal debug: show exit pid and status
-    kira::utils::k_printf("[PROC] exit pid=%u status=%d\n", terminatedPid, status);
-
     // Clean up address space
     if (currentProcess->addressSpace) {
         auto& vm = VirtualMemoryManager::get_instance();
@@ -806,7 +801,6 @@ void ProcessManager::terminate_current_process_with_status(i32 status) {
             p->pendingSyscallReturn = static_cast<u32>(currentProcess->exitStatus);
             if (p->state == ProcessState::BLOCKED) {
                 p->waitingOnPid = 0;
-                kira::utils::k_printf("[PROC] wake pid=%u ret=%d\n", p->pid, p->pendingSyscallReturn);
                 p->state = ProcessState::READY;
                 add_to_ready_queue(p);
             }
