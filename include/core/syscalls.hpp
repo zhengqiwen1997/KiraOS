@@ -39,6 +39,7 @@ enum class SystemCall : u32 {
     SPAWN = 24,         // Spawn a builtin user program by id (temporary)
     GETCWD_PTR = 25,    // Get pointer to current process CWD (temporary)
     GETSPAWNARG = 26,   // Copy spawn argument string into user buffer
+    WAITID = 27,        // Wait for child by pid (0 = any); write status to user ptr
 };
 
 /**

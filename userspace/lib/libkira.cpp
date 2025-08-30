@@ -394,6 +394,10 @@ i32 UserAPI::wait(u32 pid) {
     return syscall(static_cast<u32>(SystemCall::WAIT), pid);
 }
 
+i32 UserAPI::waitid(u32 pid, i32* statusPtr) {
+    return syscall(static_cast<u32>(SystemCall::WAITID), pid, reinterpret_cast<u32>(statusPtr));
+}
+
 // Keyboard input
 i32 UserAPI::getch() {
     return syscall(static_cast<u32>(SystemCall::GETCH));

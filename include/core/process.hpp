@@ -12,6 +12,9 @@ namespace kira::system {
 
 using namespace kira::sync;
 
+// Special sentinel for "wait any child"
+constexpr u32 WAIT_ANY_CHILD = 0xFFFFFFFFu;
+
 // Enhanced process states
 enum class ProcessState : u8 {
     READY = 0,          // Ready to run
@@ -90,12 +93,21 @@ struct Process {
 
     // Waiting pid for WAIT syscall (0 = none)
     u32 waitingOnPid;
+    // If non-zero, WAITID will write exit status here upon wake
+    u32 waitStatusUserPtr;
+
+    // Pending completed child info to handle races (ANY waits)
+    u32 pendingChildPid;
+    i32 pendingChildStatus;
 
     // Parent process ID (0 if no parent)
     u32 parentPid;
 
     // Exit status code set at termination (valid when state == TERMINATED)
     i32 exitStatus;
+
+    // Whether this child has already been reported to a waiter (WAIT/WAITID)
+    bool hasBeenWaited;
 } __attribute__((packed));
 
 // Process function type
@@ -208,6 +220,8 @@ public:
      * @brief Get process by PID
      */
     Process* get_process(u32 pid);
+    /** Find a terminated child of parentPid, or nullptr if none */
+    Process* find_terminated_child(u32 parentPid);
     
     /**
      * @brief Display scheduler statistics

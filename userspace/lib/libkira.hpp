@@ -200,6 +200,8 @@ public:
 
     /** Wait for a child to exit; returns exit status or negative on error */
     static i32 wait(u32 pid);
+    /** Wait by id (pid or any=0) and write status to user pointer; returns pid or negative */
+    static i32 waitid(u32 pid, i32* statusPtr);
 
     // Keyboard input
     /** Get one character (blocking). Returns ASCII code (0..255). */

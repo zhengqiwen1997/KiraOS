@@ -86,6 +86,10 @@ ProcessManager::ProcessManager() {
         processes[i].waitingOnPid = 0;
         processes[i].parentPid = 0;
         processes[i].exitStatus = 0;
+        processes[i].waitStatusUserPtr = 0;
+        processes[i].pendingChildPid = 0;
+        processes[i].pendingChildStatus = 0;
+        processes[i].hasBeenWaited = false;
     }
 }
 
@@ -284,16 +288,34 @@ bool ProcessManager::terminate_process(u32 pid) {
     process->state = ProcessState::TERMINATED;
     processCount--;
 
-    // Wake any parent waiting on this pid (and ensure return value is set)
+    // Wake any waiting parent: explicit pid or ANY-child (waitingOnPid==0 and parentPid matches)
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
-        if (processes[i].pid != 0 && processes[i].waitingOnPid == terminatedPid) {
-            // Propagate child's exit status regardless of parent state
-            processes[i].pendingSyscallReturn = static_cast<u32>(process->exitStatus);
-            if (processes[i].state == ProcessState::BLOCKED) {
-                processes[i].waitingOnPid = 0;
-                processes[i].state = ProcessState::READY;
-                add_to_ready_queue(&processes[i]);
-            }
+        Process* p = &processes[i];
+        if (p->pid == 0) continue;
+        bool isExplicitWait = (p->waitingOnPid == terminatedPid);
+        bool isAnyChildWait = (p->waitingOnPid == 0 && p->pid == process->parentPid);
+        if (!(isExplicitWait || isAnyChildWait)) continue;
+
+        // Default WAIT: return exit status in EAX
+        p->pendingSyscallReturn = static_cast<u32>(process->exitStatus);
+
+        // WAITID: write status to user ptr and return child pid
+        if (p->waitStatusUserPtr != 0) {
+            auto& vm = VirtualMemoryManager::get_instance();
+            AddressSpace* original = vm.get_current_address_space();
+            if (p->addressSpace) { vm.switch_address_space(p->addressSpace); }
+            i32* dst = reinterpret_cast<i32*>(p->waitStatusUserPtr);
+            *dst = process->exitStatus;
+            if (original) { vm.switch_address_space(original); }
+            p->pendingSyscallReturn = static_cast<u32>(terminatedPid);
+            p->waitStatusUserPtr = 0;
+            kira::utils::k_printf("[WAITID] wake parent=%u child=%u status=%d\n", p->pid, terminatedPid, process->exitStatus);
+        }
+
+        if (p->state == ProcessState::BLOCKED) {
+            p->waitingOnPid = 0;
+            p->state = ProcessState::READY;
+            add_to_ready_queue(p);
         }
     }
     
@@ -376,6 +398,18 @@ void ProcessManager::schedule() {
 Process* ProcessManager::get_process(u32 pid) {
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid == pid) {
+            return &processes[i];
+        }
+    }
+    return nullptr;
+}
+
+Process* ProcessManager::find_terminated_child(u32 parentPid) {
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid != 0 &&
+            processes[i].parentPid == parentPid &&
+            processes[i].state == ProcessState::TERMINATED &&
+            !processes[i].hasBeenWaited) {
             return &processes[i];
         }
     }
@@ -782,6 +816,7 @@ void ProcessManager::terminate_current_process() {
 
 void ProcessManager::terminate_current_process_with_status(i32 status) {
     if (!currentProcess) return;
+    kira::utils::k_printf("[WAITID] exit child=%u parent=%u status=%d\n", currentProcess->pid, currentProcess->parentPid, status);
     u32 terminatedPid = currentProcess->pid;
     currentProcess->exitStatus = status;
     currentProcess->state = ProcessState::TERMINATED;
@@ -794,16 +829,44 @@ void ProcessManager::terminate_current_process_with_status(i32 status) {
         currentProcess->addressSpace = nullptr;
     }
 
-    // Wake any process waiting on this pid (parent or others) and always set return value
+    // Wake any waiting parent: explicit pid match OR any-child (waitingOnPid==0 and parentPid matches)
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
         Process* p = &processes[i];
-        if (p->pid != 0 && p->waitingOnPid == terminatedPid) {
+        if (p->pid == 0) continue;
+        bool isExplicitWait = (p->waitingOnPid == terminatedPid);
+        bool isAnyChildWait = (p->waitingOnPid == WAIT_ANY_CHILD && p->pid == currentProcess->parentPid);
+        if (!(isExplicitWait || isAnyChildWait)) continue;
+
+        // Default: WAIT returns exit status in EAX (if already blocked). If not blocked yet, stash
+        if (p->state == ProcessState::BLOCKED) {
             p->pendingSyscallReturn = static_cast<u32>(currentProcess->exitStatus);
-            if (p->state == ProcessState::BLOCKED) {
-                p->waitingOnPid = 0;
-                p->state = ProcessState::READY;
-                add_to_ready_queue(p);
-            }
+        } else {
+            p->pendingChildPid = terminatedPid;
+            p->pendingChildStatus = currentProcess->exitStatus;
+        }
+
+        // If WAITID provided a user status pointer, write status there and return child pid in EAX
+        if (p->waitStatusUserPtr != 0) {
+            auto& vm = VirtualMemoryManager::get_instance();
+            AddressSpace* original = vm.get_current_address_space();
+            if (p->addressSpace) { vm.switch_address_space(p->addressSpace); }
+            i32* dst = reinterpret_cast<i32*>(p->waitStatusUserPtr);
+            *dst = currentProcess->exitStatus;
+            if (original) { vm.switch_address_space(original); }
+            p->pendingSyscallReturn = static_cast<u32>(terminatedPid);
+            p->waitStatusUserPtr = 0;
+            currentProcess->hasBeenWaited = true;
+            kira::utils::k_printf("[WAITID] wake parent=%u child=%u status=%d\n", p->pid, terminatedPid, currentProcess->exitStatus);
+        }
+        else {
+            // Simple WAIT also consumes this child
+            currentProcess->hasBeenWaited = true;
+        }
+
+        if (p->state == ProcessState::BLOCKED) {
+            p->waitingOnPid = 0;
+            p->state = ProcessState::READY;
+            add_to_ready_queue(p);
         }
     }
     currentProcess = nullptr;
