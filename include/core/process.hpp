@@ -95,13 +95,12 @@ struct Process {
     u32 waitingOnPid;
     // If non-zero, WAITID will write exit status here upon wake
     u32 waitStatusUserPtr;
+    // Parent process ID (0 if no parent)
+    u32 parentPid;
 
     // Pending completed child info to handle races (ANY waits)
     u32 pendingChildPid;
     i32 pendingChildStatus;
-
-    // Parent process ID (0 if no parent)
-    u32 parentPid;
 
     // Exit status code set at termination (valid when state == TERMINATED)
     i32 exitStatus;
@@ -259,8 +258,6 @@ public:
      */
     void sleep_current_process(u32 ticks);
     
-
-    
     /**
      * @brief Enable timer-driven scheduling
      */
@@ -316,6 +313,8 @@ public:
      */
     u32 get_process_priority(u32 pid) const;
 
+    // Minimal fork: duplicate PCB, copy stacks, share address space (refcount TBD)
+    u32 fork_current_process();
 private:
     /**
      * @brief Add process to ready queue

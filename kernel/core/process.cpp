@@ -28,6 +28,32 @@ bool schedulingDisabled = false;
 u8 ProcessManager::kernelStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
 u8 ProcessManager::userStacks[ProcessManager::MAX_PROCESSES][ProcessManager::STACK_SIZE];
 static ProcessManager* gProcessManager = nullptr;
+// Local helpers to keep fork logic concise and avoid scattered zeroing
+static inline void reset_pcb(Process* pcb) {
+    // Zero the PCB slot before reuse; mark as TERMINATED until fully initialized
+    memset(pcb, 0, sizeof(*pcb));
+    pcb->state = ProcessState::TERMINATED;
+}
+
+static inline void copy_fixed_string(char* dst, const char* src, u32 capacity) {
+    if (!dst || !src || capacity == 0) return;
+    u32 i = 0;
+    for (; i + 1 < capacity && src[i] != '\0'; i++) dst[i] = src[i];
+    dst[i] = '\0';
+}
+
+static inline void clone_basic_metadata(Process* child, const Process* parent) {
+    // Name and scheduling basics
+    strcpy_s(child->name, parent->name, sizeof(child->name) - 1);
+    child->priority = parent->priority;
+    child->timeSlice = parent->timeSlice;
+    // User-mode flags
+    child->isUserMode = true;
+    // Copy shell-visible context
+    copy_fixed_string(child->currentWorkingDirectory, parent->currentWorkingDirectory, sizeof(child->currentWorkingDirectory));
+    copy_fixed_string(child->spawnArg, parent->spawnArg, sizeof(child->spawnArg));
+}
+
 
 void ProcessManager::initialize() {
     if (!gProcessManager) {
@@ -309,7 +335,6 @@ bool ProcessManager::terminate_process(u32 pid) {
             if (original) { vm.switch_address_space(original); }
             p->pendingSyscallReturn = static_cast<u32>(terminatedPid);
             p->waitStatusUserPtr = 0;
-            kira::utils::k_printf("[WAITID] wake parent=%u child=%u status=%d\n", p->pid, terminatedPid, process->exitStatus);
         }
 
         if (p->state == ProcessState::BLOCKED) {
@@ -402,6 +427,156 @@ Process* ProcessManager::get_process(u32 pid) {
         }
     }
     return nullptr;
+}
+
+u32 ProcessManager::fork_current_process() {
+    Process* parent = currentProcess;
+    if (!parent) return 0;
+
+    // --- Constants to avoid magic numbers ---
+    constexpr u16 USER_CS = 0x1B;   // Ring 3 code selector
+    constexpr u16 USER_DS = 0x23;   // Ring 3 data selector
+    constexpr u32 SEG_PUSHA_SIZE = 48; // [GS,FS,ES,DS] + pusha (8 regs)
+    constexpr u32 IRET_SIZE = 20;       // EIP,CS,EFLAGS,USERESP,SS
+    constexpr u32 FRAME_SIZE = SEG_PUSHA_SIZE + IRET_SIZE;
+    constexpr u32 PUSHA_EAX_OFFSET = 44;  // Offset of EAX within pusha area
+    constexpr u32 IRET_EIP_OFF = 0;
+    constexpr u32 IRET_CS_OFF = 4;
+    constexpr u32 IRET_EFLAGS_OFF = 8;
+    constexpr u32 IRET_USERESP_OFF = 12;
+    constexpr u32 IRET_SS_OFF = 16;
+    constexpr u32 COPY_CHUNK = 256;      // Small chunk to limit kernel stack usage
+    constexpr u32 CLONE_TEXT_WINDOW_BYTES = 8 * 1024 * 1024;   // 8MB text/data window
+    constexpr u32 CLONE_STACK_WINDOW_BYTES = 256 * 1024;       // 256KB of top-of-stack
+
+    auto align_down = [](u32 value, u32 align) -> u32 { return value & ~(align - 1); };
+    auto align_up   = [](u32 value, u32 align) -> u32 { return (value + align - 1) & ~(align - 1); };
+
+    // Find a free PCB slot
+    Process* child = nullptr;
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].state == ProcessState::TERMINATED || processes[i].pid == 0) {
+            child = &processes[i];
+            break;
+        }
+    }
+    if (!child) return 0;
+
+    // Initialize child metadata (reset slot, then fill)
+    reset_pcb(child);
+    child->pid = nextPid++;
+    clone_basic_metadata(child, parent);
+    child->state = ProcessState::READY;
+    child->creationTime = parent->creationTime;
+    child->userFunction = parent->userFunction;
+    child->hasStarted = true; // will resume from saved frame
+    child->parentPid = parent->pid;
+
+    // Allocate kernel/user stacks backing memory
+    if (!allocate_process_stacks(child)) {
+        child->pid = 0;
+        return 0;
+    }
+    child->context = {}; // zero register context
+    child->context.kernelEsp = child->kernelStackBase + child->kernelStackSize - 4;
+    child->context.eflags = 0x202;
+    child->context.ds = USER_DS; child->context.es = USER_DS; child->context.fs = USER_DS; child->context.gs = USER_DS;
+
+    // Create a new user address space for the child and clone parent's mappings in relevant windows
+    child->addressSpace = nullptr;
+    if (parent->addressSpace) {
+        auto& vm = VirtualMemoryManager::get_instance();
+        AddressSpace* childAS = vm.create_user_address_space();
+        if (!childAS) { child->pid = 0; return 0; }
+
+        // Map identity kernel region (1MB..8MB), VGA, and console (match exec path)
+        const u32 KERNEL_IDENTITY_START = KERNEL_CODE_START; // 1MB
+        const u32 KERNEL_IDENTITY_END   = 0x00800000;        // 8MB
+        for (u32 addr = KERNEL_IDENTITY_START; addr < KERNEL_IDENTITY_END; addr += PAGE_SIZE) {
+            childAS->map_page(addr, addr, true, true);
+        }
+        childAS->map_page(VGA_BUFFER_ADDR, VGA_BUFFER_ADDR, true, true);
+        u32 consoleAddr = reinterpret_cast<u32>(&kira::kernel::console);
+        u32 consolePage = consoleAddr & PAGE_MASK;
+        childAS->map_page(consolePage, consolePage, true, true);
+        for (u32 off = 0; off < 0x10000; off += PAGE_SIZE) { childAS->map_page(consolePage + off, consolePage + off, true, true); }
+
+        auto& mm = MemoryManager::get_instance();
+        auto clone_window = [&](u32 start, u32 end) {
+            auto& vmm = VirtualMemoryManager::get_instance();
+            // Use small buffer to avoid overflowing the 4KB kernel stack
+            u8 smallBuf[COPY_CHUNK];
+            for (u32 va = start; va < end; va += PAGE_SIZE) {
+                if (!parent->addressSpace->is_mapped(va)) continue;
+                void* dstPhys = mm.allocate_physical_page();
+                if (!dstPhys) break;
+                if (!childAS->map_page(va, reinterpret_cast<u32>(dstPhys), true, true)) { mm.free_physical_page(dstPhys); break; }
+                // Copy a page in small chunks while switching AS minimally
+                for (u32 off = 0; off < PAGE_SIZE; off += COPY_CHUNK) {
+                    AddressSpace* original = vmm.get_current_address_space();
+                    vmm.switch_address_space(parent->addressSpace);
+                    memcpy(smallBuf, reinterpret_cast<const void*>(va + off), COPY_CHUNK);
+                    vmm.switch_address_space(childAS);
+                    memcpy(reinterpret_cast<void*>(va + off), smallBuf, COPY_CHUNK);
+                    if (original) vmm.switch_address_space(original);
+                }
+            }
+        };
+        // Clone a user text/data window and the top of stack window
+        const u32 textWindowStart = align_down(USER_TEXT_START, CLONE_TEXT_WINDOW_BYTES);
+        const u32 textWindowEnd   = textWindowStart + CLONE_TEXT_WINDOW_BYTES;
+        const u32 stackWindowEnd  = USER_STACK_TOP;
+        const u32 stackWindowStart= align_down(stackWindowEnd - CLONE_STACK_WINDOW_BYTES, PAGE_SIZE);
+        clone_window(textWindowStart, textWindowEnd);
+        clone_window(stackWindowStart, stackWindowEnd);
+
+        child->addressSpace = childAS;
+    }
+
+    // Synthesize a saved syscall frame for the child so it resumes after the INT 0x80 with EAX=0
+    if (parent->savedSyscallEsp != 0) {
+
+        // Place frame at top of child's kernel stack
+        u32 childTop = child->kernelStackBase + child->kernelStackSize;
+        u32 frameEsp = childTop - FRAME_SIZE;
+
+        // Copy parent's saved frame bytes (segments+pusha+iret) verbatim
+        const u8* parentFrame = reinterpret_cast<const u8*>(parent->savedSyscallEsp);
+        u8* childFrame = reinterpret_cast<u8*>(frameEsp);
+        for (u32 i = 0; i < FRAME_SIZE; i++) {
+            childFrame[i] = parentFrame[i];
+        }
+        // Overwrite EAX in pusha to 0 for the child return value
+        *reinterpret_cast<u32*>(frameEsp + PUSHA_EAX_OFFSET) = 0;
+        // Ensure user selectors in iret frame (defensive)
+        *reinterpret_cast<u32*>(frameEsp + SEG_PUSHA_SIZE + IRET_CS_OFF) = USER_CS; // CS
+        *reinterpret_cast<u32*>(frameEsp + SEG_PUSHA_SIZE + IRET_SS_OFF) = USER_DS; // SS
+
+        child->savedSyscallEsp = frameEsp;
+        child->context.kernelEsp = childTop - 4; // ESP0 for TSS
+        child->pendingSyscallReturn = 0;
+        // Also set context fields for fallback first-time entry path to parent's values
+        auto& vmm_rd = VirtualMemoryManager::get_instance();
+        AddressSpace* originalAS = vmm_rd.get_current_address_space();
+        vmm_rd.switch_address_space(parent->addressSpace);
+        u32 parentEip = *reinterpret_cast<u32*>(parent->savedSyscallEsp + SEG_PUSHA_SIZE + IRET_EIP_OFF);
+        u32 parentUserEsp = *reinterpret_cast<u32*>(parent->savedSyscallEsp + SEG_PUSHA_SIZE + IRET_USERESP_OFF);
+        if (originalAS) vmm_rd.switch_address_space(originalAS);
+        child->context.eip = parentEip;
+        child->context.userEsp = parentUserEsp;
+        child->context.eax = 0;
+    } else {
+        // Fallback: start as first-time user entry (less precise return semantics)
+        child->hasStarted = false;
+        child->context.eip = parent->context.eip;
+        child->context.userEsp = parent->context.userEsp;
+        child->context.eax = 0;
+    }
+
+    // Add to ready queue
+    add_to_ready_queue(child);
+    processCount++;
+    return child->pid;
 }
 
 Process* ProcessManager::find_terminated_child(u32 parentPid) {
@@ -572,7 +747,6 @@ void ProcessManager::switch_process() {
                     auto& vmManager = VirtualMemoryManager::get_instance();
                     vmManager.switch_address_space(currentProcess->addressSpace);
                 }
-                
                 // If we have a saved syscall ESP, resume from there; otherwise, start anew
                 if (currentProcess->savedSyscallEsp != 0) {
                     u32 esp_to_resume = currentProcess->savedSyscallEsp;
@@ -816,7 +990,6 @@ void ProcessManager::terminate_current_process() {
 
 void ProcessManager::terminate_current_process_with_status(i32 status) {
     if (!currentProcess) return;
-    kira::utils::k_printf("[WAITID] exit child=%u parent=%u status=%d\n", currentProcess->pid, currentProcess->parentPid, status);
     u32 terminatedPid = currentProcess->pid;
     currentProcess->exitStatus = status;
     currentProcess->state = ProcessState::TERMINATED;
@@ -856,7 +1029,6 @@ void ProcessManager::terminate_current_process_with_status(i32 status) {
             p->pendingSyscallReturn = static_cast<u32>(terminatedPid);
             p->waitStatusUserPtr = 0;
             currentProcess->hasBeenWaited = true;
-            kira::utils::k_printf("[WAITID] wake parent=%u child=%u status=%d\n", p->pid, terminatedPid, currentProcess->exitStatus);
         }
         else {
             // Simple WAIT also consumes this child

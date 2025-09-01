@@ -58,6 +58,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
         case SystemCall::EXIT:
             // Terminate current process and switch to another if available.
             // arg1 optionally carries exit status; default 0
+            kira::utils::k_printf("[EXIT] exiting with status=%d\n", static_cast<i32>(arg1));
             pm.terminate_current_process_with_status(static_cast<i32>(arg1));
             // If we reach here, there was no immediate process to run.
             // Enter idle loop; timer IRQ may start another process later.
@@ -286,6 +287,16 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             }
             // Do not yield here; return to caller first so it can decide to wait
             return static_cast<i32>(pid);
+        }
+        
+        case SystemCall::FORK: {
+            // Duplicate current process; parent returns child's pid, child returns 0
+            i32 childPid = static_cast<i32>(pm.fork_current_process());
+            // Set the parent's pending return to childPid (child context gets eax=0)
+            if (auto* p = pm.get_current_process()) {
+                p->pendingSyscallReturn = static_cast<u32>(childPid);
+            }
+            return childPid;
         }
         
         // File system operations

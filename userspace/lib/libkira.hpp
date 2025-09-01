@@ -202,13 +202,15 @@ public:
     static i32 wait(u32 pid);
     /** Wait by id (pid or any=0) and write status to user pointer; returns pid or negative */
     static i32 waitid(u32 pid, i32* statusPtr);
-
+    // Fork current process: parent returns child pid, child returns 0
+    static i32 fork();
+    
     // Keyboard input
     /** Get one character (blocking). Returns ASCII code (0..255). */
     static i32 getch();
     /** Try get one character (non-blocking). Returns 0 if none. */
     static i32 trygetch();
-
+    
     // Process utilities (temporary)
     /** Spawn a builtin program by id (0=ls,1=cat,2=mkdir,3=rmdir) */
     static i32 spawn(u32 programId, u32 arg1 = 0);
@@ -217,13 +219,13 @@ public:
     // New cwd syscalls
     static i32 chdir(const char* absPath); // absolute only for now
     static i32 getcwd(char* buffer, u32 size);
-
+    
     // Exec ELF binary (absolute path) with optional single argument
     static i32 exec(const char* absPath, const char* arg0 = nullptr);
-
+    
     // Human-readable message for syscall result codes
     static const char* strerror(i32 code);
-
+    
     // Get spawn argument string passed by parent (via EXEC bridge)
     static i32 getspawnarg(char* buffer, u32 size);
 
