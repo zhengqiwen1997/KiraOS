@@ -451,8 +451,11 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             // Must be a child
             if (target->parentPid != cur->pid) return static_cast<i32>(SyscallResult::PERMISSION_DENIED);
             if (target->state == ProcessState::TERMINATED) {
-                // If already terminated, return its exit status immediately
-                return target->exitStatus;
+                // If already terminated, return its exit status and reap
+                i32 st = target->exitStatus;
+                target->hasBeenWaited = true;
+                pm.reap_child(target);
+                return st;
             }
             // Block until it terminates; switch away immediately using helper
             cur->waitingOnPid = wantPid;
@@ -479,11 +482,14 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                         auto& vm = VirtualMemoryManager::get_instance();
                         AddressSpace* original = vm.get_current_address_space();
                         if (cur->addressSpace) { vm.switch_address_space(cur->addressSpace); }
-                        *userStatus = p->exitStatus;
+                        const i32 st = p->exitStatus;
+                        const u32 retPid = p->pid;
+                        *userStatus = st;
                         if (original) { vm.switch_address_space(original); }
                         p->hasBeenWaited = true;
                         kira::utils::k_printf("[WAITID] fast parent=%u child=%u status=%d\n", cur->pid, p->pid, p->exitStatus);
-                        return static_cast<i32>(p->pid);
+                        pm.reap_child(p);
+                        return static_cast<i32>(retPid);
                     }
                 }
                 // If parent has a stashed completed child (completed before block), consume it
@@ -515,11 +521,14 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                     auto& vm = VirtualMemoryManager::get_instance();
                     AddressSpace* original = vm.get_current_address_space();
                     if (cur->addressSpace) { vm.switch_address_space(cur->addressSpace); }
-                    *userStatus = target->exitStatus;
+                    const i32 st = target->exitStatus;
+                    const u32 retPid = target->pid;
+                    *userStatus = st;
                     if (original) { vm.switch_address_space(original); }
                     target->hasBeenWaited = true;
-                    kira::utils::k_printf("[WAITID] fast parent=%u child=%u status=%d\n", cur->pid, target->pid, target->exitStatus);
-                    return static_cast<i32>(target->pid);
+                    kira::utils::k_printf("[WAITID] fast parent=%u child=%u status=%d\n", cur->pid, retPid, st);
+                    pm.reap_child(target);
+                    return static_cast<i32>(retPid);
                 }
                 kira::utils::k_printf("[WAITID] block parent=%u on pid=%u ptr=%x\n", cur->pid, wantPid, (u32)userStatus);
                 cur->waitingOnPid = wantPid;

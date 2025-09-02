@@ -35,6 +35,15 @@ static inline void reset_pcb(Process* pcb) {
     pcb->state = ProcessState::TERMINATED;
 }
 
+// File-scope constants
+namespace {
+    constexpr u32 DEFAULT_EFLAGS = (1u << 9) | (1u << 1); // IF=1, reserved bit 1=1
+    // Clone windows (tunable)
+    constexpr u32 CLONE_TEXT_WINDOW_BYTES = 8 * 1024 * 1024;   // 8MB text/data
+    constexpr u32 CLONE_STACK_WINDOW_BYTES = 256 * 1024;       // 256KB stack top
+    constexpr u32 COPY_CHUNK = 256;                            // chunked copy size
+}
+
 static inline void copy_fixed_string(char* dst, const char* src, u32 capacity) {
     if (!dst || !src || capacity == 0) return;
     u32 i = 0;
@@ -479,7 +488,7 @@ u32 ProcessManager::fork_current_process() {
     }
     child->context = {}; // zero register context
     child->context.kernelEsp = child->kernelStackBase + child->kernelStackSize - 4;
-    child->context.eflags = 0x202;
+    child->context.eflags = DEFAULT_EFLAGS;
     child->context.ds = USER_DS; child->context.es = USER_DS; child->context.fs = USER_DS; child->context.gs = USER_DS;
 
     // Create a new user address space for the child and clone parent's mappings in relevant windows
@@ -1212,6 +1221,21 @@ bool ProcessManager::deliver_input_char(char ch) {
     p->state = ProcessState::READY;
     add_to_ready_queue(p);
     return true;
+}
+
+void ProcessManager::reap_child(Process* child) {
+    if (!child) return;
+    // Only reap if it's truly terminated and already consumed by a waiter
+    if (child->state != ProcessState::TERMINATED) return;
+    if (!child->hasBeenWaited) return;
+    // Free its address space if somehow still present
+    if (child->addressSpace) {
+        auto& vm = VirtualMemoryManager::get_instance();
+        vm.destroy_user_address_space(child->addressSpace);
+        child->addressSpace = nullptr;
+    }
+    // Mark PCB slot free
+    child->pid = 0;
 }
 
 bool ProcessManager::set_process_priority(u32 pid, u32 priority) {

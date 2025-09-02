@@ -297,6 +297,9 @@ public:
     void block_current_process_for_input();
     // Deliver one input character to a waiting process (if any). Returns true if delivered
     bool deliver_input_char(char ch);
+
+    /** Reap a terminated child process: free its PCB slot (pid->0) after parent collected status */
+    void reap_child(Process* child);
     
     /**
      * @brief Set process priority
