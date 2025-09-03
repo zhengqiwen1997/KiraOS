@@ -4,6 +4,9 @@
 #include "core/io.hpp"
 #include "core/utils.hpp"
 #include "debug/serial_debugger.hpp"
+#include "core/process.hpp"
+#include "memory/virtual_memory.hpp"
+#include "memory/memory_manager.hpp"
 
 // Forward declaration to access global console from kernel namespace
 namespace kira::kernel {
@@ -36,15 +39,7 @@ void Exceptions::initialize() {
 }
 
 void Exceptions::default_handler(ExceptionFrame* frame) {
-    // Log exception to console
-    char msg[80];
-    const char* exc_name = get_exception_name(frame->interruptNumber);
-    
-    // Format: "EXCEPTION: [name] (INT xx) at EIP 0xXXXXXXXX"
-    format_exception_message(msg, exc_name, frame->interruptNumber, frame->eip);
-    
-    kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
-    kira::kernel::console.refresh_display();
+    // Defer all console logging to specific handlers so they can decide behavior
     
     // Handle exceptions based on severity and type
     handle_exception_by_type(frame);
@@ -101,11 +96,11 @@ void Exceptions::handle_exception_by_type(ExceptionFrame* frame) {
             break;
         }
             
-        case INT_PAGE_FAULT:          // Interrupt 14 - Invalid memory page
-            kira::kernel::console.add_message("CRITICAL: Page Fault!", VGA_RED_ON_BLUE);
-            page_fault_handler(frame);
-            halt_system("Page Fault - Invalid memory access");
-            break;
+        case INT_PAGE_FAULT: {        // Interrupt 14 - Invalid memory page
+            // Do not print to console here; the handler will decide whether to log/halt
+            page_fault_handler(frame); // handler halts on failure; returns on success
+            return; // Do not halt here if handler resolved the fault
+        }
             
         case INT_STACK_FAULT:         // Interrupt 12 - Stack segment fault
             kira::kernel::console.add_message("CRITICAL: Stack Fault!", VGA_RED_ON_BLUE);
@@ -240,7 +235,7 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
     u32 faultAddr;
     asm volatile("mov %%cr2, %0" : "=r"(faultAddr));
     
-    // Add serial debugging for detailed fault information
+    // Serial-only debug for all faults; console output only if we decide to halt
     kira::debug::SerialDebugger::println("=== PAGE FAULT DEBUG ===");
     kira::debug::SerialDebugger::print("Fault Address (CR2): ");
     kira::debug::SerialDebugger::print_hex(faultAddr);
@@ -252,24 +247,66 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
     kira::debug::SerialDebugger::print_hex(frame->errorCode);
     kira::debug::SerialDebugger::println("");
     
+    // Handle Copy-on-Write on user write to present read-only page (error code: P=1, W=1, U=1)
+    if ((frame->errorCode & 0x7) == 0x7) {
+        auto& pm = kira::system::ProcessManager::get_instance();
+        kira::system::Process* cur = pm.get_current_process();
+        if (cur && cur->addressSpace) {
+            auto& mm = kira::system::MemoryManager::get_instance();
+            auto& vm = kira::system::VirtualMemoryManager::get_instance();
+            // Faulting page aligned VA and old physical backing
+            u32 va = faultAddr & kira::system::PAGE_MASK;
+            u32 oldPhys = cur->addressSpace->get_physical_address(va) & kira::system::PAGE_MASK;
+            if (oldPhys != 0) {
+                // Fast path: if refcount indicates uniquely owned (0 extra refs), make writable
+                // Refcount semantics: 0 => single owner; N>0 => shared by N+1 owners
+                if (mm.get_page_ref(oldPhys) == 0) {
+                    kira::debug::SerialDebugger::print("CoW fast-path (unique) pid=");
+                    kira::debug::SerialDebugger::print_hex(cur->pid);
+                    kira::debug::SerialDebugger::print(" va="); kira::debug::SerialDebugger::print_hex(va);
+                    kira::debug::SerialDebugger::print(" oldPhys="); kira::debug::SerialDebugger::print_hex(oldPhys);
+                    kira::debug::SerialDebugger::println("");
+                    cur->addressSpace->set_page_writable(va, true);
+                    return;
+                }
+                void* newPage = mm.allocate_physical_page();
+                if (newPage) {
+                    // Use a user-space scratch VA unlikely to be mapped (heap base)
+                    u32 scratchNew = kira::system::USER_HEAP_START; // 0x40000000
+                    cur->addressSpace->unmap_page(scratchNew);
+                    if (!cur->addressSpace->map_page(scratchNew, reinterpret_cast<u32>(newPage), true, true)) {
+                        mm.free_physical_page(newPage);
+                    } else {
+                        kira::debug::SerialDebugger::print("CoW copy pid=");
+                        kira::debug::SerialDebugger::print_hex(cur->pid);
+                        kira::debug::SerialDebugger::print(" va="); kira::debug::SerialDebugger::print_hex(va);
+                        kira::debug::SerialDebugger::print(" oldPhys="); kira::debug::SerialDebugger::print_hex(oldPhys);
+                        kira::debug::SerialDebugger::print(" newPhys="); kira::debug::SerialDebugger::print_hex(reinterpret_cast<u32>(newPage));
+                        kira::debug::SerialDebugger::print(" refBefore="); kira::debug::SerialDebugger::print_hex(mm.get_page_ref(oldPhys));
+                        kira::debug::SerialDebugger::println("");
+                        vm.switch_address_space(cur->addressSpace);
+                        // Copy content from old VA (RO) into the new physical page via scratchNew
+                        memcpy(reinterpret_cast<void*>(scratchNew), reinterpret_cast<const void*>(va), kira::system::PAGE_SIZE);
+                        // Now remap faulting VA to the new writable page; no second copy needed
+                        cur->addressSpace->map_page(va, reinterpret_cast<u32>(newPage), true, true);
+                        // Remove scratch mapping and drop old refcount
+                        cur->addressSpace->unmap_page(scratchNew);
+                        mm.decrement_page_ref(oldPhys);
+                        kira::debug::SerialDebugger::print("CoW done pid=");
+                        kira::debug::SerialDebugger::print_hex(cur->pid);
+                        kira::debug::SerialDebugger::print(" va="); kira::debug::SerialDebugger::print_hex(va);
+                        kira::debug::SerialDebugger::print(" oldRefAfter="); kira::debug::SerialDebugger::print_hex(mm.get_page_ref(oldPhys));
+                        kira::debug::SerialDebugger::println("");
+                        return; // Resume execution
+                    }
+                }
+            }
+        }
+    }
+    // Non-CoW or failed CoW: print to console and halt
     char msg[512];
     format_page_fault_message(msg, faultAddr, frame->errorCode);
     kira::kernel::console.add_message(msg, VGA_RED_ON_BLUE);
-    
-    // Decode error code for additional info
-    const char* accessType = (frame->errorCode & 0x2) ? "write" : "read";
-    const char* privilege = (frame->errorCode & 0x4) ? "user" : "kernel";
-    const char* present = (frame->errorCode & 0x1) ? "protection" : "not present";
-    
-    char detail[256];
-    strcpy(detail, "Page fault details: ");
-    strcat(detail, accessType);
-    strcat(detail, " access, ");
-    strcat(detail, privilege);
-    strcat(detail, " mode, ");
-    strcat(detail, present);
-    kira::kernel::console.add_message(detail, VGA_YELLOW_ON_BLUE);
-    
     halt_system("Page Fault");
 }
 

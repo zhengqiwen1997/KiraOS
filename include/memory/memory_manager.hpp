@@ -19,6 +19,11 @@ public:
     void* allocate_physical_page();
     void free_physical_page(void* page);
 
+    // Simple per-physical-page refcount (for CoW tracking)
+    void increment_page_ref(u32 physPageAddr);
+    void decrement_page_ref(u32 physPageAddr);
+    u32 get_page_ref(u32 physPageAddr) const;
+
     // Add getter methods for debugging
     u32 get_free_page_count() const { return freePageCount; }
     u32 get_max_free_pages() const { return maxFreePages; }
@@ -40,6 +45,13 @@ private:
     u32* freePageStack;      // Array of free page addresses
     u32 freePageCount;       // Number of free pages in stack
     u32 maxFreePages;        // Maximum pages we can track
+
+    // CoW refcount table (naive fixed-size)
+    static constexpr u32 MAX_REF_ENTRIES = 4096;
+    struct RefEntry { u32 phys; u32 count; };
+    RefEntry refTable[MAX_REF_ENTRIES] = {};
+    u32 find_ref_entry(u32 phys) const;
+    u32 alloc_ref_entry(u32 phys);
 };
 
 } // namespace kira::system 

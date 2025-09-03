@@ -510,34 +510,37 @@ u32 ProcessManager::fork_current_process() {
         childAS->map_page(consolePage, consolePage, true, true);
         for (u32 off = 0; off < 0x10000; off += PAGE_SIZE) { childAS->map_page(consolePage + off, consolePage + off, true, true); }
 
-        auto& mm = MemoryManager::get_instance();
         auto clone_window = [&](u32 start, u32 end) {
-            auto& vmm = VirtualMemoryManager::get_instance();
-            // Use small buffer to avoid overflowing the 4KB kernel stack
-            u8 smallBuf[COPY_CHUNK];
             for (u32 va = start; va < end; va += PAGE_SIZE) {
                 if (!parent->addressSpace->is_mapped(va)) continue;
-                void* dstPhys = mm.allocate_physical_page();
-                if (!dstPhys) break;
-                if (!childAS->map_page(va, reinterpret_cast<u32>(dstPhys), true, true)) { mm.free_physical_page(dstPhys); break; }
-                // Copy a page in small chunks while switching AS minimally
-                for (u32 off = 0; off < PAGE_SIZE; off += COPY_CHUNK) {
-                    AddressSpace* original = vmm.get_current_address_space();
-                    vmm.switch_address_space(parent->addressSpace);
-                    memcpy(smallBuf, reinterpret_cast<const void*>(va + off), COPY_CHUNK);
-                    vmm.switch_address_space(childAS);
-                    memcpy(reinterpret_cast<void*>(va + off), smallBuf, COPY_CHUNK);
-                    if (original) vmm.switch_address_space(original);
-                }
+                u32 srcPhys = parent->addressSpace->get_physical_address(va) & PAGE_MASK;
+                if (srcPhys == 0) continue;
+                // Map same physical page into child as read-only, user accessible
+                if (!childAS->map_page(va, srcPhys, false, true)) { break; }
+                // Make parent's page read-only to trigger CoW on write
+                parent->addressSpace->set_page_writable(va, false);
+                // Bump refcount for shared page
+                MemoryManager::get_instance().increment_page_ref(srcPhys);
             }
         };
-        // Clone a user text/data window and the top of stack window
+        // Share a user text/data window and the top of stack window (both read-only initially)
         const u32 textWindowStart = align_down(USER_TEXT_START, CLONE_TEXT_WINDOW_BYTES);
         const u32 textWindowEnd   = textWindowStart + CLONE_TEXT_WINDOW_BYTES;
         const u32 stackWindowEnd  = USER_STACK_TOP;
         const u32 stackWindowStart= align_down(stackWindowEnd - CLONE_STACK_WINDOW_BYTES, PAGE_SIZE);
         clone_window(textWindowStart, textWindowEnd);
         clone_window(stackWindowStart, stackWindowEnd);
+
+        // Ensure the exact faulting stack page (topmost) is shared RO for deterministic CoW
+        const u32 topStackPage = (USER_STACK_TOP - PAGE_SIZE) & PAGE_MASK; // 0xBFFFF000
+        if (parent->addressSpace->is_mapped(topStackPage)) {
+            u32 srcPhys = parent->addressSpace->get_physical_address(topStackPage) & PAGE_MASK;
+            if (srcPhys != 0) {
+                childAS->map_page(topStackPage, srcPhys, false, true);
+                parent->addressSpace->set_page_writable(topStackPage, false);
+                MemoryManager::get_instance().increment_page_ref(srcPhys);
+            }
+        }
 
         child->addressSpace = childAS;
     }

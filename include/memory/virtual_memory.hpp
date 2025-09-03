@@ -72,6 +72,8 @@ public:
      * @return true on success
      */
     bool unmap_page(u32 virtualAddr);
+    /** Update writable flag for an already-mapped page; returns false if unmapped */
+    bool set_page_writable(u32 virtualAddr, bool writable);
     
     /**
      * @brief Get physical address for virtual address

@@ -266,4 +266,41 @@ void MemoryManager::free_physical_page(void* page) {
     freePageStack[freePageCount++] = pageAddr;
 }
 
+u32 MemoryManager::find_ref_entry(u32 phys) const {
+    for (u32 i = 0; i < MAX_REF_ENTRIES; i++) {
+        if (refTable[i].phys == phys && refTable[i].count != 0) return i;
+    }
+    return MAX_REF_ENTRIES;
+}
+
+u32 MemoryManager::alloc_ref_entry(u32 phys) {
+    for (u32 i = 0; i < MAX_REF_ENTRIES; i++) {
+        if (refTable[i].count == 0) { refTable[i].phys = phys; refTable[i].count = 0; return i; }
+    }
+    return MAX_REF_ENTRIES;
+}
+
+void MemoryManager::increment_page_ref(u32 physPageAddr) {
+    physPageAddr &= PAGE_MASK;
+    u32 idx = find_ref_entry(physPageAddr);
+    if (idx == MAX_REF_ENTRIES) idx = alloc_ref_entry(physPageAddr);
+    if (idx == MAX_REF_ENTRIES) return;
+    if (refTable[idx].count < 0xFFFFFFFFu) refTable[idx].count++;
+}
+
+void MemoryManager::decrement_page_ref(u32 physPageAddr) {
+    physPageAddr &= PAGE_MASK;
+    u32 idx = find_ref_entry(physPageAddr);
+    if (idx == MAX_REF_ENTRIES) return;
+    if (refTable[idx].count > 0) refTable[idx].count--;
+    if (refTable[idx].count == 0) refTable[idx].phys = 0;
+}
+
+u32 MemoryManager::get_page_ref(u32 physPageAddr) const {
+    physPageAddr &= PAGE_MASK;
+    u32 idx = find_ref_entry(physPageAddr);
+    if (idx == MAX_REF_ENTRIES) return 0;
+    return refTable[idx].count;
+}
+
 } // namespace kira::system 

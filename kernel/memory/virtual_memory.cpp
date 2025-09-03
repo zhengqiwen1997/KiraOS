@@ -1,6 +1,8 @@
 #include "memory/virtual_memory.hpp"
 #include "memory/memory_manager.hpp"
 #include "debug/serial_debugger.hpp"
+#include "display/console.hpp"
+#include "core/utils.hpp"
 
 namespace kira::system {
 
@@ -132,6 +134,19 @@ bool AddressSpace::unmap_page(u32 virtualAddr) {
     // Flush TLB for this address
     VirtualMemoryManager::flush_tlb_single(virtualAddr);
     
+    return true;
+}
+
+bool AddressSpace::set_page_writable(u32 virtualAddr, bool writable) {
+    if (!pageDirectory) return false;
+    virtualAddr &= PAGE_MASK;
+    PageTableEntry* pageTable = get_page_table(virtualAddr, false);
+    if (!pageTable) return false;
+    u32 ptIndex = (virtualAddr >> PAGE_OFFSET_BITS) & PAGE_TABLE_INDEX_MASK;
+    PageTableEntry& pte = pageTable[ptIndex];
+    if (!pte.is_present()) return false;
+    pte.set_writable(writable);
+    VirtualMemoryManager::flush_tlb_single(virtualAddr);
     return true;
 }
 
