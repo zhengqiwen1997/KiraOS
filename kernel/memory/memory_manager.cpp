@@ -155,6 +155,11 @@ MemoryManager& MemoryManager::get_instance() {
         gMemoryManager->freePageStack = nullptr;
         gMemoryManager->freePageCount = 0;
         gMemoryManager->maxFreePages = 0;
+        // Ensure CoW ref table starts zeroed (constructor not run due to placement)
+        for (u32 i = 0; i < MAX_REF_ENTRIES; i++) {
+            gMemoryManager->refTable[i].phys = 0;
+            gMemoryManager->refTable[i].count = 0;
+        }
         
         // Auto-initialize with memory map if available
         if (gMemoryMapAddr != 0 && gMemoryMapCount > 0) {
@@ -170,25 +175,11 @@ void MemoryManager::initialize(const MemoryMapEntry* memoryMap, u32 memoryMapSiz
     this->memoryMap = memoryMap;
     this->memoryMapSize = memoryMapSize;
     
-    // Calculate safe stack address based on manager address
+    // Place free-page stack immediately after the MemoryManager object to avoid overlap
     u32 managerAddr = (u32)this;
-    u32 stackAddr = managerAddr + STACK_OFFSET;  // Manager + 4KB
-    
-    // Validate stack address
-    u32 totalRam = MemoryManager::calculate_total_usable_ram();
-    if (totalRam == 0) {
-        // Critical error: No usable RAM detected
-        return;
-    }
-    
-    // Check if stack end address is within RAM (stack needs 4KB space for MAX_FREE_PAGES entries)
-    u32 stackSize = MAX_FREE_PAGES * sizeof(u32);  // 1024 * 4 = 4KB
-    if (!is_address_in_physical_ram(stackAddr + stackSize, totalRam)) {
-        // Stack would be outside RAM, use a safer location
-        stackAddr = managerAddr + sizeof(MemoryManager);
-        // Align to 4-byte boundary
-        stackAddr = (stackAddr + BYTE_ALIGNMENT_VALUE) & BYTE_ALIGNMENT_MASK;
-    }
+    u32 stackAddr = managerAddr + sizeof(MemoryManager);
+    // Align to 4-byte boundary
+    stackAddr = (stackAddr + BYTE_ALIGNMENT_VALUE) & BYTE_ALIGNMENT_MASK;
     
     // Initialize the free page stack
     freePageStack = (u32*)stackAddr;

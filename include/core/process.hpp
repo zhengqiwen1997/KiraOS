@@ -21,8 +21,9 @@ enum class ProcessState : u8 {
     RUNNING = 1,        // Currently executing
     BLOCKED = 2,        // Waiting for I/O or event
     SLEEPING = 3,       // Sleeping for a specific time
-    TERMINATED = 4,     // Finished execution
-    WAITING = 5         // Waiting for synchronization primitive
+    ZOMBIE = 4,         // Exited, awaiting parent to reap
+    TERMINATED = 5,     // Fully reaped, PCB slot free pending
+    WAITING = 6         // Waiting for synchronization primitive
 };
 
 // CPU register state for context switching
@@ -221,6 +222,8 @@ public:
     Process* get_process(u32 pid);
     /** Find a terminated child of parentPid, or nullptr if none */
     Process* find_terminated_child(u32 parentPid);
+    /** True if parentPid currently has any children (any state) */
+    bool has_child(u32 parentPid) const;
     
     /**
      * @brief Display scheduler statistics

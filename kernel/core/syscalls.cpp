@@ -444,13 +444,17 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             u32 wantPid = arg1;
             // Simple: only support explicit pid for now
             if (wantPid == 0) {
-                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+                // Any child: if none exist, error; else block until one exits
+                if (!pm.has_child(cur->pid)) return static_cast<i32>(SyscallResult::PERMISSION_DENIED);
+                cur->waitingOnPid = WAIT_ANY_CHILD;
+                pm.block_current_process();
+                for (;;) { asm volatile("sti"); asm volatile("hlt"); }
             }
             Process* target = pm.get_process(wantPid);
             if (!target) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             // Must be a child
             if (target->parentPid != cur->pid) return static_cast<i32>(SyscallResult::PERMISSION_DENIED);
-            if (target->state == ProcessState::TERMINATED) {
+            if (target->state == ProcessState::ZOMBIE) {
                 // If already terminated, return its exit status and reap
                 i32 st = target->exitStatus;
                 target->hasBeenWaited = true;
@@ -504,6 +508,10 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                     kira::utils::k_printf("[WAITID] fast-stash parent=%u child=%d status=%d\n", cur->pid, ret, *userStatus);
                     return ret;
                 }
+                // If no children at all, error
+                if (!pm.has_child(cur->pid)) {
+                    return static_cast<i32>(SyscallResult::PERMISSION_DENIED);
+                }
                 // None yet; block and wait on any
                 kira::utils::k_printf("[WAITID] block parent=%u any, ptr=%x\n", cur->pid, (u32)userStatus);
                 cur->waitingOnPid = WAIT_ANY_CHILD; // explicit any-child sentinel
@@ -514,7 +522,7 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 Process* target = pm.get_process(wantPid);
                 if (!target) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
                 if (target->parentPid != cur->pid) return static_cast<i32>(SyscallResult::PERMISSION_DENIED);
-                if (target->state == ProcessState::TERMINATED) {
+                if (target->state == ProcessState::ZOMBIE) {
                     if (target->hasBeenWaited) {
                         return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
                     }

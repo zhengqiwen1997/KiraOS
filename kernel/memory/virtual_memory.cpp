@@ -73,14 +73,27 @@ AddressSpace::~AddressSpace() {
     
     auto& memoryManager = MemoryManager::get_instance();
     
-    // Free all page tables
+    // Walk page tables to drop CoW refs and free uniquely-owned user pages
     for (u32 i = 0; i < PAGE_DIRECTORY_ENTRIES; i++) {
-        PageDirectoryEntry pde;
-        pde.value = pageDirectory[i];
-        
-        if (pde.is_present()) {
-            memoryManager.free_physical_page(reinterpret_cast<void*>(pde.get_address()));
+        PageDirectoryEntry pde; pde.value = pageDirectory[i];
+        if (!pde.is_present()) continue;
+        // Page table is identity-mapped; safe to access directly
+        PageTableEntry* pt = reinterpret_cast<PageTableEntry*>(pde.get_address());
+        for (u32 j = 0; j < PAGE_TABLE_ENTRIES; j++) {
+            PageTableEntry& pte = pt[j];
+            if (!pte.is_present()) continue;
+            u32 phys = pte.get_address();
+            // Decrement CoW ref (no-op if not tracked)
+            memoryManager.decrement_page_ref(phys);
+            // Free only user pages backed by high memory and not shared
+            if (pte.is_user()) {
+                if (phys >= HIGH_MEMORY_START && memoryManager.get_page_ref(phys) == 0) {
+                    memoryManager.free_physical_page(reinterpret_cast<void*>(phys));
+                }
+            }
         }
+        // Free the page table itself
+        memoryManager.free_physical_page(reinterpret_cast<void*>(pde.get_address()));
     }
     
     // Free page directory

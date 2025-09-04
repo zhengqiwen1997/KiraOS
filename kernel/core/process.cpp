@@ -312,15 +312,15 @@ bool ProcessManager::terminate_process(u32 pid) {
     u32 terminatedPid = process->pid;
     process->exitStatus = -1; // default status for kill
 
-    // Clean up address space
-    if (process->addressSpace) {
-        auto& vm = VirtualMemoryManager::get_instance();
-        vm.destroy_user_address_space(process->addressSpace);
-        process->addressSpace = nullptr;
+    // Reparent this process's children to init (pid=1)
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid != 0 && processes[i].parentPid == terminatedPid) {
+            processes[i].parentPid = 1; // init
+        }
     }
-    
-    // Mark as terminated
-    process->state = ProcessState::TERMINATED;
+
+    // Become zombie; actual resource free on reap
+    process->state = ProcessState::ZOMBIE;
     processCount--;
 
     // Wake any waiting parent: explicit pid or ANY-child (waitingOnPid==0 and parentPid matches)
@@ -595,12 +595,19 @@ Process* ProcessManager::find_terminated_child(u32 parentPid) {
     for (u32 i = 0; i < MAX_PROCESSES; i++) {
         if (processes[i].pid != 0 &&
             processes[i].parentPid == parentPid &&
-            processes[i].state == ProcessState::TERMINATED &&
+            processes[i].state == ProcessState::ZOMBIE &&
             !processes[i].hasBeenWaited) {
             return &processes[i];
         }
     }
     return nullptr;
+}
+
+bool ProcessManager::has_child(u32 parentPid) const {
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid != 0 && processes[i].parentPid == parentPid) return true;
+    }
+    return false;
 }
 
 void ProcessManager::display_stats() {
@@ -1004,14 +1011,14 @@ void ProcessManager::terminate_current_process_with_status(i32 status) {
     if (!currentProcess) return;
     u32 terminatedPid = currentProcess->pid;
     currentProcess->exitStatus = status;
-    currentProcess->state = ProcessState::TERMINATED;
+    currentProcess->state = ProcessState::ZOMBIE;
     processCount--;
 
-    // Clean up address space
-    if (currentProcess->addressSpace) {
-        auto& vm = VirtualMemoryManager::get_instance();
-        vm.destroy_user_address_space(currentProcess->addressSpace);
-        currentProcess->addressSpace = nullptr;
+    // Reparent any children to init (pid=1)
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        if (processes[i].pid != 0 && processes[i].parentPid == terminatedPid) {
+            processes[i].parentPid = 1; // init
+        }
     }
 
     // Wake any waiting parent: explicit pid match OR any-child (waitingOnPid==0 and parentPid matches)
@@ -1228,8 +1235,8 @@ bool ProcessManager::deliver_input_char(char ch) {
 
 void ProcessManager::reap_child(Process* child) {
     if (!child) return;
-    // Only reap if it's truly terminated and already consumed by a waiter
-    if (child->state != ProcessState::TERMINATED) return;
+    // Only reap if it's zombie and already consumed by a waiter
+    if (child->state != ProcessState::ZOMBIE) return;
     if (!child->hasBeenWaited) return;
     // Free its address space if somehow still present
     if (child->addressSpace) {

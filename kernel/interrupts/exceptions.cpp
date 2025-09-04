@@ -265,6 +265,7 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
                     kira::debug::SerialDebugger::print_hex(cur->pid);
                     kira::debug::SerialDebugger::print(" va="); kira::debug::SerialDebugger::print_hex(va);
                     kira::debug::SerialDebugger::print(" oldPhys="); kira::debug::SerialDebugger::print_hex(oldPhys);
+                    kira::debug::SerialDebugger::print(" ref=0");
                     kira::debug::SerialDebugger::println("");
                     cur->addressSpace->set_page_writable(va, true);
                     return;
@@ -277,12 +278,16 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
                     if (!cur->addressSpace->map_page(scratchNew, reinterpret_cast<u32>(newPage), true, true)) {
                         mm.free_physical_page(newPage);
                     } else {
+                        u32 refBefore = mm.get_page_ref(oldPhys);
                         kira::debug::SerialDebugger::print("CoW copy pid=");
                         kira::debug::SerialDebugger::print_hex(cur->pid);
                         kira::debug::SerialDebugger::print(" va="); kira::debug::SerialDebugger::print_hex(va);
                         kira::debug::SerialDebugger::print(" oldPhys="); kira::debug::SerialDebugger::print_hex(oldPhys);
                         kira::debug::SerialDebugger::print(" newPhys="); kira::debug::SerialDebugger::print_hex(reinterpret_cast<u32>(newPage));
-                        kira::debug::SerialDebugger::print(" refBefore="); kira::debug::SerialDebugger::print_hex(mm.get_page_ref(oldPhys));
+                        // Print refcount in decimal to avoid confusion with addresses
+                        char rcBuf[16];
+                        number_to_decimal(rcBuf, refBefore);
+                        kira::debug::SerialDebugger::print(" refBefore="); kira::debug::SerialDebugger::print(rcBuf);
                         kira::debug::SerialDebugger::println("");
                         vm.switch_address_space(cur->addressSpace);
                         // Copy content from old VA (RO) into the new physical page via scratchNew
@@ -292,10 +297,12 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
                         // Remove scratch mapping and drop old refcount
                         cur->addressSpace->unmap_page(scratchNew);
                         mm.decrement_page_ref(oldPhys);
+                        u32 refAfter = mm.get_page_ref(oldPhys);
                         kira::debug::SerialDebugger::print("CoW done pid=");
                         kira::debug::SerialDebugger::print_hex(cur->pid);
                         kira::debug::SerialDebugger::print(" va="); kira::debug::SerialDebugger::print_hex(va);
-                        kira::debug::SerialDebugger::print(" oldRefAfter="); kira::debug::SerialDebugger::print_hex(mm.get_page_ref(oldPhys));
+                        number_to_decimal(rcBuf, refAfter);
+                        kira::debug::SerialDebugger::print(" refAfter="); kira::debug::SerialDebugger::print(rcBuf);
                         kira::debug::SerialDebugger::println("");
                         return; // Resume execution
                     }
