@@ -41,6 +41,8 @@ enum class SystemCall : u32 {
     GETSPAWNARG = 26,   // Copy spawn argument string into user buffer
     WAITID = 27,        // Wait for child by pid (0 = any); write status to user ptr
     FORK = 28,          // Fork current process
+    SBRK = 29,          // Adjust program break by increment (returns old break)
+    BRK = 30,           // Set program break to absolute address (returns new break)
 };
 
 /**

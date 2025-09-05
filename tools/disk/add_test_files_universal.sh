@@ -121,7 +121,7 @@ EOF
         echo "Note: /bin/ls not found in $BIN_SRC_BASE; build ls_user.elf first"
     fi
 
-    for prog in cat mkdir rmdir exitcode waittest widtest forktest orphan cowtest; do
+    for prog in cat mkdir rmdir exitcode waittest widtest forktest orphan cowtest heaptest; do
         if [ -f "$BIN_SRC_BASE/$prog" ]; then
             if [ "$use_sudo" = "true" ]; then
                 sudo cp "$BIN_SRC_BASE/$prog" "$mount_point/bin/$prog"

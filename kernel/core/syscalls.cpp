@@ -7,6 +7,7 @@
 #include "fs/vfs.hpp"
 #include "drivers/keyboard.hpp"
 #include "memory/virtual_memory.hpp"
+#include "memory/memory_manager.hpp"
 #include "loaders/elf_loader.hpp"
 
 namespace kira::system {
@@ -297,6 +298,62 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 p->pendingSyscallReturn = static_cast<u32>(childPid);
             }
             return childPid;
+        }
+
+        case SystemCall::SBRK: {
+            // arg1 = increment (signed), returns old break or negative on error
+            Process* cur = pm.get_current_process();
+            if (!cur || !cur->addressSpace) return static_cast<i32>(SyscallResult::IO_ERROR);
+            i32 inc = static_cast<i32>(arg1);
+            u32 oldBrk = cur->heapEnd;
+            // Initialize heap on first use
+            if (cur->heapStart == 0 && cur->heapEnd == 0) {
+                cur->heapStart = USER_HEAP_START;
+                cur->heapEnd = USER_HEAP_START;
+                oldBrk = cur->heapEnd;
+            }
+            // Compute new break
+            i32 newEndSigned = static_cast<i32>(cur->heapEnd) + inc;
+            if (newEndSigned < static_cast<i32>(cur->heapStart)) {
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
+            u32 newEnd = static_cast<u32>(newEndSigned);
+            // Page-align mapping operations
+            auto& vm = VirtualMemoryManager::get_instance();
+            if (newEnd > cur->heapEnd) {
+                for (u32 va = (cur->heapEnd + PAGE_SIZE - 1) & PAGE_MASK; va < newEnd; va += PAGE_SIZE) {
+                    void* phys = MemoryManager::get_instance().allocate_physical_page();
+                    if (!phys) return static_cast<i32>(SyscallResult::NO_SPACE);
+                    if (!cur->addressSpace->map_page(va, reinterpret_cast<u32>(phys), true, true)) {
+                        return static_cast<i32>(SyscallResult::NO_SPACE);
+                    }
+                }
+            } else if (newEnd < cur->heapEnd) {
+                for (u32 va = (newEnd + PAGE_SIZE - 1) & PAGE_MASK; va < cur->heapEnd; va += PAGE_SIZE) {
+                    u32 phys = cur->addressSpace->get_physical_address(va) & PAGE_MASK;
+                    cur->addressSpace->unmap_page(va);
+                    if (phys) MemoryManager::get_instance().free_physical_page(reinterpret_cast<void*>(phys));
+                }
+            }
+            cur->heapEnd = newEnd;
+            return static_cast<i32>(oldBrk);
+        }
+
+        case SystemCall::BRK: {
+            // arg1 = absolute new end; returns new end on success, negative on error
+            Process* cur = pm.get_current_process();
+            if (!cur || !cur->addressSpace) return static_cast<i32>(SyscallResult::IO_ERROR);
+            u32 requested = arg1;
+            if (cur->heapStart == 0 && cur->heapEnd == 0) {
+                cur->heapStart = USER_HEAP_START;
+                cur->heapEnd = USER_HEAP_START;
+            }
+            if (requested < cur->heapStart || requested > USER_STACK_TOP) {
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
+            i32 inc = static_cast<i32>(requested - cur->heapEnd);
+            // Reuse sbrk logic by tail-calling handler
+            return handle_syscall(static_cast<u32>(SystemCall::SBRK), static_cast<u32>(inc), 0, 0);
         }
         
         // File system operations

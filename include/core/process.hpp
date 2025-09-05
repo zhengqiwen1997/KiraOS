@@ -61,6 +61,9 @@ struct Process {
     u32 userStackBase;          // Base of user stack  
     u32 userStackSize;          // Size of user stack
     AddressSpace* addressSpace; // Virtual memory address space for this process
+    // User heap region [heapStart, heapEnd). Grows upward from USER_HEAP_START
+    u32 heapStart;
+    u32 heapEnd;
     
     // Process function (embedded user program)
     void* userFunction;         // User mode function to execute

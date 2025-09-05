@@ -204,6 +204,15 @@ public:
     static i32 waitid(u32 pid, i32* statusPtr);
     // Fork current process: parent returns child pid, child returns 0
     static i32 fork();
+    // Heap management syscalls
+    static void* sbrk(i32 increment);
+    static void* brk(void* newEnd);
+
+    // Simple heap allocator built atop sbrk/brk
+    static void* malloc(u32 size);
+    static void  free(void* ptr);
+    static void* calloc(u32 count, u32 size);
+    static void* realloc(void* ptr, u32 newSize);
     
     // Keyboard input
     /** Get one character (blocking). Returns ASCII code (0..255). */

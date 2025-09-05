@@ -402,6 +402,91 @@ i32 UserAPI::fork() {
     return syscall(static_cast<u32>(SystemCall::FORK));
 }
 
+void* UserAPI::sbrk(i32 increment) {
+    return reinterpret_cast<void*>(syscall(static_cast<u32>(SystemCall::SBRK), static_cast<u32>(increment)));
+}
+
+void* UserAPI::brk(void* newEnd) {
+    return reinterpret_cast<void*>(syscall(static_cast<u32>(SystemCall::BRK), reinterpret_cast<u32>(newEnd)));
+}
+
+// --- Minimal malloc/free (bump allocator with free list) ---
+namespace {
+    struct FreeBlock { u32 size; FreeBlock* next; };
+    static FreeBlock* gFreeList = nullptr;
+    static constexpr u32 ALIGN = 8;
+    static inline u32 align_up(u32 v) { return (v + (ALIGN - 1)) & ~(ALIGN - 1); }
+}
+
+void* UserAPI::malloc(u32 size) {
+    if (size == 0) return nullptr;
+    u32 need = align_up(size + sizeof(u32)); // store size header
+    // First-fit in free list
+    FreeBlock** prev = &gFreeList; FreeBlock* cur = gFreeList;
+    while (cur) {
+        if (cur->size >= need) {
+            // Carve
+            if (cur->size - need >= sizeof(FreeBlock) + ALIGN) {
+                // Split tail
+                u8* base = reinterpret_cast<u8*>(cur);
+                FreeBlock* tail = reinterpret_cast<FreeBlock*>(base + need);
+                tail->size = cur->size - need;
+                tail->next = cur->next;
+                *prev = tail;
+            } else {
+                need = cur->size; // take full block
+                *prev = cur->next;
+            }
+            *reinterpret_cast<u32*>(cur) = need; // store size at head
+            return reinterpret_cast<u8*>(cur) + sizeof(u32);
+        }
+        prev = &cur->next; cur = cur->next;
+    }
+    // No free block: extend heap
+    u8* base = reinterpret_cast<u8*>(UserAPI::sbrk(need));
+    if (base == reinterpret_cast<u8*>(-1)) return nullptr;
+    *reinterpret_cast<u32*>(base) = need;
+    return base + sizeof(u32);
+}
+
+void UserAPI::free(void* ptr) {
+    if (!ptr) return;
+    u8* block = reinterpret_cast<u8*>(ptr) - sizeof(u32);
+    u32 size = *reinterpret_cast<u32*>(block);
+    // Insert into free list (LIFO); no coalescing for simplicity
+    FreeBlock* fb = reinterpret_cast<FreeBlock*>(block);
+    fb->size = size;
+    fb->next = gFreeList;
+    gFreeList = fb;
+}
+
+void* UserAPI::calloc(u32 count, u32 size) {
+    u64 total = static_cast<u64>(count) * static_cast<u64>(size);
+    if (total == 0 || total > 0xFFFFFFFFull) return nullptr;
+    void* p = malloc(static_cast<u32>(total));
+    if (!p) return nullptr;
+    u8* b = reinterpret_cast<u8*>(p);
+    for (u32 i = 0; i < static_cast<u32>(total); i++) b[i] = 0;
+    return p;
+}
+
+void* UserAPI::realloc(void* ptr, u32 newSize) {
+    if (!ptr) return malloc(newSize);
+    if (newSize == 0) { free(ptr); return nullptr; }
+    u8* block = reinterpret_cast<u8*>(ptr) - sizeof(u32);
+    u32 oldSize = *reinterpret_cast<u32*>(block) - sizeof(u32);
+    if (newSize <= oldSize) return ptr;
+    void* np = malloc(newSize);
+    if (!np) return nullptr;
+    // Copy min(oldSize, newSize)
+    u8* dst = reinterpret_cast<u8*>(np);
+    u8* src = reinterpret_cast<u8*>(ptr);
+    u32 n = oldSize < newSize ? oldSize : newSize;
+    for (u32 i = 0; i < n; i++) dst[i] = src[i];
+    free(ptr);
+    return np;
+}
+
 // Keyboard input
 i32 UserAPI::getch() {
     return syscall(static_cast<u32>(SystemCall::GETCH));
