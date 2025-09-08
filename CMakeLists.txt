@@ -81,8 +81,8 @@ add_library(kernel_core STATIC
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/fat32_test.cpp>
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/sync_test.cpp>
     $<$<NOT:$<BOOL:${DISK_BOOT_ONLY}>>:kernel/test/k_printf_test.cpp>
-    userspace/programs/test_simple.cpp
-    userspace/programs/test_syscall.cpp
+    userspace/tests/test_simple.cpp
+    userspace/tests/test_syscall.cpp
     userspace/programs/shell.cpp
     userspace/lib/user_utils.cpp
     userspace/lib/libkira.cpp
@@ -179,10 +179,11 @@ add_user_prog(ls_user.elf userspace/programs/ls_user.cpp ls)
 add_user_prog(cat_user.elf userspace/programs/cat_user.cpp cat)
 add_user_prog(mkdir_user.elf userspace/programs/mkdir_user.cpp mkdir)
 add_user_prog(rmdir_user.elf userspace/programs/rmdir_user.cpp rmdir)
-add_user_prog(exitcode.elf userspace/programs/exitcode.cpp exitcode)
-add_user_prog(waittest.elf userspace/programs/waittest.cpp waittest)
-add_user_prog(waitidtest.elf userspace/programs/waitidtest.cpp widtest)
-add_user_prog(forktest.elf userspace/programs/forktest.cpp forktest)
-add_user_prog(wait_orphan.elf userspace/programs/wait_orphan.cpp orphan)
-add_user_prog(cow_stress.elf userspace/programs/cow_stress.cpp cowtest)
-add_user_prog(heaptest.elf userspace/programs/heaptest.cpp heaptest)
+add_user_prog(exitcode.elf userspace/tests/exitcode.cpp exitcode)
+add_user_prog(waittest.elf userspace/tests/waittest.cpp waittest)
+add_user_prog(waitidtest.elf userspace/tests/waitidtest.cpp widtest)
+add_user_prog(forktest.elf userspace/tests/forktest.cpp forktest)
+add_user_prog(wait_orphan.elf userspace/tests/wait_orphan.cpp orphan)
+add_user_prog(cow_stress.elf userspace/tests/cow_stress.cpp cowtest)
+add_user_prog(heaptest.elf userspace/tests/heaptest.cpp heaptest)
+add_user_prog(heap_cow.elf userspace/tests/heap_cow.cpp heapcow)

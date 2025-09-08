@@ -531,6 +531,13 @@ u32 ProcessManager::fork_current_process() {
         clone_window(textWindowStart, textWindowEnd);
         clone_window(stackWindowStart, stackWindowEnd);
 
+        // Share heap pages [heapStart, heapEnd) if initialized
+        if (parent->heapEnd > parent->heapStart) {
+            const u32 heapStart = align_down(parent->heapStart, PAGE_SIZE);
+            const u32 heapEnd   = parent->heapEnd; // end is exclusive; clone_window uses < end
+            clone_window(heapStart, heapEnd);
+        }
+
         // Ensure the exact faulting stack page (topmost) is shared RO for deterministic CoW
         const u32 topStackPage = (USER_STACK_TOP - PAGE_SIZE) & PAGE_MASK; // 0xBFFFF000
         if (parent->addressSpace->is_mapped(topStackPage)) {
@@ -544,6 +551,10 @@ u32 ProcessManager::fork_current_process() {
 
         child->addressSpace = childAS;
     }
+
+    // Inherit heap bounds
+    child->heapStart = parent->heapStart;
+    child->heapEnd = parent->heapEnd;
 
     // Synthesize a saved syscall frame for the child so it resumes after the INT 0x80 with EAX=0
     if (parent->savedSyscallEsp != 0) {
