@@ -255,7 +255,27 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             if (!as) { return static_cast<i32>(SyscallResult::NO_SPACE); }
             auto elfResult = kira::loaders::ElfLoader::load_executable(elfBuffer, st.size, as);
             if (!elfResult.success) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::INVALID_PARAMETER); }
-            u32 stackTop = kira::loaders::ElfLoader::setup_user_stack(as);
+            // Build minimal argv: copy arg0 from caller's AS into a kernel buffer
+            const char* argvArr[1];
+            u32 argc = 0;
+            char kArg0[256];
+            if (arg0) {
+                if (Process* caller = pm.get_current_process()) {
+                    auto& vmc = VirtualMemoryManager::get_instance();
+                    AddressSpace* original = vmc.get_current_address_space();
+                    if (caller->addressSpace) vmc.switch_address_space(caller->addressSpace);
+                    // Safe copy with cap
+                    u32 i = 0; const char* p = arg0;
+                    while (i + 1 < sizeof(kArg0)) { char c = p[i]; kArg0[i++] = c; if (c == '\0') break; }
+                    if (i == 0 || kArg0[i - 1] != '\0') kArg0[i] = '\0';
+                    if (original) vmc.switch_address_space(original);
+                    argvArr[0] = kArg0; argc = 1;
+                }
+            }
+            const char** envpArr = nullptr; u32 envc = 0;
+            u32 stackTop = kira::loaders::ElfLoader::setup_user_stack_with_args(as,
+                                             argc ? argvArr : nullptr, argc,
+                                             envpArr, envc);
             if (stackTop == 0) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::NO_SPACE); }
             
 

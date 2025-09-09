@@ -510,45 +510,29 @@ u32 ProcessManager::fork_current_process() {
         childAS->map_page(consolePage, consolePage, true, true);
         for (u32 off = 0; off < 0x10000; off += PAGE_SIZE) { childAS->map_page(consolePage + off, consolePage + off, true, true); }
 
-        auto clone_window = [&](u32 start, u32 end) {
-            for (u32 va = start; va < end; va += PAGE_SIZE) {
-                if (!parent->addressSpace->is_mapped(va)) continue;
-                u32 srcPhys = parent->addressSpace->get_physical_address(va) & PAGE_MASK;
-                if (srcPhys == 0) continue;
-                // Map same physical page into child as read-only, user accessible
-                if (!childAS->map_page(va, srcPhys, false, true)) { break; }
-                // Make parent's page read-only to trigger CoW on write
-                parent->addressSpace->set_page_writable(va, false);
-                // Bump refcount for shared page
-                MemoryManager::get_instance().increment_page_ref(srcPhys);
+        // PTE-based CoW over full user space, excluding shared regions
+        const u32 EXCL_ID_START = KERNEL_IDENTITY_START;
+        const u32 EXCL_ID_END   = KERNEL_IDENTITY_END;
+        const u32 EXCL_VGA_PAGE = VGA_BUFFER_ADDR & PAGE_MASK;
+        const u32 EXCL_CONS_START = consolePage;
+        const u32 EXCL_CONS_END   = consolePage + 0x10000; // 64KB console span
+
+        for (u32 va = USER_SPACE_START; va < USER_SPACE_END; va += PAGE_SIZE) {
+            if (!parent->addressSpace->is_mapped(va)) continue;
+            // Exclude identity kernel window and shared IO pages
+            if ((va >= EXCL_ID_START && va < EXCL_ID_END) ||
+                va == EXCL_VGA_PAGE ||
+                (va >= EXCL_CONS_START && va < EXCL_CONS_END)) {
+                continue;
             }
-        };
-        // Share a user text/data window and the top of stack window (both read-only initially)
-        const u32 textWindowStart = align_down(USER_TEXT_START, CLONE_TEXT_WINDOW_BYTES);
-        const u32 textWindowEnd   = textWindowStart + CLONE_TEXT_WINDOW_BYTES;
-        const u32 stackWindowEnd  = USER_STACK_TOP;
-        const u32 stackWindowStart= align_down(stackWindowEnd - CLONE_STACK_WINDOW_BYTES, PAGE_SIZE);
-        clone_window(textWindowStart, textWindowEnd);
-        clone_window(stackWindowStart, stackWindowEnd);
-
-        // Share heap pages [heapStart, heapEnd) if initialized
-        if (parent->heapEnd > parent->heapStart) {
-            const u32 heapStart = align_down(parent->heapStart, PAGE_SIZE);
-            const u32 heapEnd   = parent->heapEnd; // end is exclusive; clone_window uses < end
-            clone_window(heapStart, heapEnd);
+            u32 srcPhys = parent->addressSpace->get_physical_address(va) & PAGE_MASK;
+            if (srcPhys == 0) continue;
+            // Child: RO user mapping; Parent: flip to RO; Increment ref
+            childAS->map_page(va, srcPhys, false, true);
+            parent->addressSpace->set_page_writable(va, false);
+            MemoryManager::get_instance().increment_page_ref(srcPhys);
         }
-
-        // Ensure the exact faulting stack page (topmost) is shared RO for deterministic CoW
-        const u32 topStackPage = (USER_STACK_TOP - PAGE_SIZE) & PAGE_MASK; // 0xBFFFF000
-        if (parent->addressSpace->is_mapped(topStackPage)) {
-            u32 srcPhys = parent->addressSpace->get_physical_address(topStackPage) & PAGE_MASK;
-            if (srcPhys != 0) {
-                childAS->map_page(topStackPage, srcPhys, false, true);
-                parent->addressSpace->set_page_writable(topStackPage, false);
-                MemoryManager::get_instance().increment_page_ref(srcPhys);
-            }
-        }
-
+ 
         child->addressSpace = childAS;
     }
 

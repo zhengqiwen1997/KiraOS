@@ -93,19 +93,8 @@ private:
             for (; prefix[p] != '\0' && p < 63; p++) path[p] = prefix[p];
             for (u32 i = 0; cmd[i] != '\0' && p < 63; i++, p++) path[p] = cmd[i];
             path[p] = '\0';
-            // Join remaining args into a single space-separated absolute-path string
-            const char* argStr = nullptr;
-            char joined[256];
-            if (argCount > 1) {
-                u32 jp = 0; joined[0] = '\0';
-                for (u32 ai = 1; ai < argCount; ai++) {
-                    char full[128]; build_absolute_path(currentDirectory, args[ai], full, sizeof(full));
-                    for (u32 k = 0; full[k] && jp < sizeof(joined) - 1; k++) joined[jp++] = full[k];
-                    if (ai + 1 < argCount && jp < sizeof(joined) - 1) joined[jp++] = ' ';
-                }
-                joined[jp] = '\0';
-                argStr = joined;
-            }
+            // Pass the first raw argument only (no normalization) for now
+            const char* argStr = (argCount > 1) ? args[1] : nullptr;
             i32 pid = UserAPI::exec(path, argStr);
             if (pid < 0) {
                 UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);

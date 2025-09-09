@@ -91,6 +91,21 @@ public:
      */
     static u32 setup_user_stack(AddressSpace* addressSpace, u32 stackSize = 0x10000);
 
+    /**
+     * @brief Set up user stack with argc/argv/envp layout
+     * @param addressSpace Target address space
+     * @param argv Kernel pointers to argument strings (copied into user stack)
+     * @param argc Number of arguments
+     * @param envp Kernel pointers to environment strings (may be null)
+     * @param envc Number of environment strings
+     * @param stackSize Stack allocation size in bytes
+     * @return ESP pointing to argc (SysV layout), or 0 on failure
+     */
+    static u32 setup_user_stack_with_args(AddressSpace* addressSpace,
+                                          const char* const* argv, u32 argc,
+                                          const char* const* envp, u32 envc,
+                                          u32 stackSize = 0x10000);
+
 private:
     /**
      * @brief Allocate physical pages for segment

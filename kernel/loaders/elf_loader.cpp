@@ -272,6 +272,93 @@ u32 ElfLoader::setup_user_stack(AddressSpace* addressSpace, u32 stackSize) {
     return USER_STACK_TOP;
 }
 
+u32 ElfLoader::setup_user_stack_with_args(AddressSpace* addressSpace,
+                                          const char* const* argv, u32 argc,
+                                          const char* const* envp, u32 envc,
+                                          u32 stackSize) {
+    if (!addressSpace) return 0;
+    // First, allocate stack pages as in basic setup
+    u32 esp = setup_user_stack(addressSpace, stackSize);
+    if (esp == 0) return 0;
+
+    // We'll build the SysV-like layout:
+    // [strings ...]
+    // [envp pointers NULL-terminated]
+    // [argv pointers NULL-terminated]
+    // [argc]
+    // Align to 16 bytes for good measure
+
+    auto align_down = [](u32 v, u32 a) { return v & ~(a - 1); };
+    esp = align_down(esp, 16);
+
+    // Copy strings from top downward
+    // Collect user addresses of copied strings
+    const u32 maxArgs = 32; // simple cap for early impl
+    const u32 maxEnvs = 32;
+    u32 argAddrs[maxArgs];
+    u32 envAddrs[maxEnvs];
+    if (argc > maxArgs) argc = maxArgs;
+    if (envc > maxEnvs) envc = maxEnvs;
+
+    // Temporarily switch to the target address space to write user VAs
+    auto& vm = kira::system::VirtualMemoryManager::get_instance();
+    AddressSpace* originalAS = vm.get_current_address_space();
+    vm.switch_address_space(addressSpace);
+
+    // Helper to push one C string onto the stack and return its user VA
+    auto push_string = [&](const char* s) -> u32 {
+        if (!s) s = "";
+        // Measure length
+        u32 len = 0; while (s[len] != '\0') len++;
+        // Reserve len+1 bytes
+        esp -= (len + 1);
+        // Copy bytes directly into user VA (now active)
+        memcpy(reinterpret_cast<void*>(esp), s, len + 1);
+        return esp;
+    };
+
+    for (u32 i = 0; i < envc; i++) {
+        envAddrs[i] = push_string(envp ? envp[i] : nullptr);
+        if (envAddrs[i] == 0) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    }
+    for (u32 i = 0; i < argc; i++) {
+        argAddrs[i] = push_string(argv ? argv[i] : nullptr);
+        if (argAddrs[i] == 0) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    }
+    // Align pointer area
+    esp = align_down(esp, 4);
+
+    // Push NULL terminators and pointers (envp then argv)
+    auto push_u32 = [&](u32 value) {
+        esp -= 4;
+        *reinterpret_cast<u32*>(esp) = value;
+        return true;
+    };
+    // envp NULL
+    if (!push_u32(0)) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    for (i32 i = static_cast<i32>(envc) - 1; i >= 0; i--) {
+        if (!push_u32(envAddrs[static_cast<u32>(i)])) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    }
+    u32 envpUser = esp;
+    (void)envpUser;
+    // argv NULL
+    if (!push_u32(0)) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    for (i32 i = static_cast<i32>(argc) - 1; i >= 0; i--) {
+        if (!push_u32(argAddrs[static_cast<u32>(i)])) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    }
+    u32 argvUser = esp;
+    (void)argvUser;
+    // Push pointer to argv array for entry ABI
+    if (!push_u32(argvUser)) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+    // argc
+    if (!push_u32(argc)) { if (originalAS) vm.switch_address_space(originalAS); return 0; }
+
+    // Restore original address space
+    if (originalAS) vm.switch_address_space(originalAS);
+
+    return esp;
+}
+
 u32 ElfLoader::allocate_segment_memory(u32 size) {
     auto& memoryManager = MemoryManager::get_instance();
     u32 pagesNeeded = align_to_page(size) / PAGE_SIZE;
