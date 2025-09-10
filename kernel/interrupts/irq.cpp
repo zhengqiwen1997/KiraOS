@@ -188,13 +188,56 @@ void keyboard_handler(IRQFrame* frame) {
     // Update keyboard state using the existing Keyboard class
     Keyboard::handle_key_press(scanCode);
     
+    static bool extPrefix = false;
     bool deliveredToUser = false;
-    // If this scan code translates to an ASCII character, try delivering it
+    // Handle extended E0-prefixed keys (arrows) by conditionally delivering ANSI sequences
+    if (scanCode == 0xE0) { extPrefix = true; PIC::send_eoi(PIC::IRQ_KEYBOARD); return; }
+    if (extPrefix) {
+        extPrefix = false;
+        if (Keyboard::is_key_press(scanCode)) {
+            u8 base = Keyboard::get_base_scan_code(scanCode);
+            char seq2 = 0;
+            switch (base) { case KEY_UP: seq2 = 'A'; break; case KEY_DOWN: seq2 = 'B'; break; case KEY_RIGHT: seq2 = 'C'; break; case KEY_LEFT: seq2 = 'D'; break; default: break; }
+            if (seq2) {
+                auto& pm = ProcessManager::get_instance();
+                // Only if someone is waiting for input, deliver ANSI ESC sequence
+                if (pm.deliver_input_char(27)) { // ESC wakes the waiter
+                    // Queue the rest so subsequent GETCH can read them without blocking
+                    Keyboard::enqueue_char_from_irq('[');
+                    Keyboard::enqueue_char_from_irq(seq2);
+                    deliveredToUser = true;
+                    PIC::send_eoi(PIC::IRQ_KEYBOARD);
+                    return;
+                }
+                // No waiter: fall through to console handling below
+            }
+        }
+    }
+    // Also handle non-extended arrow scan codes similarly
+    if (Keyboard::is_key_press(scanCode)) {
+        u8 base = Keyboard::get_base_scan_code(scanCode);
+        char seq2 = 0;
+        switch (base) { case KEY_UP: seq2 = 'A'; break; case KEY_DOWN: seq2 = 'B'; break; case KEY_RIGHT: seq2 = 'C'; break; case KEY_LEFT: seq2 = 'D'; break; default: break; }
+        if (seq2) {
+            auto& pm = ProcessManager::get_instance();
+            if (pm.deliver_input_char(27)) { // ESC
+                Keyboard::enqueue_char_from_irq('[');
+                Keyboard::enqueue_char_from_irq(seq2);
+                deliveredToUser = true;
+                PIC::send_eoi(PIC::IRQ_KEYBOARD);
+                return;
+            }
+            // No waiter: let console handle the raw scan code
+        }
+    }
+    // If this scan code translates to an ASCII character, deliver to waiter; otherwise, let console echo
     if (Keyboard::is_key_press(scanCode)) {
         char ch = Keyboard::scan_code_to_ascii(scanCode);
         if (ch) {
             auto& pm = ProcessManager::get_instance();
-            deliveredToUser = pm.deliver_input_char(ch);
+            if (pm.deliver_input_char(ch)) {
+                deliveredToUser = true;
+            }
         }
     }
 

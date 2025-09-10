@@ -436,7 +436,6 @@ FSResult VFS::mkdir(const char* path) {
     if (!path) {
         return FSResult::INVALID_PARAMETER;
     }
-    
     // Check if path already exists
     VNode* existing_vnode = nullptr;
     FSResult check_result = resolve_path(path, existing_vnode);
@@ -444,7 +443,7 @@ FSResult VFS::mkdir(const char* path) {
         existing_vnode->release();
         return FSResult::EXISTS; // Directory/file already exists
     }
-    
+
     // Extract parent directory and directory name
     const char* last_slash = nullptr;
     for (const char* p = path; *p; p++) {
@@ -500,7 +499,6 @@ FSResult VFS::mkdir(const char* path) {
     if (parent_vnode && parent_vnode != m_rootVnode) {
         parent_vnode->release();
     }
-    
     return result;
 }
 

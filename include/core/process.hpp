@@ -132,7 +132,7 @@ class ProcessManager {
 private:
     static constexpr u32 MAX_PROCESSES = 16;
     static constexpr u32 DEFAULT_TIME_SLICE = 10;  // Timer ticks
-    static constexpr u32 STACK_SIZE = 4096;        // 4KB stack per process
+    static constexpr u32 STACK_SIZE = 16384;       // 16KB stack per process
     static constexpr u32 MAX_PRIORITY = 10;        // Maximum priority level
     static constexpr u32 AGING_INTERVAL = 100;     // Ticks between aging
     

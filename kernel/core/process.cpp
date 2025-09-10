@@ -498,21 +498,13 @@ u32 ProcessManager::fork_current_process() {
         AddressSpace* childAS = vm.create_user_address_space();
         if (!childAS) { child->pid = 0; return 0; }
 
-        // Map identity kernel region (1MB..8MB), VGA, and console (match exec path)
-        const u32 KERNEL_IDENTITY_START = KERNEL_CODE_START; // 1MB
-        const u32 KERNEL_IDENTITY_END   = 0x00800000;        // 8MB
-        for (u32 addr = KERNEL_IDENTITY_START; addr < KERNEL_IDENTITY_END; addr += PAGE_SIZE) {
-            childAS->map_page(addr, addr, true, true);
-        }
-        childAS->map_page(VGA_BUFFER_ADDR, VGA_BUFFER_ADDR, true, true);
+        // Do not map kernel identity/VGA/console into child user space (hardening)
         u32 consoleAddr = reinterpret_cast<u32>(&kira::kernel::console);
         u32 consolePage = consoleAddr & PAGE_MASK;
-        childAS->map_page(consolePage, consolePage, true, true);
-        for (u32 off = 0; off < 0x10000; off += PAGE_SIZE) { childAS->map_page(consolePage + off, consolePage + off, true, true); }
 
         // PTE-based CoW over full user space, excluding shared regions
-        const u32 EXCL_ID_START = KERNEL_IDENTITY_START;
-        const u32 EXCL_ID_END   = KERNEL_IDENTITY_END;
+        const u32 EXCL_ID_START = KERNEL_CODE_START; // 1MB
+        const u32 EXCL_ID_END   = 0x00800000;        // 8MB
         const u32 EXCL_VGA_PAGE = VGA_BUFFER_ADDR & PAGE_MASK;
         const u32 EXCL_CONS_START = consolePage;
         const u32 EXCL_CONS_END   = consolePage + 0x10000; // 64KB console span

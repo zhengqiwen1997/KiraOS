@@ -22,11 +22,16 @@ class KiraShell {
 private:
     static constexpr u32 MAX_COMMAND_LENGTH = 256;
     static constexpr u32 MAX_ARGS = 16;
+    static constexpr u32 HISTORY_SIZE = 16;
     bool finished = false;
     char currentDirectory[MAX_COMMAND_LENGTH];
     char commandBuffer[MAX_COMMAND_LENGTH];
     char* args[MAX_ARGS];
     u32 argCount; u32 cmdLen;
+    // History
+    char history[HISTORY_SIZE][MAX_COMMAND_LENGTH];
+    u32 historyCount = 0; // number of stored commands
+    i32 historyIndex = -1; // -1 means not navigating, else index into history
     
 public:
     KiraShell() : argCount(0), cmdLen(0) { currentDirectory[0] = '/'; currentDirectory[1] = '\0'; commandBuffer[0] = '\0'; }
@@ -43,6 +48,29 @@ public:
         }
     }
 private:
+    void push_history(const char* line) {
+        if (!line || line[0] == '\0') return;
+        // Skip duplicate of last entry
+        if (historyCount > 0) {
+            const char* last = history[(historyCount - 1) % HISTORY_SIZE];
+            u32 i = 0; bool same = true; while (line[i] || last[i]) { if (line[i] != last[i]) { same = false; break; } i++; }
+            if (same) return;
+        }
+        u32 slot = historyCount % HISTORY_SIZE;
+        // Copy with cap
+        u32 i = 0; while (line[i] && i < MAX_COMMAND_LENGTH - 1) { history[slot][i] = line[i]; i++; }
+        history[slot][i] = '\0';
+        historyCount++;
+    }
+    void replace_current_line_with(const char* line) {
+        // Erase current typed chars visually
+        while (cmdLen > 0) { UserAPI::print("\b \b"); cmdLen--; }
+        // Copy new line and echo it
+        u32 i = 0; while (line && line[i] && i < MAX_COMMAND_LENGTH - 1) { commandBuffer[i] = line[i]; i++; }
+        commandBuffer[i] = '\0';
+        cmdLen = i;
+        UserAPI::print(commandBuffer);
+    }
     void display_welcome() {
         UserAPI::print_colored("=====================================\n", Colors::CYAN_ON_BLUE);
         UserAPI::print_colored("       KiraOS Interactive Shell v1.0\n", Colors::YELLOW_ON_BLUE);
@@ -59,11 +87,39 @@ private:
     }
     bool read_command() {
         cmdLen = 0; commandBuffer[0] = '\0';
+        historyIndex = -1;
+        bool esc = false, bracket = false;
         while (true) {
             i32 ch = UserAPI::getch();
-            if (ch == 27) { finished = true; UserAPI::println(""); return false; }
-            if (ch == '\n' || ch == '\r') { UserAPI::println(""); commandBuffer[cmdLen] = '\0'; return true; }
-            if ((ch == '\b') && cmdLen > 0) { cmdLen--; commandBuffer[cmdLen] = '\0'; UserAPI::print("\b"); continue; }
+            if (ch == '\n' || ch == '\r') { UserAPI::println(""); commandBuffer[cmdLen] = '\0'; push_history(commandBuffer); return true; }
+            // ANSI escape sequence handling for arrows: ESC '[' 'A'/'B'
+            if (!esc) {
+                if (ch == 27) { esc = true; bracket = false; continue; }
+            } else if (!bracket) {
+                if (ch == '[') { bracket = true; continue; }
+                esc = false; // unknown sequence
+            } else {
+                // Final byte
+                if (ch == 'A' || ch == 'B') {
+                    // Up/Down history
+                    if (historyCount > 0) {
+                        if (historyIndex < 0) historyIndex = static_cast<i32>(historyCount); // start at blank
+                        if (ch == 'A') { // Up
+                            if (historyIndex > 0) historyIndex--;
+                        } else { // 'B' Down
+                            if (historyIndex < static_cast<i32>(historyCount)) historyIndex++;
+                        }
+                        const char* line = (historyIndex >= 0 && historyIndex < static_cast<i32>(historyCount))
+                            ? history[historyIndex % HISTORY_SIZE]
+                            : ""; // at historyCount => blank
+                        replace_current_line_with(line);
+                    }
+                    esc = bracket = false; continue;
+                }
+                esc = bracket = false; // unhandled sequence
+                continue;
+            }
+            if ((ch == '\b') && cmdLen > 0) { cmdLen--; commandBuffer[cmdLen] = '\0'; UserAPI::print("\b "); UserAPI::print("\b"); continue; }
             if (cmdLen < MAX_COMMAND_LENGTH - 1 && ch >= 32 && ch < 127) { commandBuffer[cmdLen++] = (char)ch; commandBuffer[cmdLen] = '\0'; char echo[2]; echo[0] = (char)ch; echo[1] = '\0'; UserAPI::print(echo); }
         }
     }

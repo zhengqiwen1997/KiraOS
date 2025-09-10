@@ -159,7 +159,7 @@ add_custom_command(TARGET kernel.elf POST_BUILD
 ) 
 
 enable_language(ASM)
-set(USER_COMMON_SOURCES userspace/startup/crt0.s userspace/lib/libkira.cpp)
+set(USER_COMMON_SOURCES userspace/startup/crt0.s userspace/lib/libkira.cpp userspace/lib/user_utils.cpp)
 set(USER_COMMON_INCLUDES userspace userspace/include userspace/lib include)
 set(USER_COMMON_CFLAGS -ffreestanding -fno-pie -fno-stack-protector -m32 -nostdlib)
 set(USER_COMMON_LDFLAGS -nostdlib -m32 -static -T${CMAKE_SOURCE_DIR}/userspace/user.ld -Wl,--build-id=none)
