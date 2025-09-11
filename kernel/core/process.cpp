@@ -33,6 +33,10 @@ static inline void reset_pcb(Process* pcb) {
     // Zero the PCB slot before reuse; mark as TERMINATED until fully initialized
     memset(pcb, 0, sizeof(*pcb));
     pcb->state = ProcessState::TERMINATED;
+    // Initialize fd table to -1 (unused)
+    for (u32 i = 0; i < MAX_FDS; i++) {
+        pcb->fdTable[i] = -1;
+    }
 }
 
 // File-scope constants
@@ -125,6 +129,7 @@ ProcessManager::ProcessManager() {
         processes[i].pendingChildPid = 0;
         processes[i].pendingChildStatus = 0;
         processes[i].hasBeenWaited = false;
+        for (u32 fd = 0; fd < MAX_FDS; fd++) { processes[i].fdTable[fd] = -1; processes[i].fdFlags[fd] = 0; }
     }
 }
 
@@ -157,6 +162,11 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     process->totalCpuTime = 0;
     process->isUserMode = true;
     process->hasStarted = false;
+    // Setup standard fds: 0,1,2
+    process->fdTable[0] = -100; // STDIN sentinel
+    process->fdTable[1] = -101; // STDOUT sentinel
+    process->fdTable[2] = -102; // STDERR sentinel
+    process->fdFlags[0] = 0; process->fdFlags[1] = 0; process->fdFlags[2] = 0;
     
     process->userFunction = reinterpret_cast<void*>(function);
     process->next = nullptr;
@@ -222,6 +232,11 @@ u32 ProcessManager::create_user_process_from_elf(AddressSpace* addressSpace, u32
     process->hasStarted = false;
     process->userFunction = nullptr;
     process->next = nullptr;
+    // Setup standard fds
+    process->fdTable[0] = -100;
+    process->fdTable[1] = -101;
+    process->fdTable[2] = -102;
+    process->fdFlags[0] = 0; process->fdFlags[1] = 0; process->fdFlags[2] = 0;
     
     // Allocate kernel/user stacks backing memory (kernel stack for syscalls)
     if (!allocate_process_stacks(process)) {
@@ -480,6 +495,9 @@ u32 ProcessManager::fork_current_process() {
     child->userFunction = parent->userFunction;
     child->hasStarted = true; // will resume from saved frame
     child->parentPid = parent->pid;
+    // Inherit fd table by shallow copy
+    for (u32 fd = 0; fd < MAX_FDS; fd++) child->fdTable[fd] = parent->fdTable[fd];
+    for (u32 fd = 0; fd < MAX_FDS; fd++) child->fdFlags[fd] = parent->fdFlags[fd];
 
     // Allocate kernel/user stacks backing memory
     if (!allocate_process_stacks(child)) {
@@ -1089,7 +1107,7 @@ void ProcessManager::sleep_current_process(u32 ticks) {
 void ProcessManager::wake_up_process(Process* process) {
     if (!process) return;
     
-    if (process->state == ProcessState::BLOCKED || process->state == ProcessState::WAITING) {
+    if (process->state == ProcessState::BLOCKED) {
         process->state = ProcessState::READY;
         add_to_ready_queue(process);
     }

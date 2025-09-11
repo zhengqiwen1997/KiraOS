@@ -255,27 +255,61 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             if (!as) { return static_cast<i32>(SyscallResult::NO_SPACE); }
             auto elfResult = kira::loaders::ElfLoader::load_executable(elfBuffer, st.size, as);
             if (!elfResult.success) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::INVALID_PARAMETER); }
-            // Build minimal argv: copy arg0 from caller's AS into a kernel buffer
-            const char* argvArr[1];
+            // Build argv: argv[0] = basename(path), then tokenize arg string by spaces
+            const char* argvArr[16];
+            char argvBuf[16][128];
             u32 argc = 0;
-            char kArg0[256];
-            if (arg0) {
+            // argv[0]
+            {
+                // Derive basename from path
+                const char* base = path;
+                for (const char* p = path; *p; ++p) { if (*p == '/') base = p + 1; }
+                // Copy basename
+                u32 i = 0; while (base[i] && i < sizeof(argvBuf[0]) - 1) { argvBuf[0][i] = base[i]; i++; }
+                argvBuf[0][i] = '\0'; argvArr[0] = argvBuf[0]; argc = 1;
+            }
+            // Parse arg string from caller AS
+            if (arg0 && argc < 16) {
                 if (Process* caller = pm.get_current_process()) {
                     auto& vmc = VirtualMemoryManager::get_instance();
                     AddressSpace* original = vmc.get_current_address_space();
                     if (caller->addressSpace) vmc.switch_address_space(caller->addressSpace);
-                    // Safe copy with cap
-                    u32 i = 0; const char* p = arg0;
-                    while (i + 1 < sizeof(kArg0)) { char c = p[i]; kArg0[i++] = c; if (c == '\0') break; }
-                    if (i == 0 || kArg0[i - 1] != '\0') kArg0[i] = '\0';
+                    char kArgs[256]; u32 i = 0; const char* p = arg0;
+                    while (i + 1 < sizeof(kArgs)) { char c = p[i]; kArgs[i++] = c; if (c == '\0') break; }
+                    if (i == 0 || kArgs[i - 1] != '\0') kArgs[i] = '\0';
                     if (original) vmc.switch_address_space(original);
-                    argvArr[0] = kArg0; argc = 1;
+                    // Tokenize by spaces
+                    u32 pos = 0;
+                    while (kArgs[pos] != '\0' && argc < 16) {
+                        while (kArgs[pos] == ' ') pos++;
+                        if (kArgs[pos] == '\0') break;
+                        u32 tp = 0;
+                        while (kArgs[pos] != ' ' && kArgs[pos] != '\0' && tp < sizeof(argvBuf[0]) - 1) {
+                            argvBuf[argc][tp++] = kArgs[pos++];
+                        }
+                        argvBuf[argc][tp] = '\0';
+                        argvArr[argc] = argvBuf[argc];
+                        argc++;
+                    }
                 }
             }
-            const char** envpArr = nullptr; u32 envc = 0;
+            // Build a minimal envp: PWD, USER, PATH
+            const char* envpArr[8]; char envBuf[8][128]; u32 envc = 0;
+            if (Process* parent = pm.get_current_process()) {
+                // PWD
+                {
+                    u32 j = 0; const char* key = "PWD="; while (key[j]) { envBuf[envc][j] = key[j]; j++; }
+                    u32 k = 0; while (parent->currentWorkingDirectory[k] && j < sizeof(envBuf[0]) - 1) { envBuf[envc][j++] = parent->currentWorkingDirectory[k++]; }
+                    envBuf[envc][j] = '\0'; envpArr[envc] = envBuf[envc]; envc++;
+                }
+                // USER
+                { const char* s = "USER=kira"; u32 j = 0; while (s[j] && j < sizeof(envBuf[0]) - 1) { envBuf[envc][j] = s[j]; j++; } envBuf[envc][j] = '\0'; envpArr[envc] = envBuf[envc]; envc++; }
+                // PATH
+                { const char* s = "PATH=/bin"; u32 j = 0; while (s[j] && j < sizeof(envBuf[0]) - 1) { envBuf[envc][j] = s[j]; j++; } envBuf[envc][j] = '\0'; envpArr[envc] = envBuf[envc]; envc++; }
+            }
             u32 stackTop = kira::loaders::ElfLoader::setup_user_stack_with_args(as,
                                              argc ? argvArr : nullptr, argc,
-                                             envpArr, envc);
+                                             envc ? envpArr : nullptr, envc);
             if (stackTop == 0) { vm.destroy_user_address_space(as); return static_cast<i32>(SyscallResult::NO_SPACE); }
             
 
@@ -296,6 +330,15 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                         child->spawnArg[i] = '\0';
                     } else {
                         child->spawnArg[0] = '\0';
+                    }
+                    // Inherit parent's FD table, honoring CLOSE_ON_EXEC
+                    for (u32 i = 0; i < MAX_FDS; i++) {
+                        child->fdTable[i] = parent->fdTable[i];
+                        child->fdFlags[i] = parent->fdFlags[i];
+                        if (child->fdTable[i] >= 0 && (child->fdFlags[i] & static_cast<u32>(FD_FLAGS::CLOSE_ON_EXEC))) {
+                            child->fdTable[i] = -1;
+                            child->fdFlags[i] = 0;
+                        }
                     }
                 }
             }
@@ -386,12 +429,10 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             }
             
             auto& vfs = kira::fs::VFS::get_instance();
-            i32 fd;
-            kira::fs::FSResult result = vfs.open(path, static_cast<kira::fs::OpenFlags>(arg2), fd);
+            i32 vfsFd;
+            kira::fs::FSResult result = vfs.open(path, static_cast<kira::fs::OpenFlags>(arg2), vfsFd);
             
-            if (result == kira::fs::FSResult::SUCCESS) {
-                return fd; // Return file descriptor
-            } else {
+            if (result != kira::fs::FSResult::SUCCESS) {
                 // Convert VFS result to syscall result
                 switch (result) {
                     case kira::fs::FSResult::NOT_FOUND:
@@ -404,25 +445,49 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                         return static_cast<i32>(SyscallResult::IO_ERROR);
                 }
             }
+            // Map to a small per-process FD
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            for (u32 ufd = 0; ufd < MAX_FDS; ufd++) {
+                if (cur->fdTable[ufd] == -1) { cur->fdTable[ufd] = vfsFd; cur->fdFlags[ufd] = 0; return static_cast<i32>(ufd); }
+            }
+            // No slot; close VFS fd and return error
+            (void)vfs.close(vfsFd);
+            return static_cast<i32>(SyscallResult::TOO_MANY_FILES);
         }
         
         case SystemCall::CLOSE: {
             // Close file descriptor
             // arg1 = file descriptor, arg2/arg3 = unused
-            i32 fd = static_cast<i32>(arg1);
-            
+            i32 ufd = static_cast<i32>(arg1);
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            if (ufd < 0 || ufd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            i32 vfsFd = cur->fdTable[static_cast<u32>(ufd)];
+            // Handle STD sentinels specially
+            if (vfsFd == -100 || vfsFd == -101 || vfsFd == -102) {
+                cur->fdTable[static_cast<u32>(ufd)] = -1; cur->fdFlags[static_cast<u32>(ufd)] = 0;
+                return static_cast<i32>(SyscallResult::SUCCESS);
+            }
+            if (vfsFd < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            // Determine if any other ufd maps to same vfsFd; if none, close underlying
+            bool another = false;
+            for (u32 i = 0; i < MAX_FDS; i++) {
+                if (i == static_cast<u32>(ufd)) continue;
+                if (cur->fdTable[i] == vfsFd) { another = true; break; }
+            }
             auto& vfs = kira::fs::VFS::get_instance();
-            kira::fs::FSResult result = vfs.close(fd);
-            
-            return (result == kira::fs::FSResult::SUCCESS) ? 
-                static_cast<i32>(SyscallResult::SUCCESS) : 
-                static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            if (!another) {
+                kira::fs::FSResult r = vfs.close(vfsFd);
+                (void)r;
+            }
+            cur->fdTable[static_cast<u32>(ufd)] = -1;
+            cur->fdFlags[static_cast<u32>(ufd)] = 0;
+            return static_cast<i32>(SyscallResult::SUCCESS);
         }
         
         case SystemCall::READ_FILE: {
             // Read from file
             // arg1 = file descriptor, arg2 = buffer pointer, arg3 = size
-            i32 fd = static_cast<i32>(arg1);
+            i32 ufd = static_cast<i32>(arg1);
             void* buffer = reinterpret_cast<void*>(arg2);
             u32 size = arg3;
             
@@ -430,18 +495,32 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             }
             
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            if (ufd < 0 || ufd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            i32 vfsFd = cur->fdTable[static_cast<u32>(ufd)];
+            // STDIN
+            if (vfsFd == -100) {
+                // Blocking read of one char for now
+                char* out = reinterpret_cast<char*>(buffer);
+                if (size == 0) return 0;
+                // Use existing GETCH path
+                char c;
+                // Simulate GETCH via blocking delivery
+                pm.block_current_process_for_input();
+                for (;;) { asm volatile("sti"); asm volatile("hlt"); }
+                // Unreachable here; return value delivered via pendingSyscallReturn
+            }
+            if (vfsFd < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             auto& vfs = kira::fs::VFS::get_instance();
-            kira::fs::FSResult result = vfs.read(fd, size, buffer);
-            
-            return (result == kira::fs::FSResult::SUCCESS) ? 
-                static_cast<i32>(size) : // Return bytes read
-                static_cast<i32>(SyscallResult::IO_ERROR);
+            kira::fs::FSResult result = vfs.read(vfsFd, size, buffer);
+            if (result == kira::fs::FSResult::SUCCESS) return static_cast<i32>(size);
+            return static_cast<i32>(SyscallResult::IO_ERROR);
         }
         
         case SystemCall::WRITE_FILE: {
             // Write to file
             // arg1 = file descriptor, arg2 = buffer pointer, arg3 = size
-            i32 fd = static_cast<i32>(arg1);
+            i32 ufd = static_cast<i32>(arg1);
             const void* buffer = reinterpret_cast<const void*>(arg2);
             u32 size = arg3;
             
@@ -449,12 +528,64 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             }
             
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            if (ufd < 0 || ufd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            i32 vfsFd = cur->fdTable[static_cast<u32>(ufd)]; if (vfsFd < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            // STDOUT/STDERR routed to console
+            if (vfsFd == -101 || vfsFd == -102) {
+                // Best-effort print without interpreting %
+                const char* s = reinterpret_cast<const char*>(buffer);
+                // Ensure null-terminated copy within size
+                char tmp[256]; u32 n = (size < sizeof(tmp)-1) ? size : (sizeof(tmp)-1);
+                for (u32 i = 0; i < n; i++) tmp[i] = s[i]; tmp[n] = '\0';
+                kira::kernel::console.add_message(tmp, kira::display::VGA_WHITE_ON_BLUE);
+                return static_cast<i32>(size);
+            }
             auto& vfs = kira::fs::VFS::get_instance();
-            kira::fs::FSResult result = vfs.write(fd, size, buffer);
-            
-            return (result == kira::fs::FSResult::SUCCESS) ? 
-                static_cast<i32>(size) : // Return bytes written
-                static_cast<i32>(SyscallResult::IO_ERROR);
+            kira::fs::FSResult result = vfs.write(vfsFd, size, buffer);
+            if (result == kira::fs::FSResult::SUCCESS) return static_cast<i32>(size);
+            return static_cast<i32>(SyscallResult::IO_ERROR);
+        }
+
+        case SystemCall::DUP: {
+            // arg1 = oldfd, arg2 = newfd (optional; if 0xFFFFFFFF, use lowest), arg3 unused
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            i32 oldfd = static_cast<i32>(arg1);
+            i32 newfd = static_cast<i32>(arg2);
+            if (oldfd < 0 || oldfd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            i32 oldVfs = cur->fdTable[static_cast<u32>(oldfd)];
+            // Allow dup of STD sentinels too
+            bool isStdSentinel = (oldVfs == -100 || oldVfs == -101 || oldVfs == -102);
+            if (oldVfs < 0 && !isStdSentinel) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            if (newfd == -1) {
+                for (u32 i = 0; i < MAX_FDS; i++) { if (cur->fdTable[i] == -1) { newfd = static_cast<i32>(i); break; } }
+                if (newfd == -1) return static_cast<i32>(SyscallResult::TOO_MANY_FILES);
+            } else {
+                if (newfd < 0 || newfd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+                if (newfd == oldfd) return newfd;
+                // If occupied, close it first
+                if (cur->fdTable[static_cast<u32>(newfd)] >= 0 ||
+                    cur->fdTable[static_cast<u32>(newfd)] == -100 ||
+                    cur->fdTable[static_cast<u32>(newfd)] == -101 ||
+                    cur->fdTable[static_cast<u32>(newfd)] == -102) {
+                    (void)handle_syscall(static_cast<u32>(SystemCall::CLOSE), static_cast<u32>(newfd), 0, 0);
+                }
+            }
+            cur->fdTable[static_cast<u32>(newfd)] = oldVfs;
+            cur->fdFlags[static_cast<u32>(newfd)] = cur->fdFlags[static_cast<u32>(oldfd)];
+            return newfd;
+        }
+
+        case SystemCall::SET_FD_FLAGS: {
+            // arg1 = fd, arg2 = flags mask, arg3 = set(1)/clear(0)
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            i32 fd = static_cast<i32>(arg1);
+            u32 mask = arg2;
+            u32 set = arg3;
+            if (fd < 0 || fd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            if (cur->fdTable[static_cast<u32>(fd)] < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            if (set) cur->fdFlags[static_cast<u32>(fd)] |= mask; else cur->fdFlags[static_cast<u32>(fd)] &= ~mask;
+            return static_cast<i32>(SyscallResult::SUCCESS);
         }
         
         case SystemCall::READDIR: {            

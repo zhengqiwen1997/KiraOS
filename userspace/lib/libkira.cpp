@@ -363,6 +363,15 @@ i32 UserAPI::write_file(i32 fd, const void* buffer, u32 size) {
     return syscall(static_cast<u32>(SystemCall::WRITE_FILE), fd, (u32)buffer, size);
 }
 
+i32 UserAPI::dup(i32 oldfd, i32 newfd) {
+    return syscall(static_cast<u32>(SystemCall::DUP), static_cast<u32>(oldfd), static_cast<u32>(newfd));
+}
+
+i32 UserAPI::set_fd_close_on_exec(i32 fd, bool enable) {
+    u32 mask = 1u; // CLOSE_ON_EXEC bit mask
+    return syscall(static_cast<u32>(SystemCall::SET_FD_FLAGS), static_cast<u32>(fd), mask, enable ? 1u : 0u);
+}
+
 i32 UserAPI::readdir(const char* path, u32 index, void* entry) {
     if (!path || !entry) {
         return -2; // INVALID_PARAMETER

@@ -16,14 +16,21 @@ using namespace kira::sync;
 constexpr u32 WAIT_ANY_CHILD = 0xFFFFFFFFu;
 
 // Enhanced process states
-enum class ProcessState : u8 {
-    READY = 0,          // Ready to run
-    RUNNING = 1,        // Currently executing
-    BLOCKED = 2,        // Waiting for I/O or event
-    SLEEPING = 3,       // Sleeping for a specific time
-    ZOMBIE = 4,         // Exited, awaiting parent to reap
-    TERMINATED = 5,     // Fully reaped, PCB slot free pending
-    WAITING = 6         // Waiting for synchronization primitive
+enum class ProcessState : u32 {
+    READY,
+    RUNNING,
+    BLOCKED,
+    SLEEPING,
+    ZOMBIE,
+    TERMINATED
+};
+
+static constexpr u32 MAX_FDS = 32;
+
+// File descriptor flags
+enum class FD_FLAGS : u32 {
+    NONE = 0,
+    CLOSE_ON_EXEC = 1u << 0,
 };
 
 // CPU register state for context switching
@@ -90,10 +97,10 @@ struct Process {
     u32 pendingSyscallReturn;
 
     // Current working directory (user-visible path)
-    char currentWorkingDirectory[256];
+    char currentWorkingDirectory[128];
 
     // Spawn argument buffer (temporary exec/spawn argument passing)
-    char spawnArg[256];
+    char spawnArg[128];
 
     // Waiting pid for WAIT syscall (0 = none)
     u32 waitingOnPid;
@@ -111,6 +118,10 @@ struct Process {
 
     // Whether this child has already been reported to a waiter (WAIT/WAITID)
     bool hasBeenWaited;
+
+    // New: per-process file descriptors (map to VFS fd indices)
+    i32 fdTable[MAX_FDS];
+    u32 fdFlags[MAX_FDS];
 } __attribute__((packed));
 
 // Process function type

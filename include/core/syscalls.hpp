@@ -28,6 +28,8 @@ enum class SystemCall : u32 {
     RMDIR = 15,         // Remove directory
     CHDIR = 16,         // Change working directory
     GETCWD = 17,        // Get current working directory
+    DUP = 31,           // Duplicate file descriptor (like dup2 when arg3 used)
+    SET_FD_FLAGS = 32,  // Set per-fd flags (CLOEXEC)
     
     // Process management operations
     EXEC = 18,          // Execute program

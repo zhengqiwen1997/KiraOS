@@ -160,6 +160,9 @@ public:
      * @return Number of bytes written on success, negative error code on failure
      */
     static i32 write_file(i32 fd, const void* buffer, u32 size);
+    // Duplicate/flags
+    static i32 dup(i32 oldfd, i32 newfd = -1);
+    static i32 set_fd_close_on_exec(i32 fd, bool enable);
     
     /**
      * @brief Read directory entry
