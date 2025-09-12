@@ -367,6 +367,10 @@ i32 UserAPI::dup(i32 oldfd, i32 newfd) {
     return syscall(static_cast<u32>(SystemCall::DUP), static_cast<u32>(oldfd), static_cast<u32>(newfd));
 }
 
+i32 UserAPI::dup2(i32 oldfd, i32 newfd) {
+    return syscall(static_cast<u32>(SystemCall::DUP2), static_cast<u32>(oldfd), static_cast<u32>(newfd));
+}
+
 i32 UserAPI::set_fd_close_on_exec(i32 fd, bool enable) {
     u32 mask = 1u; // CLOSE_ON_EXEC bit mask
     return syscall(static_cast<u32>(SystemCall::SET_FD_FLAGS), static_cast<u32>(fd), mask, enable ? 1u : 0u);

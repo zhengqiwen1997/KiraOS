@@ -45,6 +45,7 @@ enum class SystemCall : u32 {
     FORK = 28,          // Fork current process
     SBRK = 29,          // Adjust program break by increment (returns old break)
     BRK = 30,           // Set program break to absolute address (returns new break)
+    DUP2 = 33,          // Duplicate fd to a specified newfd (like dup2)
 };
 
 /**

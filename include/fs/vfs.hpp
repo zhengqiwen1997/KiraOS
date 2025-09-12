@@ -174,6 +174,8 @@ public:
     FSResult read(i32 fd, u32 size, void* buffer);
     FSResult write(i32 fd, u32 size, const void* buffer);
     FSResult seek(i32 fd, u32 position);
+    FSResult get_position(i32 fd, u32& position);
+    FSResult get_size(i32 fd, u32& size);
     FSResult stat(const char* path, FileStat& stat);
     
     // Directory operations

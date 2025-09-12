@@ -105,34 +105,26 @@ EOF
     create_file "$mount_point/APPS/TEST.SH" "#!/bin/sh"
     append_file "$mount_point/APPS/TEST.SH" "echo 'Hello from shell script!'"
 
-    # Install /bin and copy staged ls ELF if present
+    # Install /bin and copy all staged user binaries automatically
     make_dir "$mount_point/bin"
     # Prefer cmake-build-disk/bin, fallback to cmake-build-elf/bin
     BIN_SRC_BASE="${PWD}/cmake-build-disk/bin"
-    if [ ! -f "$BIN_SRC_BASE/ls" ]; then BIN_SRC_BASE="${PWD}/cmake-build-elf/bin"; fi
-    if [ -f "$BIN_SRC_BASE/ls" ]; then
-        if [ "$use_sudo" = "true" ]; then
-            sudo cp "$BIN_SRC_BASE/ls" "$mount_point/bin/ls"
-        else
-            cp "$BIN_SRC_BASE/ls" "$mount_point/bin/ls"
-        fi
-        echo "Installed /bin/ls"
-    else
-        echo "Note: /bin/ls not found in $BIN_SRC_BASE; build ls_user.elf first"
-    fi
-
-    for prog in cat mkdir rmdir exitcode waittest widtest forktest orphan cowtest heaptest heapcow argvtest fdtest fdexec fdclo; do
-        if [ -f "$BIN_SRC_BASE/$prog" ]; then
-            if [ "$use_sudo" = "true" ]; then
-                sudo cp "$BIN_SRC_BASE/$prog" "$mount_point/bin/$prog"
-            else
-                cp "$BIN_SRC_BASE/$prog" "$mount_point/bin/$prog"
+    if [ ! -d "$BIN_SRC_BASE" ]; then BIN_SRC_BASE="${PWD}/cmake-build-elf/bin"; fi
+    if [ -d "$BIN_SRC_BASE" ]; then
+        for f in "$BIN_SRC_BASE"/*; do
+            if [ -f "$f" ]; then
+                base_name=$(basename "$f")
+                if [ "$use_sudo" = "true" ]; then
+                    sudo cp "$f" "$mount_point/bin/$base_name"
+                else
+                    cp "$f" "$mount_point/bin/$base_name"
+                fi
+                echo "Installed /bin/$base_name"
             fi
-            echo "Installed /bin/$prog"
-        else
-            echo "Note: $prog not found in $BIN_SRC_BASE; build ${prog}_user.elf first"
-        fi
-    done
+        done
+    else
+        echo "Note: build bin directory not found at $BIN_SRC_BASE; build user programs first"
+    fi
 }
 
 case $OS in

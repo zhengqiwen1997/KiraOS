@@ -92,11 +92,13 @@ FSResult FAT32Node::read(u32 offset, u32 size, void* buffer) {
         return FSResult::IS_DIRECTORY;
     }
     
-    if (offset >= m_size) {
+    // Prefer actual cluster-chain size to be robust if directory size wasn't updated yet
+    FAT32* fat32 = static_cast<FAT32*>(m_filesystem);
+    u32 chainSize = fat32->get_cluster_chain_size(m_firstCluster);
+    if (offset >= chainSize) {
         return FSResult::SUCCESS; // EOF
     }
     
-    FAT32* fat32 = static_cast<FAT32*>(m_filesystem);
     return fat32->read_file_data(m_firstCluster, offset, size, buffer);
 }
 
@@ -113,9 +115,11 @@ FSResult FAT32Node::write(u32 offset, u32 size, const void* buffer) {
     FSResult result = fat32->write_file_data(m_firstCluster, offset, size, buffer);
     
     if (result == FSResult::SUCCESS) {
-        // Update file size if we extended it
+        // Update file size if we extended it and persist to directory entry (root-only)
         if (offset + size > m_size) {
             m_size = offset + size;
+            FAT32* f = static_cast<FAT32*>(m_filesystem);
+            (void)f->update_root_dir_entry_size(m_firstCluster, m_size);
         }
     }
     
@@ -402,6 +406,38 @@ FSResult FAT32::get_root(VNode*& root) {
     }
     
     root = m_root;
+    return FSResult::SUCCESS;
+}
+
+FSResult FAT32::update_root_dir_entry_size(u32 firstCluster, u32 newSize) {
+    if (!m_mounted || !m_root) return FSResult::INVALID_PARAMETER;
+    auto& memMgr = MemoryManager::get_instance();
+    u32 currentCluster = m_bpb.root_cluster;
+    while (currentCluster < Fat32Cluster::END_MIN) {
+        u32 sector = cluster_to_sector(currentCluster);
+        u8* clusterBuffer = static_cast<u8*>(memMgr.allocate_physical_page());
+        if (!clusterBuffer) return FSResult::NO_SPACE;
+        FSResult rr = m_device->read_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+        if (rr != FSResult::SUCCESS) { memMgr.free_physical_page(clusterBuffer); return rr; }
+        u32 entriesPerCluster = m_bytesPerCluster / sizeof(Fat32DirEntry);
+        Fat32DirEntry* entries = reinterpret_cast<Fat32DirEntry*>(clusterBuffer);
+        for (u32 i = 0; i < entriesPerCluster; i++) {
+            Fat32DirEntry& e = entries[i];
+            if (e.name[0] == Fat32DirEntryName::END_OF_DIR) break;
+            if (e.name[0] == Fat32DirEntryName::DELETED) continue;
+            u32 entryFirstCluster = (static_cast<u32>(e.first_cluster_high) << 16) | e.first_cluster_low;
+            if (entryFirstCluster == firstCluster) {
+                e.file_size = newSize;
+                (void)m_device->write_blocks(sector, m_sectorsPerCluster, clusterBuffer);
+                memMgr.free_physical_page(clusterBuffer);
+                return FSResult::SUCCESS;
+            }
+        }
+        memMgr.free_physical_page(clusterBuffer);
+        u32 next;
+        if (get_next_cluster(currentCluster, next) != FSResult::SUCCESS) break;
+        currentCluster = next;
+    }
     return FSResult::SUCCESS;
 }
 

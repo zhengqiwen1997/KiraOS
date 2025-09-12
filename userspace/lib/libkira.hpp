@@ -162,6 +162,7 @@ public:
     static i32 write_file(i32 fd, const void* buffer, u32 size);
     // Duplicate/flags
     static i32 dup(i32 oldfd, i32 newfd = -1);
+    static i32 dup2(i32 oldfd, i32 newfd);
     static i32 set_fd_close_on_exec(i32 fd, bool enable);
     
     /**

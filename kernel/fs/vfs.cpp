@@ -81,11 +81,16 @@ FSResult FileDescriptor::read(u32 size, void* buffer) {
         return FSResult::PERMISSION_DENIED;
     }
     
-    FSResult result = m_vnode->read(m_position, size, buffer);
+    // Ask vnode to read up to 'size' bytes starting at current offset
+    // For now vnode returns SUCCESS; we derive bytes read as min(request,sizeRemaining)
+    u32 fileSize = 0;
+    (void)m_vnode->get_size(fileSize);
+    u32 remaining = (m_position < fileSize) ? (fileSize - m_position) : 0;
+    u32 toRead = (size < remaining) ? size : remaining;
+    FSResult result = m_vnode->read(m_position, toRead, buffer);
     if (result == FSResult::SUCCESS) {
-        m_position += size;
+        m_position += toRead;
     }
-    
     return result;
 }
 
@@ -414,6 +419,20 @@ FSResult VFS::seek(i32 fd, u32 position) {
     }
     
     return m_fileDescriptors[fd]->seek(position);
+}
+
+FSResult VFS::get_position(i32 fd, u32& position) {
+    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_fileDescriptors[fd]) {
+        return FSResult::INVALID_PARAMETER;
+    }
+    return m_fileDescriptors[fd]->get_position(position);
+}
+
+FSResult VFS::get_size(i32 fd, u32& size) {
+    if (fd < 0 || fd >= MAX_FILE_DESCRIPTORS || !m_fileDescriptors[fd]) {
+        return FSResult::INVALID_PARAMETER;
+    }
+    return m_fileDescriptors[fd]->get_size(size);
 }
 
 FSResult VFS::stat(const char* path, FileStat& stat) {

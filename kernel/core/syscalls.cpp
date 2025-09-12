@@ -576,6 +576,33 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             return newfd;
         }
 
+        case SystemCall::DUP2: {
+            // arg1 = oldfd, arg2 = newfd
+            Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
+            i32 oldfd = static_cast<i32>(arg1);
+            i32 newfd = static_cast<i32>(arg2);
+            if (oldfd < 0 || oldfd >= static_cast<i32>(MAX_FDS) || newfd < 0 || newfd >= static_cast<i32>(MAX_FDS)) {
+                return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            }
+            i32 oldVfs = cur->fdTable[static_cast<u32>(oldfd)];
+            bool isStdSentinel = (oldVfs == -100 || oldVfs == -101 || oldVfs == -102);
+            if (oldVfs < 0 && !isStdSentinel) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+            if (newfd == oldfd) return newfd;
+            // Close target if occupied
+            if (cur->fdTable[static_cast<u32>(newfd)] >= 0 ||
+                cur->fdTable[static_cast<u32>(newfd)] == -100 ||
+                cur->fdTable[static_cast<u32>(newfd)] == -101 ||
+                cur->fdTable[static_cast<u32>(newfd)] == -102) {
+                (void)handle_syscall(static_cast<u32>(SystemCall::CLOSE), static_cast<u32>(newfd), 0, 0);
+            }
+            cur->fdTable[static_cast<u32>(newfd)] = oldVfs;
+            // Copy flags sans CLOEXEC so the duplicate starts without it by default
+            u32 flags = cur->fdFlags[static_cast<u32>(oldfd)];
+            flags &= ~static_cast<u32>(FD_FLAGS::CLOSE_ON_EXEC);
+            cur->fdFlags[static_cast<u32>(newfd)] = flags;
+            return newfd;
+        }
+
         case SystemCall::SET_FD_FLAGS: {
             // arg1 = fd, arg2 = flags mask, arg3 = set(1)/clear(0)
             Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);

@@ -206,6 +206,9 @@ public:
     // Static allocation factory to avoid memory mapping issues
     static FAT32* create_static_instance(BlockDevice* blockDevice);
     static void destroy_static_instance(FAT32* fs);
+
+    // Helper: update size field for a file in root directory by first cluster
+    FSResult update_root_dir_entry_size(u32 firstCluster, u32 newSize);
     
     // FAT32 specific operations
     FSResult read_file_data(u32 firstCluster, u32 offset, u32 size, void* buffer);
