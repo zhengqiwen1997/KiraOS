@@ -39,7 +39,14 @@ i32 UserAPI::syscall(u32 syscallNum, u32 arg1, u32 arg2, u32 arg3) {
 // Enhanced print functions
 i32 UserAPI::print(const char* text) {
     if (!text) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, Colors::DEFAULT);
+    // Route through stdout (fd=1) so redirection works uniformly
+    u32 len = 0; while (text[len] != '\0') { len++; }
+    i32 r = syscall(static_cast<u32>(SystemCall::WRITE_FILE), 1u, (u32)text, len);
+    // Fallback to console if stdout is not available
+    if (r < 0) {
+        return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, Colors::DEFAULT);
+    }
+    return r;
 }
 
 i32 UserAPI::println(const char* text) {
@@ -72,17 +79,33 @@ i32 UserAPI::println(const char* text) {
     buffer[textLen] = '\n';
     buffer[textLen + 1] = '\0';
     
-    // Send as single message using printf-style output
-    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)buffer, Colors::DEFAULT);
+    // Send as single message via stdout
+    i32 r = syscall(static_cast<u32>(SystemCall::WRITE_FILE), 1u, (u32)buffer, textLen + 1 /* includes newline */);
+    if (r < 0) {
+        return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)buffer, Colors::DEFAULT);
+    }
+    return r;
 }
 
 i32 UserAPI::print_colored(const char* text, u16 color) {
+    (void)color; // Color is ignored when writing via stdout
     if (!text) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, color);
+    u32 len = 0; while (text[len] != '\0') { len++; }
+    i32 r = syscall(static_cast<u32>(SystemCall::WRITE_FILE), 1u, (u32)text, len);
+    if (r < 0) {
+        return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, Colors::DEFAULT);
+    }
+    return r;
 }
 
 i32 UserAPI::write_colored(const char* text, u16 color) {
     return print_colored(text, color);
+}
+
+i32 UserAPI::print_console(const char* text) {
+    if (!text) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
+    // Bypass redirection: go straight to console
+    return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)text, Colors::DEFAULT);
 }
 
 // Legacy write function (for backward compatibility)
@@ -339,8 +362,12 @@ i32 UserAPI::printf(const char* format, ...) {
     
     va_end(args);
     
-    // Output the formatted string using existing print_colored function
-    return print_colored(buffer, Colors::DEFAULT);
+    // Output the formatted string via stdout (fd=1) to support redirection
+    i32 r = syscall(static_cast<u32>(SystemCall::WRITE_FILE), 1u, (u32)buffer, bufferLen);
+    if (r < 0) {
+        return syscall(static_cast<u32>(SystemCall::WRITE_PRINTF), (u32)buffer, Colors::DEFAULT);
+    }
+    return r;
 }
 
 // File system operations

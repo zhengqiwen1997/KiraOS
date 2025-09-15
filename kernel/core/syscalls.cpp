@@ -59,7 +59,8 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
         case SystemCall::EXIT:
             // Terminate current process and switch to another if available.
             // arg1 optionally carries exit status; default 0
-            kira::utils::k_printf("[EXIT] exiting with status=%d\n", static_cast<i32>(arg1));
+            // Suppress console noise to avoid interleaving with shell prompt
+            // kira::utils::k_printf("[EXIT] exiting with status=%d\n", static_cast<i32>(arg1));
             pm.terminate_current_process_with_status(static_cast<i32>(arg1));
             // If we reach here, there was no immediate process to run.
             // Enter idle loop; timer IRQ may start another process later.
@@ -331,13 +332,19 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                     } else {
                         child->spawnArg[0] = '\0';
                     }
-                    // Inherit parent's FD table, honoring CLOSE_ON_EXEC
-                    for (u32 i = 0; i < MAX_FDS; i++) {
-                        child->fdTable[i] = parent->fdTable[i];
-                        child->fdFlags[i] = parent->fdFlags[i];
-                        if (child->fdTable[i] >= 0 && (child->fdFlags[i] & static_cast<u32>(FD_FLAGS::CLOSE_ON_EXEC))) {
-                            child->fdTable[i] = -1;
-                            child->fdFlags[i] = 0;
+                    // Inherit parent's FD table, honoring CLOSE_ON_EXEC and preserving child's stdio sentinels
+                    for (u32 fd = 0; fd < MAX_FDS; fd++) {
+                        i32 pfd = parent->fdTable[fd];
+                        // If parent has no fd (=-1) for stdio slots, keep child's sentinel
+                        if ((fd == 0 || fd == 1 || fd == 2) && pfd == -1) {
+                            child->fdFlags[fd] = 0;
+                            continue;
+                        }
+                        child->fdTable[fd] = pfd;
+                        child->fdFlags[fd] = parent->fdFlags[fd];
+                        if (child->fdTable[fd] >= 0 && (child->fdFlags[fd] & static_cast<u32>(FD_FLAGS::CLOSE_ON_EXEC))) {
+                            child->fdTable[fd] = -1;
+                            child->fdFlags[fd] = 0;
                         }
                     }
                 }
@@ -512,8 +519,14 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             }
             if (vfsFd < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             auto& vfs = kira::fs::VFS::get_instance();
+            u32 before = 0, after = 0;
+            (void)vfs.get_position(vfsFd, before);
             kira::fs::FSResult result = vfs.read(vfsFd, size, buffer);
-            if (result == kira::fs::FSResult::SUCCESS) return static_cast<i32>(size);
+            if (result == kira::fs::FSResult::SUCCESS) {
+                (void)vfs.get_position(vfsFd, after);
+                i32 readBytes = static_cast<i32>(after >= before ? (after - before) : 0);
+                return readBytes;
+            }
             return static_cast<i32>(SyscallResult::IO_ERROR);
         }
         
@@ -530,17 +543,21 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
             
             Process* cur = pm.get_current_process(); if (!cur) return static_cast<i32>(SyscallResult::IO_ERROR);
             if (ufd < 0 || ufd >= static_cast<i32>(MAX_FDS)) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-            i32 vfsFd = cur->fdTable[static_cast<u32>(ufd)]; if (vfsFd < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
-            // STDOUT/STDERR routed to console
+            i32 vfsFd = cur->fdTable[static_cast<u32>(ufd)];
+            // STDOUT/STDERR routed to console (handle sentinels first)
             if (vfsFd == -101 || vfsFd == -102) {
-                // Best-effort print without interpreting %
+                // Print raw bytes to console output stream (respects newlines)
                 const char* s = reinterpret_cast<const char*>(buffer);
-                // Ensure null-terminated copy within size
-                char tmp[256]; u32 n = (size < sizeof(tmp)-1) ? size : (sizeof(tmp)-1);
-                for (u32 i = 0; i < n; i++) tmp[i] = s[i]; tmp[n] = '\0';
-                kira::kernel::console.add_message(tmp, kira::display::VGA_WHITE_ON_BLUE);
+                char tmp[256]; u32 off = 0;
+                while (off < size) {
+                    u32 chunk = size - off; if (chunk > sizeof(tmp) - 1) chunk = sizeof(tmp) - 1;
+                    for (u32 i = 0; i < chunk; i++) tmp[i] = s[off + i]; tmp[chunk] = '\0';
+                    kira::kernel::console.add_printf_output(tmp, kira::display::VGA_WHITE_ON_BLUE);
+                    off += chunk;
+                }
                 return static_cast<i32>(size);
             }
+            if (vfsFd < 0) return static_cast<i32>(SyscallResult::INVALID_PARAMETER);
             auto& vfs = kira::fs::VFS::get_instance();
             kira::fs::FSResult result = vfs.write(vfsFd, size, buffer);
             if (result == kira::fs::FSResult::SUCCESS) return static_cast<i32>(size);

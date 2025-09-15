@@ -143,32 +143,74 @@ private:
         // No special casing for 'mkdir'/'rmdir', treat externally
         else if (string_equals(cmd, "exit")) { cmd_exit(); }
         else {
-            // Try exec of /bin/<cmd>; if not present, report unknown. Do not auto-wait.
-            char path[64]; u32 p = 0;
-            const char* prefix = "/bin/";
-            for (; prefix[p] != '\0' && p < 63; p++) path[p] = prefix[p];
-            for (u32 i = 0; cmd[i] != '\0' && p < 63; i++, p++) path[p] = cmd[i];
-            path[p] = '\0';
-            // Join remaining args into a single space-separated raw string
-            const char* argStr = nullptr;
-            char joined[256];
-            if (argCount > 1) {
-                u32 jp = 0; joined[0] = '\0';
-                for (u32 ai = 1; ai < argCount; ai++) {
-                    const char* s = args[ai];
-                    for (u32 k = 0; s && s[k] && jp < sizeof(joined) - 1; k++) joined[jp++] = s[k];
-                    if (ai + 1 < argCount && jp < sizeof(joined) - 1) joined[jp++] = ' ';
+            // Parse simple redirections: '< file' and/or '> file'
+            const char* inPath = nullptr; const char* outPath = nullptr;
+            char* newArgs[MAX_ARGS]; u32 newCount = 0;
+            for (u32 i = 0; i < argCount && newCount < MAX_ARGS - 1; i++) {
+                if (args[i] && args[i][0] == '<' && args[i][1] == '\0') {
+                    if (i + 1 < argCount) { inPath = args[i + 1]; i++; }
+                    else { UserAPI::println("redirection: missing input file"); return; }
+                } else if (args[i] && args[i][0] == '>' && args[i][1] == '\0') {
+                    if (i + 1 < argCount) { outPath = args[i + 1]; i++; }
+                    else { UserAPI::println("redirection: missing output file"); return; }
+                } else {
+                    newArgs[newCount++] = args[i];
                 }
-                joined[jp] = '\0';
-                argStr = joined;
             }
-            i32 pid = UserAPI::exec(path, argStr);
-            if (pid < 0) {
-                UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
-                UserAPI::println(cmd);
+            newArgs[newCount] = nullptr;
+            if (newCount == 0) return;
+            const char* newCmd = newArgs[0];
+
+            // Build /bin/<cmd>
+            char path[64]; u32 p = 0; const char* prefix = "/bin/";
+            for (; prefix[p] != '\0' && p < sizeof(path) - 1; p++) { path[p] = prefix[p]; }
+            for (u32 i = 0; newCmd[i] != '\0' && p < sizeof(path) - 1; i++, p++) { path[p] = newCmd[i]; }
+            path[p] = '\0';
+
+            // Join remaining args into a single space-separated string on the stack
+            char joined[256]; const char* argStr = nullptr;
+            if (newCount > 1) {
+                u32 jp = 0; for (u32 ai = 1; ai < newCount && jp < sizeof(joined) - 1; ai++) {
+                    const char* s = newArgs[ai];
+                    for (u32 k = 0; s && s[k] && jp < sizeof(joined) - 1; k++) { joined[jp++] = s[k]; }
+                    if (ai + 1 < newCount && jp < sizeof(joined) - 1) { joined[jp++] = ' '; }
+                }
+                joined[jp] = '\0'; argStr = joined;
+            }
+
+            if (!inPath && !outPath) {
+                i32 pid = UserAPI::exec(path, argStr);
+                if (pid < 0) {
+                    UserAPI::print_colored("Unknown command: ", Colors::RED_ON_BLUE);
+                    UserAPI::println(newCmd);
+                } else {
+                    (void)UserAPI::wait((u32)pid);
+                }
+                return;
+            }
+
+            // With redirection: fork child to set up dup2 and exec
+            i32 cpid = UserAPI::fork();
+            if (cpid < 0) { UserAPI::println("fork failed"); return; }
+            if (cpid == 0) {
+                // Child: set up redirections only; no prints here
+                if (inPath) {
+                    char absIn[256]; build_absolute_path(currentDirectory, inPath, absIn, sizeof(absIn));
+                    i32 fdIn = UserAPI::open(absIn, static_cast<u32>(FileSystem::OpenFlags::READ_ONLY));
+                    if (fdIn >= 0) { (void)UserAPI::dup2(fdIn, 0); (void)UserAPI::close(fdIn); } else { UserAPI::exit_with(127); }
+                }
+                if (outPath) {
+                    char absOut[256]; build_absolute_path(currentDirectory, outPath, absOut, sizeof(absOut));
+                    u32 flags = static_cast<u32>(FileSystem::OpenFlags::WRITE_ONLY) | static_cast<u32>(FileSystem::OpenFlags::CREATE) | static_cast<u32>(FileSystem::OpenFlags::TRUNCATE);
+                    i32 fdOut = UserAPI::open(absOut, flags);
+                    if (fdOut >= 0) { (void)UserAPI::dup2(fdOut, 1); (void)UserAPI::close(fdOut); } else { UserAPI::exit_with(127); }
+                }
+                i32 rc = UserAPI::exec(path, argStr);
+                // On success, exec does not return; if it does, error
+                if (rc < 0) UserAPI::exit_with(127);
+                UserAPI::exit_with(0);
             } else {
-                // Foreground execution: announce and then wait for completion
-                (void)UserAPI::wait((u32)pid);                
+                (void)UserAPI::wait((u32)cpid);
             }
         }
         // Sync cached cwd from kernel after commands that may modify it

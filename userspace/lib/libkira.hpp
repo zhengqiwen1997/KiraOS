@@ -99,6 +99,9 @@ public:
      * @return 0 on success, negative on error
      */
     static i32 write_colored(const char* text, u16 color);
+
+    /** Console-only print (bypasses redirection). Same as printf backend. */
+    static i32 print_console(const char* text);
     
     /**
      * @brief Get current process ID

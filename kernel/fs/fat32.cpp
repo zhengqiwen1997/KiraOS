@@ -196,8 +196,6 @@ FSResult FAT32Node::read_dir(u32 index, DirectoryEntry& entry) {
     
     // Check if we found the requested entry
     if (validEntryCount != index || physicalIndex >= maxEntries) {
-        k_printf("[FAT32 - read_dir] Entry not found: logical=%d, found_count=%d, physical=%d\n", 
-                 index, validEntryCount, physicalIndex);
         return FSResult::NOT_FOUND;
     }
     
