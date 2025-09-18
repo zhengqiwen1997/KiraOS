@@ -132,6 +132,29 @@ ProcessManager::ProcessManager() {
         for (u32 fd = 0; fd < MAX_FDS; fd++) { processes[i].fdTable[fd] = -1; processes[i].fdFlags[fd] = 0; }
     }
 }
+bool ProcessManager::is_pid_in_use(u32 pid) const {
+    if (pid == 0) return true; // reserved
+    for (u32 i = 0; i < MAX_PROCESSES; i++) {
+        const Process& p = processes[i];
+        if (p.pid == pid && p.state != ProcessState::TERMINATED) {
+            return true;
+        }
+    }
+    return false;
+}
+
+u32 ProcessManager::allocate_pid() {
+    // Try up to MAX_PID times to find a free one
+    for (u32 attempts = 0; attempts < MAX_PID; attempts++) {
+        if (nextPid == 0 || nextPid > MAX_PID) nextPid = 1; // wrap but skip 0
+        u32 candidate = nextPid++;
+        if (!is_pid_in_use(candidate)) {
+            return candidate;
+        }
+    }
+    // PID space exhausted
+    return 0;
+}
 
 u32 ProcessManager::create_user_process(ProcessFunction function, const char* name, u32 priority) {
     if (processCount >= MAX_PROCESSES || !function) {
@@ -152,7 +175,11 @@ u32 ProcessManager::create_user_process(ProcessFunction function, const char* na
     }
     
     // Initialize process
-    process->pid = nextPid++;
+    process->pid = allocate_pid();
+    if (process->pid == 0) {
+        // No available PID
+        return 0;
+    }
     strcpy_s(process->name, name ? name : "unnamed", sizeof(process->name) - 1);
     process->state = ProcessState::READY;
     process->priority = priority;
@@ -220,7 +247,10 @@ u32 ProcessManager::create_user_process_from_elf(AddressSpace* addressSpace, u32
     if (!process) return 0;
     
     // Initialize process metadata
-    process->pid = nextPid++;
+    process->pid = allocate_pid();
+    if (process->pid == 0) {
+        return 0;
+    }
     strcpy_s(process->name, name ? name : "elf", sizeof(process->name) - 1);
     process->state = ProcessState::READY;
     process->priority = priority;
@@ -278,7 +308,11 @@ u32 ProcessManager::create_process(ProcessFunction function, const char* name, u
     }
     
     // Initialize process for kernel mode
-    process->pid = nextPid++;
+    process->pid = allocate_pid();
+    if (process->pid == 0) {
+        kira::kernel::console.add_message("no free pid", kira::display::VGA_RED_ON_BLUE);
+        return 0;
+    }
     strcpy_s(process->name, name ? name : "unnamed", sizeof(process->name) - 1);
     process->state = ProcessState::READY;
     process->priority = priority;
@@ -752,6 +786,28 @@ void ProcessManager::switch_process() {
                 // Update TSS with this process's kernel stack
                 TSSManager::set_kernel_stack(currentProcess->context.kernelEsp);
                 
+                // Sanity: ensure EIP and ESP are mapped in this address space before switching
+                if (currentProcess->addressSpace) {
+                    AddressSpace* as = currentProcess->addressSpace;
+                    u32 eip = currentProcess->context.eip;
+                    u32 esp = currentProcess->context.userEsp;
+                    if (!as->is_mapped(eip) || !as->is_mapped(esp)) {
+                        kira::kernel::console.add_message("ERROR: EIP/ESP not mapped for user process", kira::display::VGA_RED_ON_BLUE);
+                        char buf[32];
+                        kira::utils::number_to_hex(buf, eip);
+                        kira::kernel::console.add_message("EIP:", kira::display::VGA_RED_ON_BLUE);
+                        kira::kernel::console.add_message(buf, kira::display::VGA_WHITE_ON_BLUE);
+                        kira::utils::number_to_hex(buf, esp);
+                        kira::kernel::console.add_message("ESP:", kira::display::VGA_RED_ON_BLUE);
+                        kira::kernel::console.add_message(buf, kira::display::VGA_WHITE_ON_BLUE);
+                        currentProcess->state = ProcessState::TERMINATED;
+                        processCount--;
+                        currentProcess = nullptr;
+                        switch_process();
+                        return;
+                    }
+                }
+
                 // Switch to user mode and execute the user function
                 // Use the virtual address from the process context
                 UserMode::switch_to_user_mode(
@@ -934,7 +990,7 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     // Map additional kernel pages that might contain string literals and data
     // Map a MUCH larger range of kernel pages to include ALL kernel code/data
     u32 kernelStart = 0x100000; // 1MB - typical kernel start  
-    u32 kernelEnd = 0x800000;   // 8MB - expanded to cover full kernel with FAT32 code
+    u32 kernelEnd = 0x2000000;  // 32MB - cover kernel text/data/bss and large static pools
     
     u32 pagesMapped = 0;
     for (u32 addr = kernelStart; addr < kernelEnd; addr += PAGE_SIZE) {

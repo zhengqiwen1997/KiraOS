@@ -141,7 +141,8 @@ struct PriorityQueue {
  */
 class ProcessManager {
 private:
-    static constexpr u32 MAX_PROCESSES = 16;
+    static constexpr u32 MAX_PROCESSES = 64;
+        static constexpr u32 MAX_PID = 65535;     // Upper bound for PID before wrap
     static constexpr u32 DEFAULT_TIME_SLICE = 10;  // Timer ticks
     static constexpr u32 STACK_SIZE = 16384;       // 16KB stack per process
     static constexpr u32 MAX_PRIORITY = 10;        // Maximum priority level
@@ -336,6 +337,13 @@ public:
     // Minimal fork: duplicate PCB, copy stacks, share address space (refcount TBD)
     u32 fork_current_process();
 private:
+        /**
+         * @brief Allocate a new unique PID, wrapping if needed and skipping in-use PIDs
+         * @return New PID (>0) or 0 if none available
+         */
+        u32 allocate_pid();
+        /** Return true if a PID is currently in use by a non-terminated PCB */
+        bool is_pid_in_use(u32 pid) const;
     /**
      * @brief Add process to ready queue
      */

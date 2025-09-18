@@ -21,7 +21,7 @@ constexpr u32 HIGH_MEMORY_END = 0x01000000;     // 16MB - High memory end
 
 // Internal system constants
 constexpr u32 CR0_PAGING_BIT = 0x80000000;      // CR0 PG bit (bit 31)
-constexpr u32 MAX_USER_ADDRESS_SPACES = 16;     // Maximum user address spaces
+constexpr u32 MAX_USER_ADDRESS_SPACES = 64;     // Maximum user address spaces
 constexpr u32 MEMORY_ALIGNMENT = 4;             // Memory alignment for placement new
 constexpr u32 TEST_MAGIC_VALUE = 0x12345678;    // Magic value for testing
 
@@ -318,7 +318,7 @@ void AddressSpace::setup_kernel_mappings() {
 // Pre-allocate memory for AddressSpace objects to avoid dynamic allocation
 static u8 kernelAddressSpaceMemory[sizeof(AddressSpace)] __attribute__((aligned(MEMORY_ALIGNMENT)));
 static u8 userAddressSpaceMemory[MAX_USER_ADDRESS_SPACES][sizeof(AddressSpace)] __attribute__((aligned(MEMORY_ALIGNMENT)));
-static u32 nextUserAddressSpaceIndex = 0;
+static bool userSpaceSlotUsed[MAX_USER_ADDRESS_SPACES] = {false};
 
 VirtualMemoryManager& VirtualMemoryManager::get_instance() {
     if (!instance) {
@@ -359,13 +359,15 @@ void VirtualMemoryManager::initialize() {
 }
 
 AddressSpace* VirtualMemoryManager::create_user_address_space() {
-    if (nextUserAddressSpaceIndex >= MAX_USER_ADDRESS_SPACES) {
-        return nullptr; // No more user address spaces available
+    // Find a free slot
+    for (u32 i = 0; i < MAX_USER_ADDRESS_SPACES; i++) {
+        if (!userSpaceSlotUsed[i]) {
+            userSpaceSlotUsed[i] = true;
+            AddressSpace* userSpace = new(&userAddressSpaceMemory[i]) AddressSpace(false);
+            return userSpace;
+        }
     }
-    
-    AddressSpace* userSpace = new(&userAddressSpaceMemory[nextUserAddressSpaceIndex]) AddressSpace(false);
-    nextUserAddressSpaceIndex++;
-    return userSpace;
+    return nullptr; // No free user address space slots
 }
 
 void VirtualMemoryManager::switch_address_space(AddressSpace* addressSpace) {
@@ -393,8 +395,13 @@ void VirtualMemoryManager::destroy_user_address_space(AddressSpace* addressSpace
     // Explicitly call destructor since we used placement new
     addressSpace->~AddressSpace();
 
-    // We do not reclaim the placement buffer for reuse in this simple pool.
-    // Optionally, we could track indices and allow reuse, but not required now.
+    // Mark the slot as free for reuse
+    for (u32 i = 0; i < MAX_USER_ADDRESS_SPACES; i++) {
+        if (reinterpret_cast<void*>(addressSpace) == reinterpret_cast<void*>(&userAddressSpaceMemory[i])) {
+            userSpaceSlotUsed[i] = false;
+            break;
+        }
+    }
 }
 
 void VirtualMemoryManager::flush_tlb() {
