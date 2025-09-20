@@ -50,6 +50,8 @@ private:
     static constexpr u32 MAX_REF_ENTRIES = 4096;
     struct RefEntry { u32 phys; u32 count; };
     RefEntry refTable[MAX_REF_ENTRIES] = {};
+    // If table overflows, treat unknown pages as shared (non-unique)
+    bool refTableOverflow = false;
     u32 find_ref_entry(u32 phys) const;
     u32 alloc_ref_entry(u32 phys);
 };

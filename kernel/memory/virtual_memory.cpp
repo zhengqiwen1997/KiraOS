@@ -269,11 +269,12 @@ u32 AddressSpace::create_page_table() {
 
 void AddressSpace::setup_kernel_mappings() {
     // 1. Map kernel code and data (1MB - 8MB extended range)
-    // In user address spaces, expose identity-mapped kernel pages as user-accessible
-    // to support legacy user processes that execute embedded functions.
+    // Map kernel identity region into all address spaces.
+    // In user address spaces, make them user-readable but not writable.
     const bool userFlag = !isKernelSpace;
+    const bool writeFlag = isKernelSpace;
     for (u32 addr = KERNEL_CODE_START; addr < EXTENDED_KERNEL_END; addr += PAGE_SIZE) {
-        if (!map_page(addr, addr, true, userFlag)) {
+        if (!map_page(addr, addr, writeFlag, userFlag)) {
             SerialDebugger::print("ERROR: Failed to map kernel page at ");
             SerialDebugger::print_hex(addr);
             SerialDebugger::println("");

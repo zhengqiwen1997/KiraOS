@@ -247,6 +247,29 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
     kira::debug::SerialDebugger::print_hex(frame->errorCode);
     kira::debug::SerialDebugger::println("");
     
+    // Handle user write to not-present page (stack growth/demand-zero) (error code: P=0, W=1, U=1)
+    if ((frame->errorCode & 0x7) == 0x6) {
+        auto& pm = kira::system::ProcessManager::get_instance();
+        kira::system::Process* cur = pm.get_current_process();
+        if (cur && cur->addressSpace) {
+            auto& mm = kira::system::MemoryManager::get_instance();
+            // Align VA to page
+            u32 va = faultAddr & kira::system::PAGE_MASK;
+            // Only permit demand-zero within last 1MB of user stack window
+            const u32 STACK_TOP = kira::system::USER_STACK_TOP;
+            const u32 STACK_WINDOW = 0x00100000; // 1MB
+            if (va < STACK_TOP && va >= (STACK_TOP - STACK_WINDOW)) {
+                void* phys = mm.allocate_physical_page();
+                if (phys) {
+                    if (cur->addressSpace->map_page(va, reinterpret_cast<u32>(phys), true, true)) {
+                        return; // resume
+                    }
+                    mm.free_physical_page(phys);
+                }
+            }
+        }
+    }
+
     // Handle Copy-on-Write on user write to present read-only page (error code: P=1, W=1, U=1)
     if ((frame->errorCode & 0x7) == 0x7) {
         auto& pm = kira::system::ProcessManager::get_instance();
@@ -256,6 +279,14 @@ void Exceptions::page_fault_handler(ExceptionFrame* frame) {
             auto& vm = kira::system::VirtualMemoryManager::get_instance();
             // Faulting page aligned VA and old physical backing
             u32 va = faultAddr & kira::system::PAGE_MASK;
+            // Never perform CoW on kernel identity-mapped window; deny write instead
+            if (va >= kira::system::KERNEL_CODE_START && va < 0x00800000) {
+                // Terminate offending process gracefully
+                kira::kernel::console.add_message("Write to kernel identity region from user - killing process", VGA_RED_ON_BLUE);
+                pm.terminate_current_process_with_status(-1);
+                // Park CPU until scheduler picks next
+                for (;;) { asm volatile("sti"); asm volatile("hlt"); }
+            }
             u32 oldPhys = cur->addressSpace->get_physical_address(va) & kira::system::PAGE_MASK;
             if (oldPhys != 0) {
                 // Fast path: if refcount indicates uniquely owned (0 extra refs), make writable

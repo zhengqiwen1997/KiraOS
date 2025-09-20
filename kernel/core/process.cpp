@@ -561,21 +561,34 @@ u32 ProcessManager::fork_current_process() {
         const u32 EXCL_CONS_START = consolePage;
         const u32 EXCL_CONS_END   = consolePage + 0x10000; // 64KB console span
 
-        for (u32 va = USER_SPACE_START; va < USER_SPACE_END; va += PAGE_SIZE) {
-            if (!parent->addressSpace->is_mapped(va)) continue;
-            // Exclude identity kernel window and shared IO pages
-            if ((va >= EXCL_ID_START && va < EXCL_ID_END) ||
-                va == EXCL_VGA_PAGE ||
-                (va >= EXCL_CONS_START && va < EXCL_CONS_END)) {
-                continue;
+        // Limit CoW to: user text window we established and the heap range; plus last 16KB of stack
+        const u32 TEXT_START = USER_TEXT_START - PAGE_SIZE; // we mapped one preceding page
+        const u32 TEXT_END   = USER_TEXT_START + (64 * PAGE_SIZE);
+        const u32 HEAP_START = parent->heapStart ? parent->heapStart : USER_HEAP_START;
+        const u32 HEAP_END   = parent->heapEnd ? parent->heapEnd : USER_HEAP_START;
+        const u32 STACK_TOP  = USER_STACK_TOP;
+        const u32 STACK_SIZE_LIMIT = 64 * 1024; // clone top 64KB of stack to avoid unmapped faults
+        const u32 STACK_BASE = STACK_TOP - STACK_SIZE_LIMIT;
+
+        auto clone_range_cow = [&](u32 start, u32 end) {
+            for (u32 va = start & PAGE_MASK; va < end; va += PAGE_SIZE) {
+                if (!parent->addressSpace->is_mapped(va)) continue;
+                if ((va >= EXCL_ID_START && va < EXCL_ID_END) ||
+                    va == EXCL_VGA_PAGE ||
+                    (va >= EXCL_CONS_START && va < EXCL_CONS_END)) {
+                    continue;
+                }
+                u32 srcPhys = parent->addressSpace->get_physical_address(va) & PAGE_MASK;
+                if (srcPhys == 0) continue;
+                childAS->map_page(va, srcPhys, false, true);
+                parent->addressSpace->set_page_writable(va, false);
+                MemoryManager::get_instance().increment_page_ref(srcPhys);
             }
-            u32 srcPhys = parent->addressSpace->get_physical_address(va) & PAGE_MASK;
-            if (srcPhys == 0) continue;
-            // Child: RO user mapping; Parent: flip to RO; Increment ref
-            childAS->map_page(va, srcPhys, false, true);
-            parent->addressSpace->set_page_writable(va, false);
-            MemoryManager::get_instance().increment_page_ref(srcPhys);
-        }
+        };
+
+        clone_range_cow(TEXT_START, TEXT_END);
+        if (HEAP_END > HEAP_START) clone_range_cow(HEAP_START, HEAP_END);
+        clone_range_cow(STACK_BASE, STACK_TOP);
  
         child->addressSpace = childAS;
     }
@@ -958,14 +971,14 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
     auto& memoryManager = MemoryManager::get_instance();
     char debugMsg[64]; // Declare once for the entire function
     
-    // Map user program code - for embedded functions, we need to map the kernel code pages
-    // where the function resides into user space
+    // Map user program code - for embedded functions, we will map only the
+    // minimal required kernel code pages into user space as read-only text.
     u32 functionAddr = reinterpret_cast<u32>(function);
     u32 functionPage = functionAddr & PAGE_MASK;
     
     // Map multiple pages for the user program to handle code that spans page boundaries
     u32 userTextAddr = USER_TEXT_START;
-    u32 numPagesToMap = 20; // Map 20 pages (80KB) to handle larger user programs like the shell
+    u32 numPagesToMap = 64; // map 256KB of contiguous text to cover shell + deps
     
     // Map one extra preceding page to tolerate minor negative offsets into the first page
     if (functionPage >= PAGE_SIZE) {
@@ -981,41 +994,17 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
         }
     }
     
-    // Map VGA buffer for user programs that need direct VGA access
-    u32 vgaBufferAddr = 0xB8000;
-    if (!process->addressSpace->map_page(vgaBufferAddr, vgaBufferAddr, true, true)) {
-        return false;
-    }
-    
-    // Map additional kernel pages that might contain string literals and data
-    // Map a MUCH larger range of kernel pages to include ALL kernel code/data
-    u32 kernelStart = 0x100000; // 1MB - typical kernel start  
-    u32 kernelEnd = 0x2000000;  // 32MB - cover kernel text/data/bss and large static pools
-    
-    u32 pagesMapped = 0;
-    for (u32 addr = kernelStart; addr < kernelEnd; addr += PAGE_SIZE) {
-        // Map kernel pages to user space (writable for static variables)
-        // This allows user programs to access string literals and static data in kernel memory
-        if (process->addressSpace->map_page(addr, addr, true, true)) {
-            pagesMapped++;
-        }
-    }
+    // Do not map broad kernel identity pages or console into user space anymore.
+    // User programs should communicate via syscalls. VGA direct mapping also disabled.
 
-    // Map console object and its buffers (needed for console.add_message calls)
-    // The console is a global object in kernel memory, so we need to map it
-    u32 consoleAddr = reinterpret_cast<u32>(&kira::kernel::console);
-    u32 consolePage = consoleAddr & PAGE_MASK;
-    
-    // Map the page containing the console object
-    if (!process->addressSpace->map_page(consolePage, consolePage, true, true)) {
-        return false;
-    }
-    
-    // Map additional pages around console in case it spans multiple pages
-    // Console has large internal buffers that might span multiple pages
-    for (u32 offset = 0; offset < 0x10000; offset += PAGE_SIZE) { // Map 64KB around console
-        u32 addr = consolePage + offset;
-        process->addressSpace->map_page(addr, addr, true, true);
+    // Minimal read-only identity window for kernel .rodata referenced by embedded user code
+    // This allows absolute addresses like 0x0011xxxx to be readable from user mode.
+    {
+        const u32 roStart = KERNEL_CODE_START;            // 1MB
+        const u32 roEnd   = KERNEL_CODE_START + 0x200000; // +2MB window (1MB..3MB)
+        for (u32 addr = roStart; addr < roEnd; addr += PAGE_SIZE) {
+            (void)process->addressSpace->map_page(addr, addr, false, true);
+        }
     }
     
     // Map user stack into user address space, honoring base offset
@@ -1036,24 +1025,11 @@ bool ProcessManager::setup_user_program_mapping(Process* process, ProcessFunctio
         }
     }
     
-    // Update process context: execute directly at the kernel function address
-    // (kernel code pages were mapped user-accessible above)
+    // Update process context: execute at the mapped user text address
     u32 functionOffset = functionAddr - functionPage;
-    process->context.eip = functionAddr;
+    process->context.eip = userTextAddr + functionOffset;
     // Point ESP to the top of the mapped stack region minus the portion used by offset
     process->context.userEsp = userStackVirtBase + userStackOffset + process->userStackSize - 16; // leave 16 bytes
-    
-
-    // Check if user shell function is in mapped range
-    u32 shellAddr = reinterpret_cast<u32>(function);
-    if (shellAddr >= kernelStart && shellAddr < kernelEnd) {
-        kira::kernel::console.add_message("[PROCESS] Shell function is in mapped range", kira::display::VGA_GREEN_ON_BLUE);
-    } else {
-        kira::kernel::console.add_message("[PROCESS] WARNING: Shell function outside mapped range!", kira::display::VGA_RED_ON_BLUE);
-        kira::utils::number_to_hex(debugMsg, shellAddr);
-        kira::kernel::console.add_message("[PROCESS] Shell addr:", kira::display::VGA_RED_ON_BLUE);
-        kira::kernel::console.add_message(debugMsg, kira::display::VGA_WHITE_ON_BLUE);
-    }
     
     return true;
 }

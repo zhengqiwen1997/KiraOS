@@ -53,7 +53,7 @@ constexpr u32 MB_BOUNDARY_ALIGN = 0x000FFFFF;      // 1MB boundary alignment val
 constexpr u32 STACK_OFFSET = 0x1000;               // 4KB - Offset for stack from manager address
 constexpr u32 BYTE_ALIGNMENT_MASK = ~3;            // 4-byte alignment mask
 constexpr u32 BYTE_ALIGNMENT_VALUE = 3;            // 4-byte alignment value
-constexpr u32 MAX_FREE_PAGES = 1024;               // Maximum pages we can track in free stack
+constexpr u32 MAX_FREE_PAGES = 4096;              // Increase tracked free pages to reduce leaks under CoW
 constexpr u32 RAM_DIVISOR = 8;                     // Divisor for dynamic address calculation (1/8 of total RAM)
 
 // Boundary checking functions
@@ -127,27 +127,9 @@ static MemoryManager* gMemoryManager = nullptr;
 
 MemoryManager& MemoryManager::get_instance() {
     if (!gMemoryManager) {
-        // Validate kernel structures placement before using them
-        if (!validate_kernel_structures_placement()) {
-            // Fallback to a safe address if validation fails
-            // Use a simple calculation based on available memory
-            u32 totalRam = MemoryManager::calculate_total_usable_ram();
-            u32 safeAddr = DEFAULT_SAFE_ADDR;  // Default to 2MB
-            
-            // If we have enough RAM, use 1/8 of total RAM as base address
-            if (totalRam > RAM_THRESHOLD_8MB) {  // If more than 8MB
-                safeAddr = totalRam / RAM_DIVISOR;
-                // Align to 1MB boundary
-                safeAddr = (safeAddr + MB_BOUNDARY_ALIGN) & MB_BOUNDARY_MASK;
-                // Ensure it's at least 2MB
-                if (safeAddr < DEFAULT_SAFE_ADDR) safeAddr = DEFAULT_SAFE_ADDR;
-            }
-            
-            gMemoryManager = (MemoryManager*)safeAddr;
-        } else {
-            // Use the configured address
-            gMemoryManager = (MemoryManager*)MEMORY_MANAGER_ADDR;
-        }
+        // Use the configured fixed address unconditionally to ensure it is within
+        // the identity-mapped kernel region (2MB..3MB) and avoid unmapped faults.
+        gMemoryManager = (MemoryManager*)MEMORY_MANAGER_ADDR;
         
         // Initialize only the essential fields for stack-based allocator
         gMemoryManager->memoryMap = nullptr;
@@ -203,6 +185,15 @@ void MemoryManager::initialize(const MemoryMapEntry* memoryMap, u32 memoryMapSiz
             if (startPage >= kernelStartPage && startPage < kernelEndPage) {
                 startPage = kernelEndPage;  // Start after kernel structures
             }
+
+            // Constrain allocator to identity-mapped high memory window (8MB..16MB)
+            const u32 HIGH_MEMORY_START = 0x00800000; // 8MB
+            const u32 HIGH_MEMORY_END   = 0x01000000; // 16MB
+            const u32 highStartPage = HIGH_MEMORY_START / PAGE_SIZE;
+            const u32 highEndPage   = HIGH_MEMORY_END   / PAGE_SIZE;
+            if (startPage < highStartPage) startPage = highStartPage;
+            if (endPage   > highEndPage)   endPage   = highEndPage;
+            if (startPage >= endPage) continue;
             
             // Add pages to the free stack with boundary checking
             for (u32 page = startPage; page < endPage && freePageCount < maxFreePages; page++) {
@@ -268,6 +259,8 @@ u32 MemoryManager::alloc_ref_entry(u32 phys) {
     for (u32 i = 0; i < MAX_REF_ENTRIES; i++) {
         if (refTable[i].count == 0) { refTable[i].phys = phys; refTable[i].count = 0; return i; }
     }
+    // Signal overflow; callers must treat page as shared
+    refTableOverflow = true;
     return MAX_REF_ENTRIES;
 }
 
@@ -275,7 +268,7 @@ void MemoryManager::increment_page_ref(u32 physPageAddr) {
     physPageAddr &= PAGE_MASK;
     u32 idx = find_ref_entry(physPageAddr);
     if (idx == MAX_REF_ENTRIES) idx = alloc_ref_entry(physPageAddr);
-    if (idx == MAX_REF_ENTRIES) return;
+    if (idx == MAX_REF_ENTRIES) return; // overflow: don't track, treated as shared by policy
     if (refTable[idx].count < 0xFFFFFFFFu) refTable[idx].count++;
 }
 
@@ -290,7 +283,10 @@ void MemoryManager::decrement_page_ref(u32 physPageAddr) {
 u32 MemoryManager::get_page_ref(u32 physPageAddr) const {
     physPageAddr &= PAGE_MASK;
     u32 idx = find_ref_entry(physPageAddr);
-    if (idx == MAX_REF_ENTRIES) return 0;
+    if (idx == MAX_REF_ENTRIES) {
+        // Unknown page: if overflow ever occurred, treat as shared (non-unique)
+        return refTableOverflow ? 1u : 0u;
+    }
     return refTable[idx].count;
 }
 

@@ -402,7 +402,13 @@ i32 handle_syscall(u32 syscall_num, u32 arg1, u32 arg2, u32 arg3) {
                 for (u32 va = (newEnd + PAGE_SIZE - 1) & PAGE_MASK; va < cur->heapEnd; va += PAGE_SIZE) {
                     u32 phys = cur->addressSpace->get_physical_address(va) & PAGE_MASK;
                     cur->addressSpace->unmap_page(va);
-                    if (phys) MemoryManager::get_instance().free_physical_page(reinterpret_cast<void*>(phys));
+                    if (phys) {
+                        auto& mm = MemoryManager::get_instance();
+                        mm.decrement_page_ref(phys);
+                        if (mm.get_page_ref(phys) == 0) {
+                            mm.free_physical_page(reinterpret_cast<void*>(phys));
+                        }
+                    }
                 }
             }
             cur->heapEnd = newEnd;
